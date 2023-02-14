@@ -8,7 +8,6 @@ import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchComplete;
 import dk.ku.di.dms.vms.modb.common.schema.network.control.ConsumerSet;
 import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
 import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
@@ -50,7 +49,7 @@ import static java.net.StandardSocketOptions.TCP_NODELAY;
  */
 public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
 
-    static final int DEFAULT_DELAY_FOR_BATCH_SEND = 10000;
+    static final int DEFAULT_DELAY_FOR_BATCH_SEND = 1000;
 
     private final ExecutorService executorService;
 
@@ -83,17 +82,16 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
     private final IVmsSerdesProxy serdesProxy;
 
     /** COORDINATOR **/
-    private ServerIdentifier leader;
-    private LockConnectionMetadata leaderConnectionMetadata;
+    // private ServerIdentifier leader;
 
     // the thread responsible to send data to the leader
     private LeaderWorker leaderWorker;
 
-    // refer to what operation must be performed
-    private final BlockingQueue<LeaderWorker.Message> leaderWorkerQueue;
-
     // cannot be final, may differ across time and new leaders
-    private Set<String> queuesLeaderSubscribesTo;
+    private final Set<String> queuesLeaderSubscribesTo;
+
+    // refer to what operations must be performed by the leader worker
+    private final BlockingQueue<LeaderWorker.Message> leaderWorkerQueue;
 
     // set of events to send to leader
     public final BlockingDeque<TransactionEvent.Payload> eventsToSendToLeader;
@@ -190,12 +188,11 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
 
         this.schedulerHandler = new EmbeddedSchedulerHandler();
 
-        // set leader off
-        this.leader = new ServerIdentifier("localhost",0);
-        this.leader.off();
+//        // off by default
+//        this.leader = new ServerIdentifier("localhost",0);
 
+        this.queuesLeaderSubscribesTo = new ConcurrentSkipListSet<>();
         this.leaderWorkerQueue = new LinkedBlockingDeque<>();
-        this.queuesLeaderSubscribesTo = Set.of();
         this.eventsToSendToLeader = new LinkedBlockingDeque<>();
     }
 
@@ -261,7 +258,7 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
 
         }
 
-        failSafeClose();
+        this.failSafeClose();
         this.logger.info("Event handler has finished execution.");
 
     }
@@ -407,8 +404,8 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
     }
 
     /**
-     * Responsible for making sure the handshake protocol is successfully performed
-     * with a consumer VMS
+     * Responsible for making sure the handshake protocol
+     * is successfully performed with a consumer VMS
      */
     private final class ConnectToConsumerVmsProtocol {
 
@@ -472,7 +469,7 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
                         if(!(address instanceof ConsumerVms consumerVms)) {
                             // set up event sender timer task
                             ConsumerVms consumerVms = new ConsumerVms(address, new Timer("vms-sender-timer", true));
-                            consumerVms.timer.scheduleAtFixedRate(new ConsumerVmsWorker(consumerVms, connMetadata), DEFAULT_DELAY_FOR_BATCH_SEND, DEFAULT_DELAY_FOR_BATCH_SEND);
+                            consumerVms.timer.scheduleAtFixedRate(new ConsumerVmsWorker(consumerVms, attachment.channel, connMetadata.writeBuffer), DEFAULT_DELAY_FOR_BATCH_SEND, DEFAULT_DELAY_FOR_BATCH_SEND);
 
                             // add to tracked VMSs...
                             for (String outputEvent : outputEvents) {
@@ -481,7 +478,7 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
                         } else {
                             // just set up the timer
                             consumerVms.timer = new Timer("vms-sender-timer", true);
-                            consumerVms.timer.scheduleAtFixedRate(new ConsumerVmsWorker(consumerVms, connMetadata), DEFAULT_DELAY_FOR_BATCH_SEND, DEFAULT_DELAY_FOR_BATCH_SEND);
+                            consumerVms.timer.scheduleAtFixedRate(new ConsumerVmsWorker(consumerVms, attachment.channel, connMetadata.writeBuffer), DEFAULT_DELAY_FOR_BATCH_SEND, DEFAULT_DELAY_FOR_BATCH_SEND);
                         }
 
                         attachment.channel.read(attachment.buffer, connMetadata, new VmsReadCompletionHandler());
@@ -583,6 +580,8 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
         }
     }
 
+    private record SimpleConnectionCtx(AsynchronousSocketChannel channel, ByteBuffer readBuffer){}
+
     /**
      * On a connection attempt, it is unknown what is the type of node
      * attempting the connection. We find out after the first read.
@@ -616,19 +615,26 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
             this.buffer.position(2);
 
             switch (nodeTypeIdentifier) {
-
                 case (SERVER_TYPE) -> {
+                    if(leaderWorker == null || !leaderWorker.isRunning()) {
+                        // set up leader worker
+                        leaderWorker = new LeaderWorker(
+                                me, channel, buffer, // this buffer will be used for writes
+                                eventsToSendToLeader, queuesLeaderSubscribesTo,
+                                leaderWorkerQueue, serdesProxy);
 
-                    if(!leader.isActive()) {
-                        ConnectionFromLeaderProtocol connectionFromLeader = new ConnectionFromLeaderProtocol(this.channel, this.buffer);
-                        connectionFromLeader.processLeaderPresentation();
+                        // no need to synchronize after handshake, the completion handler will fail automatically after channel is closed
+                        SimpleConnectionCtx simpleConnectionCtx = new SimpleConnectionCtx(channel,
+                                MemoryManager.getTemporaryDirectBuffer());
+                        new Thread(leaderWorker).start();
+                        channel.read( simpleConnectionCtx.readBuffer, simpleConnectionCtx, new LeaderReadCompletionHandler() );
+                        logger.info("Leader worker set up");
                     } else {
                         logger.warning("Dropping a connection attempt from a node claiming to be leader");
-                        try { this.channel.close(); } catch (IOException ignored) {}
+                        try { this.channel.close(); } catch (IOException ignored) { }
                     }
                 }
                 case (VMS_TYPE) -> {
-
                     // then it is a vms intending to connect due to a data/event
                     // that should be delivered to this vms
                     VmsNode producerVms = Presentation.readVms(this.buffer, serdesProxy);
@@ -642,7 +648,7 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
                             this.buffer,
                             writeBuffer,
                             this.channel,
-                            new Semaphore(1)
+                            null
                     );
 
                     // what if a vms is both producer to and consumer from this vms?
@@ -654,14 +660,11 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
 
                     // setup event receiving for this vms
                     this.channel.read(this.buffer, connMetadata, new VmsReadCompletionHandler());
-
                 }
                 case CLIENT -> {
                     // used for bulk data loading for now (maybe used for tests later)
-
                     String tableName = Presentation.readClient(this.buffer);
                     this.buffer.clear();
-
                     LockConnectionMetadata connMetadata = new LockConnectionMetadata(
                             tableName.hashCode(),
                             LockConnectionMetadata.NodeType.CLIENT,
@@ -746,107 +749,6 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
 
     }
 
-    private final class ConnectionFromLeaderProtocol {
-        private State state;
-        private final AsynchronousSocketChannel channel;
-        private final ByteBuffer buffer;
-        public final CompletionHandler<Integer, Void> writeCompletionHandler;
-
-        public ConnectionFromLeaderProtocol(AsynchronousSocketChannel channel, ByteBuffer buffer) {
-            this.state = State.PRESENTATION_RECEIVED;
-            this.channel = channel;
-            this.writeCompletionHandler = new WriteCompletionHandler();
-            this.buffer = buffer;
-        }
-
-        private enum State {
-            PRESENTATION_RECEIVED,
-            PRESENTATION_PROCESSED,
-            PRESENTATION_SENT
-        }
-
-        /**
-         * Should be void or ConnectionFromLeaderProtocol??? only testing to know...
-         */
-        private class WriteCompletionHandler implements CompletionHandler<Integer,Void> {
-
-            @Override
-            public void completed(Integer result, Void attachment) {
-                state = State.PRESENTATION_SENT;
-                // set up leader worker
-                leaderWorker = new LeaderWorker(leader,leaderConnectionMetadata,
-                        eventsToSendToLeader, leaderWorkerQueue);
-                new Thread(leaderWorker).start();
-                logger.info("Leader worker set up");
-                buffer.clear();
-                channel.read(buffer, leaderConnectionMetadata, new LeaderReadCompletionHandler() );
-            }
-
-            @Override
-            public void failed(Throwable exc, Void attachment) {
-                buffer.clear();
-                if(!channel.isOpen()) {
-                    leader.off();
-                }
-                // else what to do try again? no, let the new leader connect
-            }
-        }
-
-        public void processLeaderPresentation() {
-
-            boolean includeMetadata = this.buffer.get() == YES;
-
-            // leader has disconnected, or new leader
-            leader = Presentation.readServer(this.buffer);
-
-            // read queues leader is interested
-            boolean hasQueuesToSubscribe = this.buffer.get() == YES;
-            if(hasQueuesToSubscribe){
-                queuesLeaderSubscribesTo = Presentation.readQueuesToSubscribeTo(this.buffer, serdesProxy);
-            }
-
-            // only connects to all VMSs on first leader connection
-
-            if(leaderConnectionMetadata == null) {
-                // then setup connection metadata and read completion handler
-                leaderConnectionMetadata = new LockConnectionMetadata(
-                        leader.hashCode(),
-                        LockConnectionMetadata.NodeType.SERVER,
-                        buffer,
-                        MemoryManager.getTemporaryDirectBuffer(),
-                        channel,
-                        null
-                );
-            } else {
-                // considering the leader has replicated the metadata before failing
-                // so no need to send metadata again. but it may be necessary...
-                // what if the tid and batch id is necessary. the replica may not be
-                // sync with last leader...
-                leaderConnectionMetadata.channel = channel; // update channel
-            }
-            leader.on();
-            this.buffer.clear();
-
-            if(includeMetadata) {
-                String vmsDataSchemaStr = serdesProxy.serializeDataSchema(me.dataSchema);
-                String vmsInputEventSchemaStr = serdesProxy.serializeEventSchema(me.inputEventSchema);
-                String vmsOutputEventSchemaStr = serdesProxy.serializeEventSchema(me.outputEventSchema);
-
-                Presentation.writeVms(this.buffer, me, me.vmsIdentifier, me.batch, me.lastTidOfBatch, me.previousBatch, vmsDataSchemaStr, vmsInputEventSchemaStr, vmsOutputEventSchemaStr);
-                // the protocol requires the leader to wait for the metadata in order to start sending messages
-            } else {
-                Presentation.writeVms(this.buffer, me, me.vmsIdentifier, me.batch, me.lastTidOfBatch, me.previousBatch);
-            }
-
-            this.buffer.flip();
-            this.state = State.PRESENTATION_PROCESSED;
-            logger.info("Leader presentation processed");
-            this.channel.write( this.buffer, null, this.writeCompletionHandler );
-
-        }
-
-    }
-
     private InboundEvent buildInboundEvent(TransactionEvent.Payload payload){
         Class<?> clazz = this.vmsMetadata.queueToEventMap().get(payload.event());
         Object input = this.serdesProxy.deserialize(payload.payload(), clazz);
@@ -862,10 +764,10 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
                 payload.batch(), payload.event(), clazz, input );
     }
 
-    private final class LeaderReadCompletionHandler implements CompletionHandler<Integer, LockConnectionMetadata> {
+    private final class LeaderReadCompletionHandler implements CompletionHandler<Integer, SimpleConnectionCtx> {
 
         @Override
-        public void completed(Integer result, LockConnectionMetadata connectionMetadata) {
+        public void completed(Integer result, SimpleConnectionCtx connectionMetadata) {
 
             connectionMetadata.readBuffer.position(0);
             byte messageType = connectionMetadata.readBuffer.get();
@@ -941,7 +843,7 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
                         connectToReceivedConsumerSet(receivedConsumerVms);
                     }
                 }
-                case (PRESENTATION) -> logger.warning("Presentation being sent again by the producer!?");
+                case (PRESENTATION) -> logger.warning("Presentation being sent again by the leader!?");
                 default -> logger.warning("Message type sent by leader cannot be identified: "+messageType);
             }
 
@@ -950,11 +852,11 @@ public final class EmbeddedVmsEventHandler extends SignalingStoppableRunnable {
         }
 
         @Override
-        public void failed(Throwable exc, LockConnectionMetadata connectionMetadata) {
+        public void failed(Throwable exc, SimpleConnectionCtx connectionMetadata) {
             if (connectionMetadata.channel.isOpen()){
                 connectionMetadata.channel.read(connectionMetadata.readBuffer, connectionMetadata, this);
             } else {
-                leader.off();
+                // stop worker unilaterally
                 leaderWorker.stop();
             }
         }

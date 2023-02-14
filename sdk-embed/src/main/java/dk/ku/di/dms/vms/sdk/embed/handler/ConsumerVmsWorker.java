@@ -2,8 +2,9 @@ package dk.ku.di.dms.vms.sdk.embed.handler;
 
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.utils.BatchUtils;
-import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousSocketChannel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TimerTask;
@@ -26,11 +27,17 @@ final class ConsumerVmsWorker extends TimerTask {
 
     private final Logger logger;
     private final ConsumerVms consumerVms;
-    private final LockConnectionMetadata connectionMetadata;
 
-    public ConsumerVmsWorker(ConsumerVms consumerVms, LockConnectionMetadata connectionMetadata){
+    private final AsynchronousSocketChannel channel;
+
+    private final ByteBuffer writeBuffer;
+
+    public ConsumerVmsWorker(ConsumerVms consumerVms,
+                             AsynchronousSocketChannel channel,
+                             ByteBuffer writeBuffer){
         this.consumerVms = consumerVms;
-        this.connectionMetadata = connectionMetadata;
+        this.channel = channel;
+        this.writeBuffer = writeBuffer;
         this.logger = Logger.getLogger("vms-worker-"+consumerVms.hashCode());
         this.logger.setUseParentHandlers(true);
     }
@@ -58,19 +65,19 @@ final class ConsumerVmsWorker extends TimerTask {
 
         while(remaining > 0){
             this.logger.info("VMS worker submitting batch: "+batchToSend);
-            remaining = BatchUtils.assembleBatchPayload( remaining, events, this.connectionMetadata.writeBuffer);
-            this.connectionMetadata.writeBuffer.flip();
+            remaining = BatchUtils.assembleBatchPayload( remaining, events, this.writeBuffer);
+            this.writeBuffer.flip();
             try {
-                int result = this.connectionMetadata.channel.write(this.connectionMetadata.writeBuffer).get();
+                int result = this.channel.write(this.writeBuffer).get();
                 this.logger.info("Batch has been sent. Result: " + result);
-                this.connectionMetadata.writeBuffer.clear();
+                this.writeBuffer.clear();
             } catch (InterruptedException | ExecutionException e) {
                 this.logger.warning("Error submitting batch");
                 // return non-processed events to original location or what?
-                if (!this.connectionMetadata.channel.isOpen()) {
+                if (!this.channel.isOpen()) {
                     this.logger.warning("The VMS is offline");
                 }
-                this.connectionMetadata.writeBuffer.clear();
+                this.writeBuffer.clear();
 
                 // return events to the deque
                 for (TransactionEvent.Payload event : events) {

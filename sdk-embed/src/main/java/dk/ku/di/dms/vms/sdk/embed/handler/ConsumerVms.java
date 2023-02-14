@@ -37,8 +37,4 @@ public class ConsumerVms extends NetworkAddress {
         this.transactionEventsPerBatch = new ConcurrentHashMap<>();
     }
 
-    public ConsumerVms me(){
-        return this;
-    }
-
 }

@@ -9,7 +9,6 @@ import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Comparator;
 import java.util.Map;
@@ -19,7 +18,6 @@ import java.util.logging.Logger;
 
 /**
  * <a href="https://dzone.com/articles/simple-http-server-in-java">...</a>
- * It would be nice to compare both implementations.
  */
 public final class EdgeHttpServerBuilder {
 
