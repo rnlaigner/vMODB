@@ -6,15 +6,17 @@ import dk.ku.di.dms.vms.modb.api.interfaces.IRepository;
 import dk.ku.di.dms.vms.modb.api.query.statement.IStatement;
 import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
-import dk.ku.di.dms.vms.modb.common.schema.VmsDataSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsTableSchema;
 import dk.ku.di.dms.vms.modb.definition.Row;
 import dk.ku.di.dms.vms.modb.definition.Table;
 import dk.ku.di.dms.vms.modb.query.analyzer.exception.AnalyzerException;
-import dk.ku.di.dms.vms.modb.transaction.OperationAPI;
 import dk.ku.di.dms.vms.modb.transaction.TransactionFacade;
+import dk.ku.di.dms.vms.modb.transaction.api.OperationAPI;
 import dk.ku.di.dms.vms.modb.transaction.internal.CircularBuffer;
 import dk.ku.di.dms.vms.sdk.core.facade.IVmsRepositoryFacade;
 import dk.ku.di.dms.vms.sdk.embed.entity.EntityUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.lang.invoke.VarHandle;
@@ -23,7 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
+import java.util.function.BiConsumer;
 
 /**
  * The embed repository facade contains references to DBMS components
@@ -31,9 +33,9 @@ import java.util.logging.Logger;
  */
 public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, InvocationHandler {
 
-    private static final Logger LOGGER = Logger.getLogger(EmbedRepositoryFacade.class.getName());
+    private final Logger logger = LoggerFactory.getLogger(EmbedRepositoryFacade.class);
 
-    private final VmsDataSchema schema;
+    private final VmsTableSchema schema;
 
     private final Constructor<? extends IEntity<?>> entityConstructor;
 
@@ -48,7 +50,33 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
 
     private final Map<String, VarHandle> pkFieldMap;
 
-    private final VarHandle pkPrimitive;
+    private static class PrimitivePkBuilder implements BiConsumer<Object,Object[]> {
+        private final VarHandle pkBuilder;
+        public PrimitivePkBuilder(VarHandle pkBuilder){
+            this.pkBuilder = pkBuilder;
+        }
+
+        @Override
+        public void accept(Object record, Object... keys) {
+            pkBuilder.set(record, keys[0]);
+        }
+    }
+
+    private static class NonPrimitivePkBuilder implements BiConsumer<Object,Object[]> {
+        private final VarHandle[] handles;
+        public NonPrimitivePkBuilder(VarHandle[] handles){
+            this.handles = handles;
+        }
+
+        @Override
+        public void accept(Object record, Object... keys) {
+            for(int i = 0; i < handles.length; i++){
+                handles[i].set(record, keys[i]);
+            }
+        }
+    }
+
+    private final BiConsumer<Object,Object[]> pkBuilder;
 
     /**
      * Cache of objects in memory.
@@ -68,35 +96,26 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
 
     @SuppressWarnings({"unchecked"})
     public EmbedRepositoryFacade(final Class<? extends IRepository<?,?>> repositoryClazz,
-                                 VmsDataSchema schema,
+                                 VmsTableSchema schema,
                                  Map<String, Tuple<SelectStatement, Type>> staticQueriesMap
                                  ) throws NoSuchMethodException, NoSuchFieldException, IllegalAccessException {
-
         this.schema = schema;
-
         Type[] types = ((ParameterizedType) repositoryClazz.getGenericInterfaces()[0]).getActualTypeArguments();
-
         Class<? extends IEntity<?>> entityClazz = (Class<? extends IEntity<?>>) types[1];
-
         Class<? extends Serializable> pkClazz = (Class<? extends Serializable>) types[0];
-
         this.entityConstructor = entityClazz.getDeclaredConstructor();
-
         // https://stackoverflow.com/questions/43558270/correct-way-to-use-varhandle-in-java-9
         this.entityFieldMap = EntityUtils.getFieldsFromEntity(entityClazz, schema );
-
         if(!pkClazz.isPrimitive()){
             this.pkFieldMap = EntityUtils.getFieldsFromPk(pkClazz);
-            this.pkPrimitive = null;
+            // array of objects
+            this.pkBuilder = new NonPrimitivePkBuilder( EntityUtils.getFieldsOfPk(pkClazz, schema) );
         } else {
             this.pkFieldMap = Collections.emptyMap();
-            this.pkPrimitive = EntityUtils.getPrimitiveFieldOfPk(pkClazz, schema);
+            this.pkBuilder = new PrimitivePkBuilder(EntityUtils.getPrimitiveFieldOfPk(pkClazz, schema));
         }
-
         this.staticQueriesMap = staticQueriesMap;
-
         this.objectCacheStore = new CircularBuffer(schema.columnNames.length);
-
     }
 
     /**
@@ -110,7 +129,7 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
 
     /**
      * The actual facade for database operations called by the application-level code.
-     * @param proxy the virtual microservice caller method (a subtransaction)
+     * @param proxy the virtual microservice caller method (a sub-transaction)
      * @param method the repository method called
      * @param args the function call parameters
      * @return A DTO (i.e., any class where attribute values are final), a row {@link Row}, or set of rows
@@ -118,9 +137,7 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
     @Override
     @SuppressWarnings("unchecked")
     public Object invoke(Object proxy, Method method, Object[] args) {
-
         String methodName = method.getName();
-
         switch (methodName) {
             case "lookupByKey" -> {
 
@@ -148,28 +165,28 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
             }
             case "deleteAll" -> this.deleteAll((List<Object>) args[0]);
             case "update" -> {
-                Object[] values = extractFieldValuesFromEntityObject(args[0]);
+                Object[] values = this.extractFieldValuesFromEntityObject(args[0]);
                 this.transactionFacade.update(this.table, values);
             }
             case "updateAll" -> this.updateAll((List<Object>) args[0]);
             case "insert" -> {
-                Object[] values = extractFieldValuesFromEntityObject(args[0]);
+                Object[] values = this.extractFieldValuesFromEntityObject(args[0]);
                 this.transactionFacade.insert(this.table, values);
             }
             case "insertAndGet" -> {
-                // cache the entity
-                Object cached = args[0];
-                Object[] values = extractFieldValuesFromEntityObject(args[0]);
+                // in the future: cache the entity
+                Object entity = args[0];
+                Object[] values = this.extractFieldValuesFromEntityObject(args[0]);
                 Object key_ = this.transactionFacade.insertAndGet(this.table, values);
-                this.setKeyValueOnObject( key_, cached );
-                return cached;
+                this.setKeyValueOnObject( key_, entity );
+                return entity;
             }
             case "insertAll" -> this.insertAll((List<Object>) args[0]);
             case "fetch" -> {
                 // dispatch to analyzer passing the clazz param
                 // always select because of the repository API
                 SelectStatement selectStatement = ((IStatement) args[0]).asSelectStatement();
-                return fetch(selectStatement, (Type) args[1]);
+                return this.fetch(selectStatement, (Type) args[1]);
             }
             case "issue" -> {
                 try {
@@ -187,7 +204,7 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
                 if (selectStatement == null)
                     throw new IllegalStateException("Unknown repository operation.");
 
-                return fetch(selectStatement.t1(), selectStatement.t2());
+                return this.fetch(selectStatement.t1(), selectStatement.t2());
 
             }
         }
@@ -198,9 +215,9 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
     private IEntity<?> parseObjectIntoEntity( Object[] object ){
         // all entities must have default constructor
         try {
-            IEntity<?> entity = entityConstructor.newInstance();
+            IEntity<?> entity = this.entityConstructor.newInstance();
             int i = 0;
-            for(var entry : entityFieldMap.entrySet()){
+            for(var entry : this.entityFieldMap.entrySet()){
                 entry.getValue().set( entity, object[i] );
                 i++;
             }
@@ -215,30 +232,30 @@ public final class EmbedRepositoryFacade implements IVmsRepositoryFacade, Invoca
      */
     private Object[] extractFieldValuesFromKeyObject(Object keyObject) {
 
-        Object[] values = new Object[pkFieldMap.size()];
+        Object[] values = new Object[this.pkFieldMap.size()];
 
         int fieldIdx = 0;
         // get values from key object
-        for(String columnName : pkFieldMap.keySet()){
-            values[fieldIdx] = pkFieldMap.get(columnName).get(keyObject);
+        for(String columnName : this.pkFieldMap.keySet()){
+            values[fieldIdx] = this.pkFieldMap.get(columnName).get(keyObject);
             fieldIdx++;
         }
         return values;
     }
 
-    private void setKeyValueOnObject( Object key, Object object ){
-        pkPrimitive.set(object, key);
+    private void setKeyValueOnObject( Object object, Object... keys ){
+        this.pkBuilder.accept(object, keys);
     }
 
     private Object[] extractFieldValuesFromEntityObject(Object entityObject) {
 
-        Object[] values = new Object[schema.columnNames.length];
+        Object[] values = new Object[this.schema.columnNames.length];
         // TODO objectCacheStore.peek()
 
         int fieldIdx = 0;
         // get values from entity
-        for(String columnName : schema.columnNames){
-            values[fieldIdx] = entityFieldMap.get(columnName).get(entityObject);
+        for(String columnName : this.schema.columnNames){
+            values[fieldIdx] = this.entityFieldMap.get(columnName).get(entityObject);
             fieldIdx++;
         }
         return values;

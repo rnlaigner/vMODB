@@ -14,14 +14,16 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * <a href="https://dzone.com/articles/simple-http-server-in-java">...</a>
  */
 public final class EdgeHttpServerBuilder {
 
-    private static final Logger logger = Logger.getLogger("httpServer");
+    private static final Logger logger = LoggerFactory.getLogger("httpServer");
 
     public static HttpServer start(IVmsSerdesProxy serdesProxy,
                                    BlockingQueue<TransactionInput> parsedTransactionRequests,

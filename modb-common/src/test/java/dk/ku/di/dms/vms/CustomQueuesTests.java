@@ -2,12 +2,12 @@ package dk.ku.di.dms.vms;
 
 import dk.ku.di.dms.vms.modb.common.data_structure.OneProducerOneConsumerQueue;
 import org.junit.Test;
-
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CustomQueuesTests {
 
-    protected static final Logger logger = Logger.getLogger("CustomQueuesTests");
+    protected static final Logger logger = LoggerFactory.getLogger(CustomQueuesTests.class);
 
     private static final OneProducerOneConsumerQueue<Integer> queue =
             new OneProducerOneConsumerQueue<>(1);

@@ -2,7 +2,10 @@ package dk.ku.di.dms.vms.modb.transaction.multiversion.index;
 
 import dk.ku.di.dms.vms.modb.common.constraint.ConstraintEnum;
 import dk.ku.di.dms.vms.modb.common.constraint.ConstraintReference;
+import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
 import dk.ku.di.dms.vms.modb.common.transaction.TransactionMetadata;
+import dk.ku.di.dms.vms.modb.common.transaction.TransactionWrite;
+import dk.ku.di.dms.vms.modb.common.transaction.WriteType;
 import dk.ku.di.dms.vms.modb.definition.Header;
 import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
@@ -15,12 +18,12 @@ import dk.ku.di.dms.vms.modb.index.unique.UniqueHashIndex;
 import dk.ku.di.dms.vms.modb.query.planner.filter.FilterContext;
 import dk.ku.di.dms.vms.modb.query.planner.filter.FilterType;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
-import dk.ku.di.dms.vms.modb.transaction.multiversion.IPrimaryKeyGenerator;
+import dk.ku.di.dms.vms.modb.transaction.multiversion.pk.IPrimaryKeyGenerator;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.OperationSetOfKey;
-import dk.ku.di.dms.vms.modb.transaction.multiversion.TransactionWrite;
-import dk.ku.di.dms.vms.modb.transaction.multiversion.WriteType;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static dk.ku.di.dms.vms.modb.common.constraint.ConstraintConstants.*;
@@ -51,22 +54,6 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     // for PK generation. for now, all strategies use this (auto, sequence, etc)
     private final IPrimaryKeyGenerator<?> primaryKeyGenerator;
 
-    /**
-     * Optimization is verifying whether this thread is R or RW.
-     * If R, no need to allocate a List
-     */
-    private final ThreadLocal<List<IKey>> KEY_WRITES = ThreadLocal.withInitial(() -> {
-        if(!TransactionMetadata.TRANSACTION_CONTEXT.get().readOnly) {
-            var pulled = writeListBuffer.poll();
-            if(pulled == null)
-                return new ArrayList<>(2);
-            return pulled;
-        }
-        return Collections.emptyList();
-    });
-
-    private static final Deque<List<IKey>> writeListBuffer = new ArrayDeque<>();
-
     public PrimaryIndex(UniqueHashIndex primaryKeyIndex) {
         this.primaryKeyIndex = primaryKeyIndex;
         this.updatesPerKeyMap = new ConcurrentHashMap<>();
@@ -81,7 +68,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
 
     @Override
     public boolean equals(Object o) {
-        return this.hashCode() == o.hashCode();
+        return o instanceof PrimaryIndex && this.hashCode() == o.hashCode();
     }
 
     @Override
@@ -393,34 +380,31 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             } else
                 return operationSet.lastWriteType != WriteType.DELETE ? operationSet.lastVersion : null;
         }
-
         // it is a readonly
         if(this.primaryKeyIndex.exists(key)) {
             return this.primaryKeyIndex.record(key);
         }
-
         return null;
     }
 
     /**
      * TODO if cached value is not null, then extract the updated columns to make constraint violation check faster
-     *
-     * @return
      */
+    @Override
     public boolean insert(IKey key, Object[] values) {
 
         OperationSetOfKey operationSet = this.updatesPerKeyMap.get( key );
 
         boolean pkConstraintViolation;
         // if not delete, violation (it means some tid has written to this PK before)
-        if ( operationSet != null ){
+        if(operationSet != null){
             pkConstraintViolation = operationSet.lastWriteType != WriteType.DELETE;
         } else {
             // let's check now the index itself. it exists, it is a violation
-            pkConstraintViolation = primaryKeyIndex.exists(key);
+            pkConstraintViolation = this.primaryKeyIndex.exists(key);
         }
 
-        if(pkConstraintViolation || nonPkConstraintViolation(values)) {
+        if(pkConstraintViolation || this.nonPkConstraintViolation(values)) {
             return false;
         }
 
@@ -436,32 +420,39 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         operationSet.lastWriteType = WriteType.INSERT;
         operationSet.lastVersion = values;
 
-        KEY_WRITES.get().add(key);
-
         return true;
 
     }
 
-    public IKey insertAndGet(Object[] values){
-
+    /**
+     * Pending: On abort, must return the primary key generator to a value
+     * previous to the start of the batch
+     */
+    public Tuple<Object, IKey> insertAndGet(Object[] values){
         if(this.primaryKeyGenerator != null){
             Object key_ = this.primaryKeyGenerator.next();
-
+            // when generating, it is always the first-and-only column
             values[this.primaryKeyIndex.columns()[0]] = key_;
-
             IKey key = KeyUtils.buildKey( key_ );
             if(this.insert( key, values )){
-                return key;
+                return new Tuple<>(key_, key);
             }
         } else {
-            IKey key = KeyUtils.buildPrimaryKey(this.schema(), values);
+            int[] pkColumns = this.schema().getPrimaryKeyColumns();
+            IKey key = KeyUtils.buildRecordKey(pkColumns, values);
             if(this.insert( key, values )){
-                return key;
+                Object[] pkValues = new Object[pkColumns.length];
+                // build pk values array
+                for(int i = 0; i < pkColumns.length; i++){
+                    pkValues[i] = values[pkColumns[i]];
+                }
+                return new Tuple<>(pkValues, key);
             }
         }
         return null;
     }
 
+    @Override
     public boolean update(IKey key, Object[] values) {
 
         OperationSetOfKey operationSet = this.updatesPerKeyMap.get( key );
@@ -470,7 +461,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         if ( operationSet != null ){
             pkConstraintViolation = operationSet.lastWriteType == WriteType.DELETE;
         } else {
-            pkConstraintViolation = !primaryKeyIndex.exists(key);
+            pkConstraintViolation = !this.primaryKeyIndex.exists(key);
         }
 
         if(pkConstraintViolation || nonPkConstraintViolation(values)) {
@@ -489,12 +480,11 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         operationSet.lastWriteType = WriteType.UPDATE;
         operationSet.lastVersion = values;
 
-        KEY_WRITES.get().add(key);
-
         return true;
 
     }
 
+    @Override
     public boolean delete(IKey key) {
 
         // O(1)
@@ -509,10 +499,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
                 operationSet.updateHistoryMap.put(TransactionMetadata.TRANSACTION_CONTEXT.get().tid, entry);
                 operationSet.lastWriteType = WriteType.DELETE;
 
-                KEY_WRITES.get().add(key);
-
                 return true;
-
             }
             // does this key even exist? if not, don't even need to save it on transaction metadata
 
@@ -527,52 +514,33 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             operationSet.updateHistoryMap.put(TransactionMetadata.TRANSACTION_CONTEXT.get().tid, entry);
             operationSet.lastWriteType = WriteType.DELETE;
 
-            KEY_WRITES.get().add(key);
-
             return true;
-
         }
 
         return false;
-
     }
 
     /**
      * Called when a constraint is violated, leading to a transaction abort
      */
-    public void undoTransactionWrites(){
-
-        var writesOfTid = KEY_WRITES.get();
-        if(writesOfTid == null) return;
-
-        for(var key : writesOfTid) {
-            // do we have a record written in the corresponding index? always yes. if no, it is a bug
-            OperationSetOfKey operationSetOfKey = this.updatesPerKeyMap.get(key);
-            operationSetOfKey.updateHistoryMap.poll();
-        }
-
-        writesOfTid.clear();
-        writeListBuffer.add(writesOfTid);
-        KEY_WRITES.set(null);
-
+    @Override
+    public void undoTransactionWrite(IKey key){
+        // do we have a record written in the corresponding index? always yes. if no, it is a bug
+        OperationSetOfKey operationSetOfKey = this.updatesPerKeyMap.get(key);
+        operationSetOfKey.updateHistoryMap.poll();
     }
 
+    @Override
     public void installWrites(){
-
         for(Map.Entry<IKey, OperationSetOfKey> entry : this.updatesPerKeyMap.entrySet()) {
-
             OperationSetOfKey operationSetOfKey = this.updatesPerKeyMap.get(entry.getKey());
-
             switch (operationSetOfKey.lastWriteType){
                 case UPDATE -> this.primaryKeyIndex.update(entry.getKey(), operationSetOfKey.lastVersion);
                 case INSERT -> this.primaryKeyIndex.insert(entry.getKey(), operationSetOfKey.lastVersion);
                 case DELETE -> this.primaryKeyIndex.delete(entry.getKey());
             }
-
             operationSetOfKey.updateHistoryMap.clear();
-
         }
-
     }
 
     public ReadWriteIndex<IKey> underlyingIndex(){

@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.utils.BatchUtils;
 
 import java.nio.ByteBuffer;
@@ -9,7 +9,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutionException;
-import java.util.logging.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This thread encapsulates the batch of events sending task
@@ -38,8 +40,7 @@ final class ConsumerVmsWorker extends TimerTask {
         this.consumerVms = consumerVms;
         this.channel = channel;
         this.writeBuffer = writeBuffer;
-        this.logger = Logger.getLogger("vms-worker-"+consumerVms.hashCode());
-        this.logger.setUseParentHandlers(true);
+        this.logger = LoggerFactory.getLogger("vms-worker-"+consumerVms);
     }
 
     @Override
@@ -48,10 +49,7 @@ final class ConsumerVmsWorker extends TimerTask {
         this.logger.info("VMS worker scheduled at: "+System.currentTimeMillis());
 
         // find the smallest batch. to avoid synchronizing with main thread
-        long batchToSend = Long.MAX_VALUE;
-        for(long batchId : this.consumerVms.transactionEventsPerBatch.keySet()){
-            if(batchId < batchToSend) batchToSend = batchId;
-        }
+        long batchToSend = this.consumerVms.transactionEventsPerBatch.firstKey();
 
         if(this.consumerVms.transactionEventsPerBatch.get(batchToSend) == null){
             return;
@@ -72,10 +70,10 @@ final class ConsumerVmsWorker extends TimerTask {
                 this.logger.info("Batch has been sent. Result: " + result);
                 this.writeBuffer.clear();
             } catch (InterruptedException | ExecutionException e) {
-                this.logger.warning("Error submitting batch");
+                this.logger.warn("Error submitting batch");
                 // return non-processed events to original location or what?
                 if (!this.channel.isOpen()) {
-                    this.logger.warning("The VMS is offline");
+                    this.logger.warn("The VMS is offline");
                 }
                 this.writeBuffer.clear();
 

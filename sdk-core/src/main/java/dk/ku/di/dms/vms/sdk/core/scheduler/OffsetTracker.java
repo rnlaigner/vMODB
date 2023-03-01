@@ -9,6 +9,7 @@ class OffsetTracker {
 
     enum OffsetStatus {
         NEW,
+        SCHEDULED, // it means it is the current offset
         FINISHED_SUCCESSFULLY,
         FINISHED_WITH_ERROR
     }
@@ -28,19 +29,28 @@ class OffsetTracker {
     }
 
     private void moveToDoneState(){
+        assert this.status == OffsetStatus.SCHEDULED;
         this.status = OffsetStatus.FINISHED_SUCCESSFULLY;
     }
 
-    private void moveToErrorState() { this.status = OffsetStatus.FINISHED_WITH_ERROR; }
+    private void moveToErrorState() {
+        assert this.status == OffsetStatus.SCHEDULED;
+        this.status = OffsetStatus.FINISHED_WITH_ERROR;
+    }
+
+    void signalScheduled() {
+        assert this.status == OffsetStatus.NEW;
+        this.status = OffsetStatus.SCHEDULED;
+    }
 
     public void signalTaskFinished(){
         assert this.remainingFinishedTasks > 0;
         this.remainingFinishedTasks--;
-        if(remainingFinishedTasks == 0) moveToDoneState();
+        if(this.remainingFinishedTasks == 0) this.moveToDoneState();
     }
 
     public void signalError(){
-        moveToErrorState();
+        this.moveToErrorState();
     }
 
     public long tid() {

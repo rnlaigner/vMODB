@@ -1,14 +1,11 @@
 package dk.ku.di.dms.vms.sdk.core.event.channel;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionAbort;
 import dk.ku.di.dms.vms.sdk.core.operational.InboundEvent;
-import dk.ku.di.dms.vms.sdk.core.operational.OutboundEventResult;
 import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionResult;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.LinkedTransferQueue;
 
 /**
  *   This class has the objective to decouple completely the

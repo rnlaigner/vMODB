@@ -1,8 +1,7 @@
 package dk.ku.di.dms.vms.modb.definition;
 
 import dk.ku.di.dms.vms.modb.index.IIndexKey;
-import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
-import dk.ku.di.dms.vms.modb.definition.key.IKey;
+import dk.ku.di.dms.vms.modb.index.unique.UniqueHashIndex;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.NonUniqueSecondaryIndex;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.PrimaryIndex;
 
@@ -51,9 +50,14 @@ public final class Table {
     private final Map<PrimaryIndex, int[]> foreignKeys;
 
     /**
-     * Indexes from other tables pointing
-     * to the primary index of this table.
-     * This answers: Who is pointing to me? Who am I parenting?
+     * Why external foreign key is not handled through the {@link PrimaryIndex} class?
+     * Because there are no updatesPerKeyMap and key generator in replicated tables.
+     */
+    private final Map<PrimaryIndex, int[]> externalForeignKeys;
+
+    /**
+     * Indexes from other tables pointing to the primary index of this table.
+     * This attribute answers: Who is pointing to this table? Who is this table parenting?
       */
     public final List<NonUniqueSecondaryIndex> children;
 
@@ -65,38 +69,16 @@ public final class Table {
     public final Map<IIndexKey, NonUniqueSecondaryIndex> secondaryIndexMap;
 
     public Table(String name, Schema schema, PrimaryIndex primaryIndex,
-                    Map<PrimaryIndex, int[]> foreignKeys,
-                    List<NonUniqueSecondaryIndex> secondaryIndexes,
-                    List<NonUniqueSecondaryIndex> children){
+                    Map<PrimaryIndex, int[]> foreignKeys, Map<PrimaryIndex, int[]> externalForeignKeys,
+                    List<NonUniqueSecondaryIndex> secondaryIndexes, List<NonUniqueSecondaryIndex> children){
         this.name = name;
         this.schema = schema;
         this.hashCode = name.hashCode();
         this.primaryIndex = primaryIndex;
+        this.externalForeignKeys = externalForeignKeys;
         this.foreignKeys = foreignKeys;
         this.secondaryIndexMap = secondaryIndexes.stream().collect(Collectors.toMap(NonUniqueSecondaryIndex::key, Function.identity()));
         this.children = children;
-    }
-
-    public Table(String name, Schema schema, PrimaryIndex primaryIndex,
-                    Map<PrimaryIndex, int[]> foreignKeys,
-                    List<NonUniqueSecondaryIndex> secondaryIndexes){
-        this.name = name;
-        this.schema = schema;
-        this.hashCode = name.hashCode();
-        this.primaryIndex = primaryIndex;
-        this.foreignKeys = foreignKeys;
-        this.secondaryIndexMap =  secondaryIndexes.stream().collect(Collectors.toMap(NonUniqueSecondaryIndex::key, Function.identity()));
-        this.children = Collections.emptyList();
-    }
-
-    public Table(String name, Schema schema, PrimaryIndex primaryIndex, Map<PrimaryIndex, int[]> foreignKeys){
-        this.name = name;
-        this.schema = schema;
-        this.hashCode = name.hashCode();
-        this.primaryIndex = primaryIndex;
-        this.secondaryIndexMap = Collections.emptyMap();
-        this.foreignKeys = foreignKeys;
-        this.children = Collections.emptyList();
     }
 
     public Table(String name, Schema schema, PrimaryIndex primaryIndex){
@@ -104,6 +86,7 @@ public final class Table {
         this.schema = schema;
         this.hashCode = name.hashCode();
         this.primaryIndex = primaryIndex;
+        this.externalForeignKeys = Collections.emptyMap();
         this.secondaryIndexMap = Collections.emptyMap();
         this.foreignKeys = Collections.emptyMap();
         this.children = Collections.emptyList();
@@ -127,16 +110,16 @@ public final class Table {
         return this.name;
     }
 
-    public ReadWriteIndex<IKey> underlyingPrimaryKeyIndex(){
-        return this.primaryIndex.underlyingIndex();
-    }
-
     public PrimaryIndex primaryKeyIndex(){
         return this.primaryIndex;
     }
 
     public Map<PrimaryIndex, int[]> foreignKeys(){
         return this.foreignKeys;
+    }
+
+    public Map<PrimaryIndex, int[]> externalForeignKeys() {
+        return this.externalForeignKeys;
     }
 
 }

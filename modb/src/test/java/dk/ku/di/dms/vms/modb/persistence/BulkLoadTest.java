@@ -8,6 +8,8 @@ import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.Table;
 import dk.ku.di.dms.vms.modb.definition.key.SimpleKey;
 import dk.ku.di.dms.vms.modb.query.TestCommon;
+import dk.ku.di.dms.vms.modb.query.analyzer.Analyzer;
+import dk.ku.di.dms.vms.modb.query.planner.SimplePlanner;
 import dk.ku.di.dms.vms.modb.transaction.TransactionFacade;
 import org.junit.Test;
 
@@ -29,9 +31,11 @@ public class BulkLoadTest {
             produceItem(buffer, i);
         }
 
-        TransactionFacade.build(map).bulkInsert(table, buffer, maxItems);
+        SimplePlanner planner = new SimplePlanner();
+        Analyzer analyzer = new Analyzer(map);
+        TransactionFacade.build(map, replicaSchema, planner, analyzer).bulkInsert(table, buffer, maxItems);
 
-        long resAddress = table.underlyingPrimaryKeyIndex().address(SimpleKey.of(7));
+        long resAddress = table.primaryKeyIndex().underlyingIndex().address(SimpleKey.of(7));
 
         var unsafe = MemoryUtils.UNSAFE;
         assert unsafe.getInt(resAddress + Schema.RECORD_HEADER) == 7;
@@ -53,9 +57,11 @@ public class BulkLoadTest {
             produceItem(buffer, i);
         }
 
-        TransactionFacade.build(map).bulkInsert(table, buffer, maxItems);
+        SimplePlanner planner = new SimplePlanner();
+        Analyzer analyzer = new Analyzer(map);
+        TransactionFacade.build(map, replicaSchema, planner, analyzer).bulkInsert(table, buffer, maxItems);
 
-        long resAddress = table.underlyingPrimaryKeyIndex().address(SimpleKey.of(7));
+        long resAddress = table.primaryKeyIndex().underlyingIndex().address(SimpleKey.of(7));
 
         var unsafe = MemoryUtils.UNSAFE;
         assert unsafe.getInt(resAddress + Schema.RECORD_HEADER) == 7;

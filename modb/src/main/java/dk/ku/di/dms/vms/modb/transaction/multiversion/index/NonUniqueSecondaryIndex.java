@@ -10,12 +10,9 @@ import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.non_unique.NonUniqueHashIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 import dk.ku.di.dms.vms.modb.storage.record.OrderedRecordBuffer;
-import dk.ku.di.dms.vms.modb.transaction.multiversion.WriteType;
+import dk.ku.di.dms.vms.modb.common.transaction.WriteType;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static dk.ku.di.dms.vms.modb.storage.record.OrderedRecordBuffer.deltaKey;
@@ -232,7 +229,7 @@ public final class NonUniqueSecondaryIndex implements IMultiVersionIndex {
     }
 
     @Override
-    public void undoTransactionWrites(){
+    public void undoTransactionWrite(IKey key){
         WriteNode currentNode = KEY_WRITES.get();
         while (currentNode != null){
             if(currentNode.type == WriteType.INSERT)
@@ -253,6 +250,11 @@ public final class NonUniqueSecondaryIndex implements IMultiVersionIndex {
 
     @Override
     public boolean update(IKey key, Object[] record) {
+        return false;
+    }
+
+    @Override
+    public boolean delete(IKey key) {
         return false;
     }
 

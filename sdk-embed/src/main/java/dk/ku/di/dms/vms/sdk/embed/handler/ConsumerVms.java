@@ -1,12 +1,12 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.meta.NetworkAddress;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.replication.Subscription;
 
-import java.util.Map;
-import java.util.Timer;
+import java.util.*;
 import java.util.concurrent.BlockingDeque;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 /**
  * Identification of a VMS that is ought to receive any sort of events
@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ConsumerVms extends NetworkAddress {
 
-    public transient final Map<Long, BlockingDeque<TransactionEvent.Payload>> transactionEventsPerBatch;
+    public transient final SortedMap<Long, BlockingDeque<TransactionEvent.Payload>> transactionEventsPerBatch;
 
     /**
      * Timer for writing to each VMS connection
@@ -26,15 +26,22 @@ public class ConsumerVms extends NetworkAddress {
       */
     public transient Timer timer;
 
+    // table and columns to be replicated
+    // public final Map<String, List<String>> replicationConfig = new HashMap<>();
+    // Subscription
+    public final Set<String> subscribedTables;
+
     public ConsumerVms(String host, int port) {
         super(host, port);
-        this.transactionEventsPerBatch = new ConcurrentHashMap<>();
+        this.transactionEventsPerBatch = new ConcurrentSkipListMap<>();
+        this.subscribedTables = new HashSet<>();
     }
 
     public ConsumerVms(NetworkAddress address, Timer timer) {
         super(address.host, address.port);
         this.timer = timer;
-        this.transactionEventsPerBatch = new ConcurrentHashMap<>();
+        this.transactionEventsPerBatch = new ConcurrentSkipListMap<>();
+        this.subscribedTables = new HashSet<>();
     }
 
 }

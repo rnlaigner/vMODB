@@ -1,12 +1,14 @@
 package dk.ku.di.dms.vms.playground.micro_tpcc;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
-import java.util.logging.Logger;
 
 public class App {
 
-    protected static final Logger logger = Logger.getLogger("App");
+    static final Logger logger = LoggerFactory.getLogger(App.class);
 
     public static void main( String[] args ) throws IOException, ExecutionException, InterruptedException {
 

@@ -7,19 +7,20 @@ import dk.ku.di.dms.vms.coordinator.server.coordinator.options.CoordinatorOption
 import dk.ku.di.dms.vms.coordinator.server.schema.TransactionInput;
 import dk.ku.di.dms.vms.coordinator.transaction.EventIdentifier;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
+import dk.ku.di.dms.vms.modb.common.constraint.ExternalVmsForeignKeyReference;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
-import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitAck;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitCommand;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitInfo;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchComplete;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.follower.BatchReplication;
-import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
-import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsEventSchema;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitAck;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitCommand;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitInfo;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchComplete;
+import dk.ku.di.dms.vms.modb.common.schema.batch.follower.BatchReplication;
+import dk.ku.di.dms.vms.modb.common.schema.control.Presentation;
+import dk.ku.di.dms.vms.modb.common.schema.meta.NetworkAddress;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionAbort;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 import dk.ku.di.dms.vms.web_common.runnable.SignalingStoppableRunnable;
@@ -36,14 +37,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static dk.ku.di.dms.vms.coordinator.election.Constants.*;
 import static dk.ku.di.dms.vms.coordinator.server.coordinator.options.BatchReplicationStrategy.*;
 import static dk.ku.di.dms.vms.coordinator.server.coordinator.runnable.IVmsWorker.Command.*;
-import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.PRESENTATION;
-import static dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation.SERVER_TYPE;
-import static dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation.VMS_TYPE;
-import static dk.ku.di.dms.vms.web_common.meta.Issue.Category.UNREACHABLE_NODE;
+import static dk.ku.di.dms.vms.modb.common.schema.Constants.PRESENTATION;
+import static dk.ku.di.dms.vms.modb.common.schema.control.Presentation.SERVER_TYPE;
+import static dk.ku.di.dms.vms.modb.common.schema.control.Presentation.VMS_TYPE;
 import static dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata.NodeType.SERVER;
 import static java.net.StandardSocketOptions.SO_KEEPALIVE;
 import static java.net.StandardSocketOptions.TCP_NODELAY;
@@ -84,7 +85,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
      * Those received from program start + those that joined later
      * shared with vms workers
      */
-    private final Map<String, VmsIdentifier> vmsMetadataMap;
+    private final Map<String, VmsContext> vmsMetadataMap;
 
     // the identification of this server
     private final ServerIdentifier me;
@@ -136,8 +137,8 @@ public final class Coordinator extends SignalingStoppableRunnable {
             return (BatchCommitAck.Payload)object;
         }
 
-        public VmsIdentifier asVmsIdentifier(){
-            return (VmsIdentifier)object;
+        public VmsContext asVmsContext(){
+            return (VmsContext)object;
         }
 
     }
@@ -263,7 +264,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
                 this.processTransactionInputEvents();
                 this.advanceCurrentBatchAndSpawnSendBatchOfEvents();
             } catch (InterruptedException e) {
-                this.logger.warning("Exception captured: "+e.getMessage());
+                this.logger.warn("Exception captured: "+e.getMessage());
             }
         }
 
@@ -293,7 +294,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
     private List<NetworkAddress> findConsumerVMSs(String outputEvent){
         List<NetworkAddress> list = new ArrayList<>(2);
         // can be the leader or a vms
-        for( VmsIdentifier vms : this.vmsMetadataMap.values() ){
+        for( VmsContext vms : this.vmsMetadataMap.values() ){
             if(vms.node().inputEventSchema.get(outputEvent) != null){
                 list.add(vms.node());
             }
@@ -346,7 +347,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
 
 
             } catch (Exception e) {
-                logger.warning("Error on accepting connection on " + me);
+                logger.warn("Error on accepting connection on " + me);
                 if (buffer != null) {
                     MemoryManager.releaseTemporaryDirectBuffer(buffer);
                 }
@@ -407,7 +408,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
 
         // if it is not a presentation, drop connection
         if(messageIdentifier != PRESENTATION){
-            logger.warning("A node is trying to connect without a presentation message:");
+            logger.warn("A node is trying to connect without a presentation message:");
             try (channel) { MemoryManager.releaseTemporaryDirectBuffer(buffer); } catch(Exception ignored){}
             return;
         }
@@ -433,7 +434,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
             }
         } else {
             // simply unknown... probably a bug?
-            this.logger.warning("Unknown type of client connection. Probably a bug? ");
+            this.logger.warn("Unknown type of client connection. Probably a bug? ");
             try (channel) { MemoryManager.releaseTemporaryDirectBuffer(buffer); } catch(Exception ignored){}
         }
 
@@ -493,11 +494,11 @@ public final class Coordinator extends SignalingStoppableRunnable {
         // a map of the last tid for each vms participating in this batch
         Map<String,Long> lastTidOfBatchPerVms = this.vmsMetadataMap.values().stream()
                 .filter(p-> p.node().batch == generateBatch)
-                .collect(Collectors.toMap( VmsIdentifier::getIdentifier, VmsIdentifier::getLastTidOfBatch) );
+                .collect(Collectors.toMap( VmsContext::getVmsName, VmsContext::getLastTidOfBatch) );
 
         Map<String,Long> previousBatchPerVms = this.vmsMetadataMap.values().stream()
                 .filter(p-> p.node().batch == generateBatch)
-                .collect(Collectors.toMap( VmsIdentifier::getIdentifier, VmsIdentifier::getPreviousBatch) );
+                .collect(Collectors.toMap( VmsContext::getVmsName, VmsContext::getPreviousBatch) );
 
         currBatchContext.seal(this.tid, lastTidOfBatchPerVms, previousBatchPerVms);
 
@@ -512,12 +513,12 @@ public final class Coordinator extends SignalingStoppableRunnable {
 
         // new TIDs will be emitted with the new batch in the transaction manager
         boolean isTerminal;
-        for(VmsIdentifier vms : this.vmsMetadataMap.values()){
+        for(VmsContext vms : this.vmsMetadataMap.values()){
 
             if(vms.node().batch != generateBatch) continue; // remove the ones not participating in this batch
 
             // the terminals inform the batch completion. that refrains the coordinator from waiting for all VMSs
-            isTerminal = currBatchContext.terminalVMSs.contains(vms.node().vmsIdentifier);
+            isTerminal = currBatchContext.terminalVMSs.contains(vms.node().name);
             // remove the nodes who have no event, unless it is a terminal
             // in this case, it must receive at least the batch commit info
             // to know when to send the batch complete message
@@ -595,7 +596,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
 
                 } catch (InterruptedException | ExecutionException | IOException e) {
                     // cannot connect to host
-                    this.logger.warning("Error connecting to host. I am " + me.host + ":" + me.port + " and the target is " + server.host + ":" + server.port);
+                    this.logger.warn("Error connecting to host. I am " + me.host + ":" + me.port + " and the target is " + server.host + ":" + server.port);
                     return null;
                 } finally {
                     if (channel != null && channel.isOpen()) {
@@ -609,8 +610,8 @@ public final class Coordinator extends SignalingStoppableRunnable {
                 // these threads need to block to wait for server response
 
             }, taskExecutor).exceptionallyAsync((x) -> {
-                defaultLogError(UNREACHABLE_NODE, server.hashCode());
-                return null;
+                logger.error("Replica cannot be reached out: "+x.getLocalizedMessage());
+                return Optional.empty();
             }, taskExecutor);
             i++;
         }
@@ -625,7 +626,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
                 j++;
             }
             if(serverVotes.isEmpty()){
-                this.logger.warning("The system has entered in a state that data may be lost since there are no followers to replicate the current batch offset.");
+                this.logger.warn("The system has entered in a state that data may be lost since there are no followers to replicate the current batch offset.");
             }
         } else if ( this.options.getBatchReplicationStrategy() == MAJORITY ){
 
@@ -638,12 +639,12 @@ public final class Coordinator extends SignalingStoppableRunnable {
             }
 
             if(serverVotes.size() < simpleMajority){
-                this.logger.warning("The system has entered in a state that data may be lost since a majority have not been obtained to replicate the current batch offset.");
+                this.logger.warn("The system has entered in a state that data may be lost since a majority have not been obtained to replicate the current batch offset.");
             }
         } else if ( this.options.getBatchReplicationStrategy() == ALL ) {
             CompletableFuture.allOf( promises ).join();
             if ( serverVotes.size() < nServers ) {
-                this.logger.warning("The system has entered in a state that data may be lost since there are missing votes to replicate the current batch offset.");
+                this.logger.warn("The system has entered in a state that data may be lost since there are missing votes to replicate the current batch offset.");
             }
         }
 
@@ -681,9 +682,9 @@ public final class Coordinator extends SignalingStoppableRunnable {
             // that ensures that, even if the vms is down, eventually it will come to life
             for (TransactionInput.Event inputEvent : transactionInput.events) {
                 EventIdentifier event = transactionDAG.inputEvents.get(inputEvent.name);
-                VmsIdentifier vms = this.vmsMetadataMap.get(event.targetVms);
+                VmsContext vms = this.vmsMetadataMap.get(event.targetVms);
                 if(vms == null) {
-                    this.logger.warning("VMS "+event.targetVms+" is unknown to the coordinator");
+                    this.logger.warn("VMS "+event.targetVms+" is unknown to the coordinator");
                     allKnown = false;
                     break;
                 }
@@ -703,7 +704,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
                 EventIdentifier event = transactionDAG.inputEvents.get(inputEvent.name);
 
                 // get the vms
-                VmsIdentifier vms = this.vmsMetadataMap.get(event.targetVms);
+                VmsContext vms = this.vmsMetadataMap.get(event.targetVms);
 
                 // a vms, although receiving an event from a "next" batch, cannot yet commit, since
                 // there may have additional events to arrive from the current batch
@@ -722,7 +723,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
                 String precedenceMapStr = this.serdesProxy.serializeMap(precedenceMap);
 
                 // write. think about failures/atomicity later
-                TransactionEvent.Payload txEvent = TransactionEvent.of(tid_, this.currentBatchOffset, inputEvent.name, inputEvent.payload, precedenceMapStr);
+                TransactionEvent.Payload txEvent = TransactionEvent.Payload.of(tid_, this.currentBatchOffset, inputEvent.name, inputEvent.payload, precedenceMapStr);
 
                 // assign this event, so... what? try to send later? if a vms fail, the last event is useless, we need to send the whole batch generated so far...
                 vms.worker().transactionEventsPerBatch(this.currentBatchOffset).add(txEvent);
@@ -731,7 +732,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
 
             // update the last tid of the terminals
             for(String vmsIdentifier : transactionDAG.terminalNodes){
-                VmsIdentifier vms = this.vmsMetadataMap.get(vmsIdentifier);
+                VmsContext vms = this.vmsMetadataMap.get(vmsIdentifier);
                 vms.node().lastTidOfBatch = tid_;
                 updateBatchAndPrecedenceIfNecessary(vms.node());
             }
@@ -739,7 +740,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
             // also update the last tid of the internal VMSs
             // to make sure they receive the batch commit command with the appropriate lastTid
             for(String vmsIdentifier : transactionDAG.internalNodes){
-                VmsIdentifier vms = this.vmsMetadataMap.get(vmsIdentifier);
+                VmsContext vms = this.vmsMetadataMap.get(vmsIdentifier);
                 vms.node().lastTidOfBatch = tid_;
                 updateBatchAndPrecedenceIfNecessary(vms.node());
             }
@@ -775,44 +776,39 @@ public final class Coordinator extends SignalingStoppableRunnable {
             try {
                 Message message = this.coordinatorQueue.take();
                 switch(message.type){
-
                     // receive metadata from all microservices
                     case VMS_IDENTIFIER -> {
                         // update metadata of this node so coordinator can reason about data dependencies
-                        this.vmsMetadataMap.put( message.asVmsIdentifier().getIdentifier(), message.asVmsIdentifier() );
+                        this.vmsMetadataMap.put( message.asVmsContext().getVmsName(), message.asVmsContext() );
 
-                        if(this.vmsMetadataMap.size() < this.starterVMSs.size()) continue;
-                        // if all metadata, from all starter vms have arrived, then send the signal to them
+                        // if all metadata, from all starter vms have arrived, then build consumer ctx and send the signal to them
+                        if(this.options.waitForStarters() && this.vmsMetadataMap.size() < this.starterVMSs.size()) continue;
 
                         // new VMS may join, requiring updating the consumer set
                         Map<String, List<NetworkAddress>> vmsConsumerSet = new HashMap<>();
 
-                        for(VmsIdentifier vmsIdentifier : this.vmsMetadataMap.values()) {
+                        for(VmsContext vmsContext : this.vmsMetadataMap.values()) {
 
-                            NetworkAddress vms = this.starterVMSs.get( vmsIdentifier.hashCode() );
+                            NetworkAddress vms = this.starterVMSs.get( vmsContext.hashCode() );
                             if(vms == null) continue;
 
-                            // build global view of vms dependencies/interactions
-                            // build consumer set dynamically
-                            // for each output event, find the consumer VMSs
-                            for (VmsEventSchema eventSchema : vmsIdentifier.node().outputEventSchema.values()) {
-                                List<NetworkAddress> nodes = this.findConsumerVMSs(eventSchema.eventName);
-                                if (!nodes.isEmpty())
-                                    vmsConsumerSet.put(eventSchema.eventName, nodes);
+                            String eventToConsumerMap = buildEventToConsumerMap(vmsConsumerSet, vmsContext);
+                            String tablesToConsumerMap = null;
+
+                            // TODO finish the replication
+                            if(vmsContext.node().tableSchema.externalForeignKeyReferences != null){
+                                // map with key network address and list of replication config
+
+                                Map<String, List<String>> tableToConsumerMap =  Stream.of(vmsContext.node().tableSchema.externalForeignKeyReferences).collect(
+                                        Collectors.groupingBy( ExternalVmsForeignKeyReference::vmsName, Collectors.mapping( ExternalVmsForeignKeyReference::vmsTableName, Collectors.toList() ) )
+                                );
                             }
 
-                            String mapStr = "";
-                            if (!vmsConsumerSet.isEmpty()) {
-                                mapStr = this.serdesProxy.serializeConsumerSet(vmsConsumerSet);
-                            }
-
-                            vmsIdentifier.worker().queue().add( new IVmsWorker.Message( SEND_CONSUMER_SET, mapStr ));
+                            vmsContext.worker().queue().add( new IVmsWorker.Message( SEND_CONSUMER_CTX, eventToConsumerMap ));
 
                             vmsConsumerSet.clear();
 
                         }
-
-
 
                     }
                     case TRANSACTION_ABORT -> {
@@ -823,9 +819,9 @@ public final class Coordinator extends SignalingStoppableRunnable {
                         TransactionAbort.Payload msg = message.asTransactionAbort();
                         this.batchContextMap.get( msg.batch() ).tidAborted = msg.tid();
                         // can reuse the same buffer since the message does not change across VMSs like the commit request
-                        for(VmsIdentifier vms : this.vmsMetadataMap.values()){
+                        for(VmsContext vms : this.vmsMetadataMap.values()){
                             // don't need to send to the vms that aborted
-                            if(vms.getIdentifier().equalsIgnoreCase( msg.vms() )) continue;
+                            if(vms.getVmsName().equalsIgnoreCase( msg.vms() )) continue;
                             vms.worker().queue().add( new IVmsWorker.Message( SEND_TRANSACTION_ABORT, msg.tid()));
                         }
                     }
@@ -860,7 +856,7 @@ public final class Coordinator extends SignalingStoppableRunnable {
                 }
 
             } catch (InterruptedException e) {
-                this.logger.warning("Exception caught while looping through coordinatorQueue: "+e.getMessage());
+                this.logger.warn("Exception caught while looping through coordinatorQueue: "+e.getMessage());
             }
 
 
@@ -868,17 +864,34 @@ public final class Coordinator extends SignalingStoppableRunnable {
 
     }
 
+    private String buildEventToConsumerMap(Map<String, List<NetworkAddress>> vmsConsumerSet, VmsContext vmsIdentifier) {
+        // build global view of vms dependencies/interactions
+        // build consumer set dynamically
+        // for each output event, find the consumer VMSs
+        for (VmsEventSchema eventSchema : vmsIdentifier.node().outputEventSchema.values()) {
+            List<NetworkAddress> nodes = this.findConsumerVMSs(eventSchema.event);
+            if (!nodes.isEmpty())
+                vmsConsumerSet.put(eventSchema.event, nodes);
+        }
+
+        String mapStr = "";
+        if (!vmsConsumerSet.isEmpty()) {
+            mapStr = this.serdesProxy.serializeConsumerSet(vmsConsumerSet);
+        }
+        return mapStr;
+    }
+
     /**
      * Only send to non-terminals
      */
     private void sendCommitRequestToVMSs(BatchContext batchContext){
-        for(VmsIdentifier vms : this.vmsMetadataMap.values()){
-            if(batchContext.terminalVMSs.contains(vms.getIdentifier())) continue;
+        for(VmsContext vms : this.vmsMetadataMap.values()){
+            if(batchContext.terminalVMSs.contains(vms.getVmsName())) continue;
             vms.worker().queue().add( new IVmsWorker.Message(SEND_BATCH_COMMIT_COMMAND,
                     new BatchCommitCommand.Payload(
                         batchContext.batchOffset,
-                        batchContext.lastTidOfBatchPerVms.get(vms.getIdentifier()),
-                        batchContext.previousBatchPerVms.get(vms.getIdentifier())
+                        batchContext.lastTidOfBatchPerVms.get(vms.getVmsName()),
+                        batchContext.previousBatchPerVms.get(vms.getVmsName())
                     )
             ));
         }

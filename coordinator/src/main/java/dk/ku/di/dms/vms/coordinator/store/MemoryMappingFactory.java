@@ -1,8 +1,10 @@
 package dk.ku.di.dms.vms.coordinator.store;
 
 import dk.ku.di.dms.vms.coordinator.store.metadata.ServerMetadata;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sun.misc.Unsafe;
 
 import java.io.IOException;
@@ -14,7 +16,6 @@ import java.nio.channels.FileChannel;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 
 /**
  * Class that encapsulates the complexities of dealing with memory-mapping files in Java
@@ -58,7 +59,7 @@ public class MemoryMappingFactory {
 //        }
 //    }
 
-    private static final Logger logger = Logger.getLogger("MemoryMappingFactory");
+    private static final Logger logger = LoggerFactory.getLogger("MemoryMappingFactory");
 
     /**
      * The structure of a coordinator metadata is as follows:

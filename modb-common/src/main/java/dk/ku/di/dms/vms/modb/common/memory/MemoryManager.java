@@ -1,12 +1,14 @@
 package dk.ku.di.dms.vms.modb.common.memory;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Map;
 import java.util.SortedSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.logging.Logger;
 
 /**
  *
@@ -28,7 +30,7 @@ import java.util.logging.Logger;
  */
 public final class MemoryManager {
 
-    private static final Logger LOGGER = Logger.getLogger("MemoryManager");
+    private static final Logger logger = LoggerFactory.getLogger("MemoryManager");
 
     /**
      * Inspiration from JVM class: {@link sun.nio.ch.Util}
@@ -120,7 +122,7 @@ public final class MemoryManager {
     public static void releaseTemporaryDirectBuffer(ByteBuffer buf) {
 
         if(buf.position() > 0 || buf.limit() < buf.capacity())
-            LOGGER.warning("Buffer returned without being properly cleared!");
+            logger.warn("Buffer returned without being properly cleared!");
 
         long address = MemoryUtils.getByteBufferAddress(buf);
         assignedBuffers.remove(address);

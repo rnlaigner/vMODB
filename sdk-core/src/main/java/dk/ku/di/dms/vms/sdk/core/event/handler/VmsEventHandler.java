@@ -2,11 +2,10 @@ package dk.ku.di.dms.vms.sdk.core.event.handler;
 
 import dk.ku.di.dms.vms.modb.common.event.DataRequestEvent;
 import dk.ku.di.dms.vms.modb.common.event.DataResponseEvent;
+import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.sdk.core.event.channel.IVmsInternalChannels;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsRuntimeMetadata;
-
 import dk.ku.di.dms.vms.web_common.runnable.SignalingStoppableRunnable;
-import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -17,8 +16,9 @@ import java.nio.channels.CompletionHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.*;
-import java.util.logging.Level;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 import static java.net.StandardSocketOptions.*;
 
@@ -29,6 +29,7 @@ public final class VmsEventHandler extends SignalingStoppableRunnable {
 
     /** EXECUTOR SERVICE (for socket channels) **/
     private final ExecutorService executorService;
+    private final String vmsName;
 
     /** SOCKET CHANNEL OPERATIONS **/
     private Future<Integer> futureEvent;
@@ -55,10 +56,10 @@ public final class VmsEventHandler extends SignalingStoppableRunnable {
     /** SERIALIZATION **/
     private final IVmsSerdesProxy serdes;
 
-    public VmsEventHandler(IVmsInternalChannels vmsInternalQueues, VmsRuntimeMetadata vmsMetadata, IVmsSerdesProxy serdes, ExecutorService executorService) {
+    public VmsEventHandler(String vmsName, IVmsInternalChannels vmsInternalQueues, VmsRuntimeMetadata vmsMetadata, IVmsSerdesProxy serdes, ExecutorService executorService) {
 
         super();
-
+        this.vmsName = vmsName;
         this.vmsMetadata = vmsMetadata;
 
         // event
@@ -150,7 +151,7 @@ public final class VmsEventHandler extends SignalingStoppableRunnable {
                 }
 
             } catch (InterruptedException | ExecutionException e) {
-                logger.log(Level.WARNING, "ERR: on reading the new data: "+ e.getLocalizedMessage());
+                logger.warn("ERR: on reading the new data: "+ e.getLocalizedMessage());
             } finally {
 
                 dataSocketBuffer.clear();
@@ -231,7 +232,7 @@ public final class VmsEventHandler extends SignalingStoppableRunnable {
         eventChannel.write( ByteBuffer.wrap(eventSchemaStr.getBytes(StandardCharsets.UTF_8)) );
 
         // send data schema
-        String dataSchemaStr = serdes.serializeDataSchema( vmsMetadata.dataSchema() );
+        String dataSchemaStr = serdes.serializeDataSchema( vmsMetadata.tableSchema() );
         dataChannel.write( ByteBuffer.wrap(dataSchemaStr.getBytes(StandardCharsets.UTF_8)) );
 
         // PHASE 3 -  get confirmation whether the schemas are fine

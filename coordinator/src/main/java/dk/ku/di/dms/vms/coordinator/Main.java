@@ -5,16 +5,24 @@ import dk.ku.di.dms.vms.coordinator.server.coordinator.options.CoordinatorOption
 import dk.ku.di.dms.vms.coordinator.server.http.EdgeHttpServerBuilder;
 import dk.ku.di.dms.vms.coordinator.server.schema.TransactionInput;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
-import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
+import dk.ku.di.dms.vms.modb.common.schema.meta.NetworkAddress;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.logging.Logger;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingDeque;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -22,7 +30,7 @@ import java.util.logging.Logger;
 public class Main
 {
 
-    private static final Logger logger = Logger.getLogger("Main");
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     public record StartupConfig (
             boolean runElection,
@@ -58,7 +66,7 @@ public class Main
                         new InetSocketAddress(InetAddress.getByName("localhost"), 8001));
                 logger.info("Http server initialized");
             } catch (IOException e){
-                logger.warning("ERROR: "+e.getMessage());
+                logger.warn("ERROR: "+e.getMessage());
                 return;
             }
         }

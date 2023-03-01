@@ -7,8 +7,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * It contains the method signatures for a given transaction
- * as well as aggregated contextual information (to create a flock)
+ * As an event can trigger multiple methods, all methods are treated
+ * as part of the same transaction.
+ * This class contains the method signatures for a given transaction
+ * as well as the contextual information about the execution of the tasks
+ * Basically serves the skeleton of a {@link dk.ku.di.dms.vms.sdk.core.operational.VmsTransactionTask}
+ * in direction of the idea of the <a href="https://en.wikipedia.org/wiki/Prototype_pattern">Prototype</a> design pattern
  */
 public class VmsTransactionMetadata {
 

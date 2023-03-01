@@ -1,13 +1,13 @@
 package dk.ku.di.dms.vms.playground.scenario1;
 
-import dk.ku.di.dms.vms.coordinator.server.coordinator.runnable.Coordinator;
 import dk.ku.di.dms.vms.coordinator.server.coordinator.options.CoordinatorOptions;
+import dk.ku.di.dms.vms.coordinator.server.coordinator.runnable.Coordinator;
 import dk.ku.di.dms.vms.coordinator.server.schema.TransactionInput;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionBootstrap;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
-import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.meta.NetworkAddress;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.modb.transaction.TransactionFacade;
@@ -17,6 +17,8 @@ import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionScheduler;
 import dk.ku.di.dms.vms.sdk.embed.channel.VmsEmbeddedInternalChannels;
 import dk.ku.di.dms.vms.sdk.embed.handler.EmbeddedVmsEventHandler;
 import dk.ku.di.dms.vms.sdk.embed.metadata.EmbedMetadataLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -25,7 +27,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
-import java.util.logging.Logger;
 
 /**
  *
@@ -38,7 +39,7 @@ import java.util.logging.Logger;
 public class App 
 {
 
-    protected static final Logger logger = Logger.getLogger("App");
+    static final Logger logger = LoggerFactory.getLogger(App.class);
 
     // input transactions
     private static final BlockingQueue<TransactionInput> parsedTransactionRequests = new LinkedBlockingDeque<>();
@@ -139,35 +140,33 @@ public class App
      */
     private static void loadMicroservice() throws Exception {
 
-        VmsEmbeddedInternalChannels vmsInternalPubSubService = new VmsEmbeddedInternalChannels();
-
         VmsRuntimeMetadata vmsMetadata = EmbedMetadataLoader.loadRuntimeMetadata("dk.ku.di.dms.vms.playground.app");
 
         TransactionFacade transactionFacade = EmbedMetadataLoader.loadTransactionFacadeAndInjectIntoRepositories(vmsMetadata);
 
-        if(vmsMetadata == null) throw new IllegalStateException("Cannot start VMs, error loading metadata.");
-
         ExecutorService vmsAppLogicTaskPool = Executors.newSingleThreadExecutor();
 
-        IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build( );
+        IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
+
+        VmsEmbeddedInternalChannels vmsInternalPubSubService = new VmsEmbeddedInternalChannels();
 
         VmsTransactionScheduler scheduler =
                 new VmsTransactionScheduler(
                         vmsAppLogicTaskPool,
                         vmsInternalPubSubService,
                         vmsMetadata.queueToVmsTransactionMap(),
-                        null);
+                        null, null);
 
         VmsNode vmsIdentifier = new VmsNode(
                 "localhost", 1080, "example",
                 0, 0,0,
-                vmsMetadata.dataSchema(),
+                vmsMetadata.tableSchema(), vmsMetadata.replicatedTableSchema(),
                 vmsMetadata.inputEventSchema(), vmsMetadata.outputEventSchema());
 
         ExecutorService socketPool = Executors.newFixedThreadPool(2);
 
         EmbeddedVmsEventHandler eventHandler = EmbeddedVmsEventHandler.buildWithDefaults(
-                vmsIdentifier, null, transactionFacade, vmsInternalPubSubService, vmsMetadata, serdes, socketPool );
+                vmsIdentifier, null, transactionFacade, transactionFacade, vmsInternalPubSubService, vmsMetadata, serdes, socketPool );
 
         Thread eventHandlerThread = new Thread(eventHandler);
         eventHandlerThread.start();

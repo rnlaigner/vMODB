@@ -2,6 +2,8 @@ package dk.ku.di.dms.vms.modb.service.server;
 
 import dk.ku.di.dms.vms.web_common.runnable.StoppableRunnable;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -9,10 +11,6 @@ import java.nio.channels.AsynchronousSocketChannel;
 import java.util.Queue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-import static java.util.logging.Logger.getLogger;
 
 /**
  * TODO in the future, if there is no new events, this thread can be put to sleep
@@ -24,7 +22,7 @@ import static java.util.logging.Logger.getLogger;
  */
 public class AsyncSocketEventHandler extends StoppableRunnable {
 
-    private final Logger logger = getLogger(AsyncSocketEventHandler.class.getName());
+    private final Logger logger = LoggerFactory.getLogger(AsyncSocketEventHandler.class.getName());
 
     /** EVENT QUEUES **/
     private final Queue<Object> inputQueue;
@@ -105,7 +103,7 @@ public class AsyncSocketEventHandler extends StoppableRunnable {
                 int length = futureInput.get();
 
                 if (length == -1) {
-                    logger.log(Level.WARNING, "ERR: something went wrong on reading the buffer");
+                    logger.warn("ERR: something went wrong on reading the buffer");
                     readBuffer.flip();
                     return;
                 }
@@ -117,7 +115,7 @@ public class AsyncSocketEventHandler extends StoppableRunnable {
                 // Object event = serdes.deserialize(readBuffer.array());
 
             } catch (ExecutionException | InterruptedException e) {
-                logger.log(Level.WARNING, e.getMessage());
+                logger.warn(e.getMessage());
             } finally {
                 readBuffer.clear();
                 futureInput = socketChannel.read(readBuffer);

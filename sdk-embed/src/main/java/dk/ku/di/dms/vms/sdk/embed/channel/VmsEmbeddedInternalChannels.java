@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.sdk.embed.channel;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionAbort;
 import dk.ku.di.dms.vms.sdk.core.event.channel.IVmsInternalChannels;
 import dk.ku.di.dms.vms.sdk.core.operational.InboundEvent;
 import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionResult;
@@ -8,6 +8,11 @@ import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionResult;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+/**
+ * Can potentially be a final static class, perhaps defined in modb-common?
+ * To avoid passing over object instances...
+ * One less parameter, but also less mutability and testability
+ */
 public final class VmsEmbeddedInternalChannels implements IVmsInternalChannels {
 
     private final BlockingQueue<InboundEvent> transactionInputQueue;
@@ -57,6 +62,7 @@ public final class VmsEmbeddedInternalChannels implements IVmsInternalChannels {
         return this.transactionAbortOutputQueue;
     }
 
+    @Override
     public BlockingQueue<Object> batchCommitCommandQueue(){
         return this.batchCommitCommandQueue;
     }

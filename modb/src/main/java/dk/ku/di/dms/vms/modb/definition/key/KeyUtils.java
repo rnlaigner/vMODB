@@ -35,10 +35,6 @@ public final class KeyUtils {
         return buildRecordKey(schema.getPrimaryKeyColumns(), object);
     }
 
-    public static IKey buildPrimaryKeyFromKeyValues(Object[] valuesOfKey){
-        return CompositeKey.of( valuesOfKey );
-    }
-
     public static IKey buildRecordKeyNoHeader(Schema schema, int[] columns, long srcAddress){
 
         IKey key;

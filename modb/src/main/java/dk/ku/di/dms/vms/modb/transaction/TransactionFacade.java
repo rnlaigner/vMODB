@@ -2,9 +2,12 @@ package dk.ku.di.dms.vms.modb.transaction;
 
 import dk.ku.di.dms.vms.modb.api.query.statement.IStatement;
 import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
+import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryRefNode;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.common.transaction.TransactionMetadata;
+import dk.ku.di.dms.vms.modb.common.transaction.TransactionWrite;
+import dk.ku.di.dms.vms.modb.common.transaction.WriteType;
 import dk.ku.di.dms.vms.modb.definition.Table;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
@@ -19,38 +22,32 @@ import dk.ku.di.dms.vms.modb.query.planner.filter.FilterContextBuilder;
 import dk.ku.di.dms.vms.modb.query.planner.operators.AbstractSimpleOperator;
 import dk.ku.di.dms.vms.modb.query.planner.operators.scan.FullScanWithProjection;
 import dk.ku.di.dms.vms.modb.query.planner.operators.scan.IndexScanWithProjection;
-import dk.ku.di.dms.vms.modb.transaction.multiversion.index.IMultiVersionIndex;
+import dk.ku.di.dms.vms.modb.transaction.api.TransactionManagerAPI;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.NonUniqueSecondaryIndex;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.PrimaryIndex;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
- * A transaction management facade
+ * A transaction management facade, i.e., a transaction manager.
+ * Encapsulates a set of concurrency-control features through a set of interfaces,
+ * in the direction of the <a href="https://en.wikipedia.org/wiki/Facade_pattern">facade</a> pattern.
  * Responsibilities:
  * - Keep track of modifications
  * - Commit (write to the actual corresponding regions of memories)
  * AbstractIndex must be modified so reads can return the correct (versioned/consistent) value
  * Repository facade parses the request. Transaction facade deals with low-level operations
  * Batch-commit aware. That means when a batch comes, must make data durable.
- * in order to accommodate two or more VMSs in the same resource,
- *  it would need to make this class an instance (no static methods) and put it into modb modules
+ * In order to accommodate two or more VMSs in the same JVM instance,
+ *  it would need to make this class non-static and put it into modb modules.
  */
-public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
-
-    private static final ThreadLocal<Set<IMultiVersionIndex>> INDEX_WRITES = ThreadLocal.withInitial( () -> {
-        if(!TransactionMetadata.TRANSACTION_CONTEXT.get().readOnly) {
-            return new HashSet<>(2);
-        }
-        return Collections.emptySet();
-    });
-
-    /**
-     * Hashed by table name
-     */
-    private final Map<String, Table> tableMap;
+public final class TransactionFacade implements TransactionManagerAPI {
 
     private final Analyzer analyzer;
 
@@ -62,25 +59,50 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
      */
     private final Map<String, AbstractSimpleOperator> readQueryPlans;
 
-    private TransactionFacade(Map<String, Table> tableMap){
-        this.tableMap = tableMap;
-        this.planner = new SimplePlanner();
-        this.analyzer = new Analyzer(tableMap);
+    private final Map<String, Table> schema;
+
+    // in the future, specialize this for only foreign key (tracking only the PK) or the whole record
+    private final Set<String> subscriptedTables;
+
+    private final Map<String, PrimaryIndex> replicatedTables;
+
+    private TransactionFacade(Map<String, Table> schema, Map<String, PrimaryIndex> replicatedTables, SimplePlanner planner, Analyzer analyzer){
+        this.schema = schema;
+        this.replicatedTables = replicatedTables;
+        this.subscriptedTables = new CopyOnWriteArraySet<>();
+        this.planner = planner;
+        this.analyzer = analyzer;
         // read-only transactions may put items here
         this.readQueryPlans = new ConcurrentHashMap<>();
     }
 
-    public static TransactionFacade build(Map<String, Table> catalog){
-        return new TransactionFacade(catalog);
+    /**
+     * TransactionFacade should not create any new object
+     */
+    public static TransactionFacade build(Map<String, Table> schema, Map<String, PrimaryIndex> replicatedTables, SimplePlanner planner, Analyzer analyzer){
+        return new TransactionFacade(schema, replicatedTables, planner, analyzer);
     }
 
-    private boolean fkConstraintViolation(Table table, Object[] values){
-        for(var entry : table.foreignKeys().entrySet()){
-            IKey fk = KeyUtils.buildRecordKey( entry.getValue(), values );
-            // have some previous TID deleted it? or simply not exists
-            if (!entry.getKey().exists(fk)) return true;
+    private boolean fkConstraintHolds(Table table, Object[] values){
+        boolean a = table.foreignKeys().isEmpty();
+        boolean b = table.externalForeignKeys().isEmpty();
+        if(a && b) return true;
+        IKey fk;
+        if(a) {
+            for (var entry : table.foreignKeys().entrySet()) {
+                fk = KeyUtils.buildRecordKey(entry.getValue(), values);
+                // have some previous TID deleted it? or simply not exists
+                if (!entry.getKey().exists(fk)) return false;
+            }
         }
-        return false;
+        if(b) {
+            // now check the external tables
+            for (var entry : table.externalForeignKeys().entrySet()) {
+                fk = KeyUtils.buildRecordKey(entry.getValue(), values);
+                if (!entry.getKey().exists(fk)) return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -102,7 +124,7 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
                 queryTree = this.analyzer.analyze(selectStatement);
                 wherePredicates = queryTree.wherePredicates;
                 scanOperator = this.planner.plan(queryTree);
-                readQueryPlans.put(sqlAsKey, scanOperator );
+                this.readQueryPlans.put(sqlAsKey, scanOperator );
             } catch (AnalyzerException ignored) { return null; }
 
         } else {
@@ -164,13 +186,13 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
      * Used when the buffer received is aligned with how the data is stored in memory
      */
     public void bulkInsert(Table table, ByteBuffer buffer, int numberOfRecords){
-        // if the memory address is occupied, must log warning
+        // if the memory address is occupied, must log warning,
         // so we can increase the table size
         long address = MemoryUtils.getByteBufferAddress(buffer);
 
-        // if the memory address is occupied, must log warning
+        // if the memory address is occupied, must log warning,
         // so we can increase the table size
-        ReadWriteIndex<IKey> index = table.underlyingPrimaryKeyIndex();
+        ReadWriteIndex<IKey> index = table.primaryKeyIndex().underlyingIndex();
         int sizeWithoutHeader = table.schema.getRecordSizeWithoutHeader();
         long currAddress = address;
 
@@ -185,7 +207,16 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
 
     /****** ENTITY *******/
 
+    // possible optimization is checking the foreign
+    // key of all records first and then later insert
     public void insertAll(Table table, List<Object[]> objects){
+        if(this.subscriptedTables.contains(table.getName())){
+            for(Object[] entry : objects) {
+                this.insert(table, entry);
+                this.trackUpdate(table.getName(), entry, WriteType.INSERT);
+            }
+            return;
+        }
         // get tid, do all the checks, etc
         for(Object[] entry : objects) {
             this.insert(table, entry);
@@ -193,12 +224,26 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
     }
 
     public void deleteAll(Table table, List<Object[]> objects) {
+        if(this.subscriptedTables.contains(table.getName())){
+            for(Object[] entry : objects) {
+                this.delete(table, entry);
+                trackUpdate(table.getName(), entry, WriteType.DELETE);
+            }
+            return;
+        }
         for(Object[] entry : objects) {
             this.delete(table, entry);
         }
     }
 
     public void updateAll(Table table, List<Object[]> objects) {
+        if(this.subscriptedTables.contains(table.getName())){
+            for(Object[] entry : objects) {
+                this.update(table, entry);
+                trackUpdate(table.getName(), entry, WriteType.UPDATE);
+            }
+            return;
+        }
         for(Object[] entry : objects) {
             this.update(table, entry);
         }
@@ -207,28 +252,39 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
     /**
      * Not yet considering this record can serve as FK to a record in another table.
      */
-    public void delete(Table table, Object[] values) {
-        IKey pk = KeyUtils.buildPrimaryKey(table.schema, values);
-        this.deleteByKey(table, pk);
+    public void delete(Table table, Object[] record) {
+        if(this.subscriptedTables.contains(table.getName())){
+            Object[] keyValues = new Object[record.length];
+            int[] pkColumns = table.schema.getPrimaryKeyColumns();
+            for(int i = 0; i < pkColumns.length; i++){
+                keyValues[i] = record[pkColumns[i]];
+            }
+            IKey pk = KeyUtils.buildKey(keyValues);
+            if(table.primaryKeyIndex().delete(pk)){
+                trackUpdate(table.getName(), keyValues, WriteType.DELETE);
+            }
+            return;
+        }
+        IKey pk = KeyUtils.buildPrimaryKey(table.schema, record);
+        table.primaryKeyIndex().delete(pk);
     }
 
     public void deleteByKey(Table table, Object[] keyValues) {
         IKey pk = KeyUtils.buildKey(keyValues);
-        this.deleteByKey(table, pk);
-    }
-
-    /**
-     * @param table The corresponding table
-     * @param pk The primary key
-     */
-    private void deleteByKey(Table table, IKey pk){
-        if(table.primaryKeyIndex().delete(pk)){
-            INDEX_WRITES.get().add(table.primaryKeyIndex());
+        boolean res = table.primaryKeyIndex().delete(pk);
+        if(res && this.subscriptedTables.contains(table.getName())){
+            this.trackUpdate(table.getName(), keyValues, WriteType.DELETE);
         }
     }
 
+    private void trackUpdate(String tableName, Object[] values, WriteType writeType) {
+        TransactionMetadata.TRANSACTION_CONTEXT.get().writes
+                .computeIfAbsent(tableName, (k) -> new ArrayList<>() )
+                .add(new TransactionWrite(writeType, values));
+    }
+
     public Object[] lookupByKey(PrimaryIndex index, Object... valuesOfKey){
-        IKey pk = KeyUtils.buildPrimaryKeyFromKeyValues(valuesOfKey);
+        IKey pk = KeyUtils.buildKey(valuesOfKey);
         return index.lookupByKey(pk);
     }
 
@@ -239,36 +295,34 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
     public void insert(Table table, Object[] values){
         PrimaryIndex index = table.primaryKeyIndex();
         IKey pk = KeyUtils.buildRecordKey(index.schema().getPrimaryKeyColumns(), values);
-        if(!fkConstraintViolation(table, values) && index.insert(pk, values)){
-            INDEX_WRITES.get().add(index);
-
+        if(this.fkConstraintHolds(table, values) && index.insert(pk, values)){
             // iterate over secondary indexes to insert the new write
             // this is the delta. records that the underlying index does not know yet
             for(NonUniqueSecondaryIndex secIndex : table.secondaryIndexMap.values()){
-                INDEX_WRITES.get().add(secIndex);
                 secIndex.appendDelta( pk, values );
             }
-
+            if(this.subscriptedTables.contains(table.getName()))
+                this.trackUpdate(table.getName(), values, WriteType.INSERT);
             return;
         }
-        undoTransactionWrites();
+        this.undoTransactionWrites();
         throw new RuntimeException("Constraint violation.");
     }
 
     public Object insertAndGet(Table table, Object[] values){
         PrimaryIndex index = table.primaryKeyIndex();
-        // IKey pk = KeyUtils.buildRecordKey(index.schema().getPrimaryKeyColumns(), values);
-        if(!fkConstraintViolation(table, values)){
-            IKey key_ = index.insertAndGet(values);
-            if(key_ != null) {
-                INDEX_WRITES.get().add(index);
+        if(this.fkConstraintHolds(table, values)){
+            Tuple<Object, IKey> res = index.insertAndGet(values);
+            if(res != null) {
                 for(NonUniqueSecondaryIndex secIndex : table.secondaryIndexMap.values()){
-                    secIndex.appendDelta( key_, values );
+                    secIndex.appendDelta( res.t2(), values );
                 }
-                return values[ table.primaryKeyIndex().columns()[0] ];
+                if(this.subscriptedTables.contains(table.getName()))
+                    this.trackUpdate(table.getName(), values, WriteType.INSERT);
+                return res.t1();
             }
         }
-        undoTransactionWrites();
+        this.undoTransactionWrites();
         throw new RuntimeException("Constraint violation.");
     }
 
@@ -279,22 +333,36 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
     public void update(Table table, Object[] values){
         PrimaryIndex index = table.primaryKeyIndex();
         IKey pk = KeyUtils.buildRecordKey(index.schema().getPrimaryKeyColumns(), values);
-        if(!fkConstraintViolation(table, values) && index.update(pk, values)){
-            INDEX_WRITES.get().add(index);
+        if(this.fkConstraintHolds(table, values) && index.update(pk, values)){
+            if(this.subscriptedTables.contains(table.getName()))
+                this.trackUpdate(table.getName(), values, WriteType.UPDATE);
             return;
         }
-        undoTransactionWrites();
+        this.undoTransactionWrites();
         throw new RuntimeException("Constraint violation.");
     }
 
     /**
+     * As single-threaded model, assuming this will almost never happen so overhead of building gain the pk is minor
+     * Can also perform this in parallel without compromising safety
      * TODO Must unmark secondary index records as deleted...
      * how can I do that more optimized? creating another interface so secondary indexes also have the #undoTransactionWrites ?
      * INDEX_WRITES can have primary indexes and secondary indexes...
      */
     private void undoTransactionWrites(){
-        for(var index : INDEX_WRITES.get()) {
-            index.undoTransactionWrites();
+        Map<String, List<TransactionWrite>> writes = TransactionMetadata.TRANSACTION_CONTEXT.get().writes;
+        Table table;
+        IKey key;
+        for(var entry : writes.entrySet()){
+            table = this.schema.get(entry.getKey());
+            for(var write : entry.getValue()){
+                if (write.type == WriteType.DELETE) {
+                    key = KeyUtils.buildKey(write.record);
+                } else {
+                    key = KeyUtils.buildPrimaryKey(table.getSchema(), write.record);
+                }
+                table.primaryKeyIndex().undoTransactionWrite(key);
+            }
         }
     }
 
@@ -317,10 +385,8 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
         }
 
         FilterContext filterContext = FilterContextBuilder.build(wherePredicatesNoIndex);
-
         // build input
         IKey inputKey = KeyUtils.buildKey(keyList.toArray());
-
         return operator.run( consistentIndex, filterContext, inputKey );
     }
 
@@ -344,16 +410,38 @@ public final class TransactionFacade implements OperationAPI, CheckpointingAPI {
 
         // make state durable
         // get buffered writes in transaction facade and merge in memory
-        var indexes = INDEX_WRITES.get();
 
-        for(var index : indexes){
-            index.installWrites();
+        for(Table table : this.schema.values()){
+            table.primaryKeyIndex().installWrites();
             // log index since all updates are made
             // index.asUniqueHashIndex().buffer().log();
         }
 
         // TODO must modify corresponding secondary indexes too
         //  must log the updates in a separate file. no need for WAL, no need to store before and after
+
+    }
+
+    /**
+     * REPLICATION
+     * ==================================
+     * A subscription contains the information
+     * necessary to forward updates to other nodes.
+     * Subscriptions can be dynamically modified over
+     * the runtime.
+     */
+    @Override
+    public boolean addSubscription(String table) {
+        return this.subscriptedTables.add(table);
+    }
+
+    @Override
+    public boolean removeSubscription(String table) {
+        return this.subscriptedTables.remove(table);
+    }
+
+    @Override
+    public void applyUpdates(Map<String, List<TransactionWrite>> updates){
 
     }
 

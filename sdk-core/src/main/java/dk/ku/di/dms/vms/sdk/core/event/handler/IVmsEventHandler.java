@@ -1,12 +1,12 @@
 package dk.ku.di.dms.vms.sdk.core.event.handler;
 
 
-import dk.ku.di.dms.vms.modb.common.schema.network.node.NetworkNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchAbortRequest;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitCommand;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.node.NetworkNode;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchAbortRequest;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitCommand;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionAbort;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
 
 /**
  * Interface that makes clear what the VMS event handler must do

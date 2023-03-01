@@ -2,12 +2,14 @@ package dk.ku.di.dms.vms.sdk.core.metadata;
 
 import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
-import dk.ku.di.dms.vms.modb.common.schema.VmsDataSchema;
-import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsReplicatedTableSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsTableSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsEventSchema;
 import dk.ku.di.dms.vms.sdk.core.facade.IVmsRepositoryFacade;
 
 import java.lang.reflect.Type;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A data class that stores the mappings between events, queues, and transactions.
@@ -23,8 +25,18 @@ import java.util.Map;
  * queries as views and store them here
  */
 public record VmsRuntimeMetadata(
+        // microservice name
+        String virtualMicroservice,
 
-        Map<String, VmsDataSchema> dataSchema,
+        // table schemas
+        Map<String, VmsTableSchema> tableSchema,
+        // replicated table schemas
+        Map<String, VmsReplicatedTableSchema> replicatedTableSchema,
+
+        // map from table (its external FKs) to the external tables
+        Map<String, Set<String>> tableToReplicaFkMap,
+
+        // event schemas
         Map<String, VmsEventSchema> inputEventSchema,
         Map<String, VmsEventSchema> outputEventSchema,
 

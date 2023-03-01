@@ -2,29 +2,23 @@ package dk.ku.di.dms.vms.modb.transaction.multiversion.index;
 
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadOnlyIndex;
-import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
+
+import java.util.List;
 
 public interface IMultiVersionIndex extends ReadOnlyIndex<IKey> {
 
-    void undoTransactionWrites();
+    void undoTransactionWrite(IKey key);
 
+    /*
+     * need to erase the transactions that are not seen by any more new transactions
+     * it is performed during checkpoint
+     */
     void installWrites();
 
     boolean insert(IKey key, Object[] record);
 
     boolean update(IKey key, Object[] record);
 
-    IRecordIterator<IKey> EMPTY_ITERATOR = new IRecordIterator<>() {
-        @Override
-        public IKey get() {
-            return null;
-        }
-        @Override
-        public void next() { }
-        @Override
-        public boolean hasElement() {
-            return false;
-        }
-    };
+    boolean delete(IKey key);
 
 }

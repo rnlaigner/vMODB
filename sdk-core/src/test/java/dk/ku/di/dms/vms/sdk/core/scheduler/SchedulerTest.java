@@ -12,6 +12,7 @@ import org.junit.Test;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -42,7 +43,7 @@ public class SchedulerTest {
         VmsRuntimeMetadata vmsRuntimeMetadata = VmsMetadataLoader.load(new String[]{"dk.ku.di.dms.vms.sdk.core.example"}, constructor);
 
         VmsTransactionScheduler scheduler = new VmsTransactionScheduler(
-                readTaskPool, vmsInternalChannels, vmsRuntimeMetadata.queueToVmsTransactionMap(), null);
+                readTaskPool, vmsInternalChannels, vmsRuntimeMetadata.queueToVmsTransactionMap(), null, null);
 
         Thread schedulerThread = new Thread(scheduler);
         schedulerThread.start();
@@ -50,8 +51,8 @@ public class SchedulerTest {
         // event producer that creates transactions simple and complex
         InputEventExample1 eventExample = new InputEventExample1(0);
 
-        // scheduler needs to deserialize the
-        InboundEvent event = new InboundEvent(1,0,1,"in",InputEventExample1.class, eventExample);
+        // scheduler needs to process the inbound event
+        InboundEvent event = new InboundEvent(1,0,1,"in", eventExample, Collections.emptyMap());
 
         vmsInternalChannels.transactionInputQueue().add(event);
 
@@ -67,14 +68,14 @@ public class SchedulerTest {
         // tricky to simulate we have a scheduler in other microservice.... we need a new scheduler because of the tid
         // could reset the tid to 0, but would need to synchronize to avoid exceptions
         scheduler = new VmsTransactionScheduler(
-                readTaskPool, vmsInternalChannels, vmsRuntimeMetadata.queueToVmsTransactionMap(), null);
+                readTaskPool, vmsInternalChannels, vmsRuntimeMetadata.queueToVmsTransactionMap(), null, null);
 
         schedulerThread = new Thread(scheduler);
         schedulerThread.start();
 
         for(var res : out.resultTasks){
-            Class<?> clazz = vmsRuntimeMetadata.queueToEventMap().get( res.outputQueue() );
-            InboundEvent payload_ = new InboundEvent(1,0,1, res.outputQueue(), clazz, res.output());
+            // Class<?> clazz = vmsRuntimeMetadata.queueToEventMap().get( res.outputQueue() );
+            InboundEvent payload_ = new InboundEvent(1,0,1, res.outputQueue(), res.output(), Collections.emptyMap());
             vmsInternalChannels.transactionInputQueue().add(payload_);
         }
 

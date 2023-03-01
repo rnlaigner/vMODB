@@ -35,7 +35,7 @@ public final class VmsManager {
 
     }
 
-    public void init() {
+    public void init(String vmsName) {
 
         // does a thread has stopped suddenly?
         // do we have several events without being processed?
@@ -74,14 +74,14 @@ public final class VmsManager {
 
         IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build(  );
 
-        this.metadata.eventHandler = new VmsEventHandler(vmsInternalPubSubService, vmsMetadata, serdes, socketTaskPool);
+        this.metadata.eventHandler = new VmsEventHandler(vmsName, vmsInternalPubSubService, vmsMetadata, serdes, socketTaskPool);
 
         // pool for application logic tasks
         ExecutorService vmsAppLogicTaskPool = Executors.newSingleThreadExecutor();
 
         // scheduler
         this.metadata.scheduler = new VmsTransactionScheduler(vmsAppLogicTaskPool, vmsInternalPubSubService,
-                vmsMetadata.queueToVmsTransactionMap(), null);
+                vmsMetadata.queueToVmsTransactionMap(), null, null);
 
         // executor
         // this.metadata.executor = new VmsTransactionExecutor(this.metadata.internalPubSub);

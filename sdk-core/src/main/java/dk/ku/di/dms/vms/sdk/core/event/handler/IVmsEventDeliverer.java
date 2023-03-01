@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.sdk.core.event.handler;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
 
 import java.nio.ByteBuffer;
 

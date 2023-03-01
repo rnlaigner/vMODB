@@ -9,7 +9,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * The <code>Schema</code> class describes the schema of {@link Table}.
+ * Class describes the logical schema (or logical data model or table description) of a {@link Table}.
+ * <a href="https://en.wikipedia.org/wiki/Logical_schema">Logical schema in Wikipedia</a>
+ * <a href="https://stackoverflow.com/questions/7022755/whats-the-difference-between-a-catalog-and-a-schema-in-a-relational-database">Useful post is SO</a>
  */
 public final class Schema {
 
@@ -77,12 +79,8 @@ public final class Schema {
         }
     }
 
-    public int columnPosition(String columnName){
+    public Integer columnPosition(String columnName){
         return this.columnPositionMap.get(columnName);
-    }
-
-    public String columnName(int columnIndex){
-        return this.columnNames[columnIndex];
     }
 
     public String[] columnNames(){
@@ -115,10 +113,6 @@ public final class Schema {
 
     public int getRecordSizeWithoutHeader(){
         return this.recordSize - RECORD_HEADER;
-    }
-
-    public DataType[] columnDataTypes() {
-        return columnDataTypes;
     }
 
 }

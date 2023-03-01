@@ -1,6 +1,8 @@
 package dk.ku.di.dms.vms.sdk.core.scheduler;
 
 import dk.ku.di.dms.vms.modb.common.data_structure.IdentifiableNode;
+import dk.ku.di.dms.vms.modb.common.transaction.TransactionWrite;
+import dk.ku.di.dms.vms.modb.common.transaction.api.ReplicationAPI;
 import dk.ku.di.dms.vms.sdk.core.event.channel.IVmsInternalChannels;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsTransactionMetadata;
 import dk.ku.di.dms.vms.sdk.core.operational.*;
@@ -8,13 +10,14 @@ import dk.ku.di.dms.vms.sdk.core.scheduler.tracking.ComplexVmsTransactionTrackin
 import dk.ku.di.dms.vms.sdk.core.scheduler.tracking.IVmsTransactionTrackingContext;
 import dk.ku.di.dms.vms.sdk.core.scheduler.tracking.SimpleVmsTransactionTrackingContext;
 import dk.ku.di.dms.vms.web_common.runnable.StoppableRunnable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.logging.Logger;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 
@@ -33,7 +36,7 @@ import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
  */
 public final class VmsTransactionScheduler extends StoppableRunnable {
 
-    private final Logger logger = Logger.getLogger("VmsTransactionScheduler");
+    private static final Logger logger = LoggerFactory.getLogger(VmsTransactionScheduler.class);
 
     // payload that cannot execute because some dependence need to be fulfilled
     // payload A < B < C < D
@@ -66,19 +69,23 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private final IVmsInternalChannels vmsChannels;
 
-    // mapping
+    // mapping event input to transaction metadata
     private final Map<String, VmsTransactionMetadata> transactionMetadataMap;
 
     // reuse same collection to avoid many allocations
     private final Collection<InboundEvent> inputEvents;
 
-    private final ISchedulerHandler handler;
+    private final ReplicationAPI replicationAPI;
+
+    private final List<ISchedulerHandler> decorators;
 
     public VmsTransactionScheduler(ExecutorService readTaskPool,
                                    IVmsInternalChannels vmsChannels,
-                                   // (input) queue to transactions map
+                                   // (input) queue to transaction metadata map
                                    Map<String, VmsTransactionMetadata> transactionMetadataMap,
-                                   ISchedulerHandler handler){
+                                   // input events may carry replicated items that must be applied before transaction start
+                                   ReplicationAPI replicationAPI,
+                                   List<ISchedulerHandler> decorators){
         super();
 
         // thread pools
@@ -96,8 +103,27 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.lastTidToTidMap = new HashMap<>();
 
         this.inputEvents = new ArrayList<>(50);
+        this.replicationAPI = replicationAPI == null ? new ConsoleOutReplicationAPI() : replicationAPI;
 
-        this.handler = handler;
+        this.decorators = decorators == null ? Collections.emptyList() : decorators;
+    }
+
+    private static final class ConsoleOutReplicationAPI implements ReplicationAPI {
+
+        @Override
+        public boolean addSubscription(String table) {
+            return false;
+        }
+
+        @Override
+        public boolean removeSubscription(String table) {
+            return false;
+        }
+
+        @Override
+        public void applyUpdates(Map<String, List<TransactionWrite>> updates) {
+
+        }
     }
 
     /**
@@ -105,7 +131,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
      * that is, a pool of available tasks for receiving and processing the
      * events instead of an infinite while loop.
      * virtual threads are a good choice: <a href="https://jdk.java.net/loom/">...</a>
-     * BUT, "Virtual threads help to improve the throughput of typical
+     * However, "Virtual threads help to improve the throughput of typical
      * server applications precisely because such applications consist
      * of a great number of concurrent tasks that spend much of their time waiting."
      * Which is not this case... we are not doing I/O to wait
@@ -128,7 +154,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     @Override
     public void run() {
 
-        this.logger.info("Scheduler has started");
+        logger.info("Scheduler has started");
 
         this.initializeOffset();
 
@@ -138,28 +164,32 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 this.executeReadyTasks();
                 this.processTaskResult();
                 this.moveOffsetPointerIfNecessary();
-                // let's wait for now. in the future may add more semantics (e.g., no wait)
-                if( this.handler != null && this.handler.conditionHolds() ) {
-                    this.handler.run().get();
-                }
+                // decorates may run after an offset forwards
+                this.decorate();
             } catch(Exception e){
-                this.logger.warning("Error on scheduler loop: "+e.getMessage());
+                logger.warn("Error on scheduler loop: "+e.getMessage());
+            }
+        }
+    }
+
+    private void decorate() throws ExecutionException, InterruptedException {
+        // blocking for now. in the future, more semantics (e.g., no wait) may be necessary
+        for(ISchedulerHandler decorator : this.decorators) {
+            if (decorator.conditionHolds()) {
+                decorator.run().get();
             }
         }
     }
 
     private void executeReadyTasks() {
-
         IVmsTransactionTrackingContext txContext = this.transactionContextMap.get( currentOffset.tid() );
 
         // no event arrived yet for the current tid
         if(txContext == null) return;
 
         // check if the tasks are available (i.e., are inputs completed?)
-        if(txContext.isSimple()){
-            if(txContext.asSimple().task != null) {
-                this.dispatchReadySimpleTask(txContext.asSimple());
-            }
+        if(txContext.isSimple() && txContext.asSimple().task.isReady()){
+            this.dispatchReadySimpleTask(txContext.asSimple());
         } else {
             this.dispatchReadyComplexTasks(txContext.asComplex());
         }
@@ -170,7 +200,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.currentOffset = new OffsetTracker(0, 1);
         this.currentOffset.signalTaskFinished();
         this.offsetMap.put(0L, this.currentOffset);
-        this.logger.info("Offset initialized");
+        logger.info("Offset initialized");
     }
 
     /**
@@ -200,7 +230,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                                 List.of(context.asSimple().result.result())) );
                 this.transactionContextMap.remove(this.currentOffset.tid());
             } catch (Exception e){
-                this.logger.warning("A task supposedly done returned an exception: "+e.getMessage());
+                logger.warn("A task supposedly done returned an exception: "+e.getMessage());
             }
             return;
         }
@@ -229,6 +259,8 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                             outbounds.add(resultTask.result());
                         }
 
+                        // TODO for the write/read-write tasks, just leave the last updated version of each record
+
                         // now can send all to output queue
                         this.vmsChannels.transactionOutputQueue().add(
                                 new VmsTransactionResult(this.currentOffset.tid(), outbounds) );
@@ -242,7 +274,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 }
 
             } catch (InterruptedException | ExecutionException e) {
-                this.logger.warning("A task supposedly done returned an exception: "+e.getMessage());
+                logger.warn("A task supposedly done returned an exception: "+e.getMessage());
             }
 
         }
@@ -288,7 +320,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         } else if (this.offsetMap.get(inboundEvent.tid()) == null) {
             this.processNewEventFromUnknownTransaction(inboundEvent);
         } else {
-            logger.warning("Queue '" + inboundEvent.event() + "' Batch: " + inboundEvent.batch() + " TID: " + inboundEvent.tid());
+            logger.warn("Queue '" + inboundEvent.event() + "' Batch: " + inboundEvent.batch() + " TID: " + inboundEvent.tid());
         }
     }
 
@@ -304,40 +336,53 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         // mark the last tid, so we can get the next to execute when appropriate
         this.lastTidToTidMap.put( inboundEvent.lastTid(), inboundEvent.tid() );
 
-        VmsTransactionTask task;
-        IVmsTransactionTrackingContext txContext;
-
+        // single task transaction
         if(transactionMetadata.signatures.size() == 1){
-            txContext = new SimpleVmsTransactionTrackingContext();
-        } else {
-            // create the vms transaction context TODO check why ms2 not detecting write tx number
-            txContext = new ComplexVmsTransactionTrackingContext(
-                    transactionMetadata.numReadTasks,
-                    transactionMetadata.numReadWriteTasks,
-                    transactionMetadata.numWriteTasks);
-        }
-
-        // for each signature, create an appropriate task to run
-        for (IdentifiableNode<VmsTransactionSignature> node : transactionMetadata.signatures) {
-
-            VmsTransactionSignature signature = node.object();
-            task = new VmsTransactionTask(
+            IdentifiableNode<VmsTransactionSignature> node = transactionMetadata.signatures.get(0);
+            VmsTransactionTask task = new VmsTransactionTask(
                     inboundEvent.tid(),
                     inboundEvent.batch(),
                     node.object(),
-                    signature.inputQueues().length
+                    node.object().inputQueues().length
             );
-
             // put the input event on the correct slot (i.e., the correct parameter position)
             task.putEventInput(node.id(), inboundEvent.input());
-
+            SimpleVmsTransactionTrackingContext txContext = new SimpleVmsTransactionTrackingContext(task, inboundEvent.updates());
+            this.transactionContextMap.put( inboundEvent.tid(), txContext );
             if(!task.isReady()){
                 // unknown transaction, then must create the entry
                 this.waitingTasksPerTidMap.computeIfAbsent(task.tid(),
                         (x) -> new ArrayList<>(transactionMetadata.numTasksWithMoreThanOneInput)).add( task );
-            } else {
-                if(transactionMetadata.signatures.size() == 1){
-                    txContext.asSimple().task = task;
+            }
+        } else {
+            // create the vms transaction context TODO check why ms2 not detecting write tx number
+            ComplexVmsTransactionTrackingContext txContext = new ComplexVmsTransactionTrackingContext(
+                    transactionMetadata.numReadTasks,
+                    transactionMetadata.numReadWriteTasks,
+                    transactionMetadata.numWriteTasks);
+
+            // read tasks with updates must become writes by default because of concurrency control
+            if(!inboundEvent.updates().isEmpty()){
+                txContext.updates.putAll( inboundEvent.updates() );
+            }
+
+            // for each signature, create an appropriate task to run
+            for (IdentifiableNode<VmsTransactionSignature> node : transactionMetadata.signatures) {
+                VmsTransactionSignature signature = node.object();
+                VmsTransactionTask task = new VmsTransactionTask(
+                        inboundEvent.tid(),
+                        inboundEvent.batch(),
+                        node.object(),
+                        signature.inputQueues().length
+                );
+
+                // put the input event on the correct slot (i.e., the correct parameter position)
+                task.putEventInput(node.id(), inboundEvent.input());
+
+                if(!task.isReady()){
+                    // unknown transaction, then must create the entry
+                    this.waitingTasksPerTidMap.computeIfAbsent(task.tid(),
+                            (x) -> new ArrayList<>(transactionMetadata.numTasksWithMoreThanOneInput)).add( task );
                 } else {
                     task.setIdentifier(txContext.asComplex().readAndIncrementNextTaskIdentifier());
                     if(node.object().transactionType() == R){
@@ -347,9 +392,10 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                     }
                 }
             }
-        }
 
-        this.transactionContextMap.put( inboundEvent.tid(), txContext );
+            this.transactionContextMap.put( inboundEvent.tid(), txContext );
+
+        }
 
     }
 
@@ -386,8 +432,6 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                     } else {
                         txCtx.asComplex().writeTasks.add(task);
                     }
-                } else {
-                    txCtx.asSimple().task = task;
                 }
             }
 
@@ -396,6 +440,9 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     }
 
     private void dispatchReadyReadTaskList(ComplexVmsTransactionTrackingContext txCtx){
+        if(!txCtx.updates.isEmpty()){
+            this.replicationAPI.applyUpdates(txCtx.updates);
+        }
         int index = txCtx.readTasks.size() - 1;
         while (index >= 0) {
             VmsTransactionTask task = txCtx.readTasks.get(index);
@@ -408,20 +455,25 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     }
 
     private void dispatchReadySimpleTask(SimpleVmsTransactionTrackingContext txCtx){
+        if(!txCtx.updates.isEmpty()){
+            this.replicationAPI.applyUpdates(txCtx.updates);
+        }
         if(txCtx.task.transactionType() == R){
             txCtx.future = this.readTaskPool.submit(txCtx.task);
         } else {
             txCtx.future = this.writeTaskPool.submit(txCtx.task);
         }
-        // set to null to avoid calling again and again
-        txCtx.task = null;
     }
 
     private void dispatchReadyComplexTasks(ComplexVmsTransactionTrackingContext txCtx) {
         int numRead = txCtx.readTasks.size();
-        if(numRead > 0) dispatchReadyReadTaskList( txCtx );
+        if(numRead > 0) this.dispatchReadyReadTaskList( txCtx );
 
         if(!txCtx.writeTasks.isEmpty()) {
+            // make sure already arrived updates are applied before task execution
+            if(!txCtx.updates.isEmpty()){
+                this.replicationAPI.applyUpdates(txCtx.updates);
+            }
             txCtx.submittedTasks.add( this.writeTaskPool.submit( txCtx.writeTasks.poll() ) );
         }
     }
@@ -451,6 +503,8 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             this.waitingTasksPerTidMap.remove( this.currentOffset.tid() );
 
             this.currentOffset = nextTid;
+
+            this.currentOffset.signalScheduled();
 
         }
 

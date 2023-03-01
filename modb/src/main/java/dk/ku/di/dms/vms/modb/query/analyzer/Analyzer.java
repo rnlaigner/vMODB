@@ -292,12 +292,9 @@ public final class Analyzer {
         throw new AnalyzerException("Column " + columnStr +" does not exist in the catalog of tables");
     }
 
-    private boolean columnNameIsFoundInSchema(String columnStr, Schema schema) throws AnalyzerException {
+    private boolean columnNameIsFoundInSchema(String columnStr, Schema schema) {
         Integer columnIndex = schema.columnPosition(columnStr);
-        if(columnIndex == null){
-            return false;
-        }
-        return true;
+        return columnIndex != null;
     }
 
     /**

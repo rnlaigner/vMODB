@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.sdk.embed.client;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.modb.transaction.TransactionFacade;
@@ -9,12 +9,13 @@ import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionScheduler;
 import dk.ku.di.dms.vms.sdk.embed.channel.VmsEmbeddedInternalChannels;
 import dk.ku.di.dms.vms.sdk.embed.handler.EmbeddedVmsEventHandler;
 import dk.ku.di.dms.vms.sdk.embed.metadata.EmbedMetadataLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
@@ -22,9 +23,10 @@ import java.util.stream.Collectors;
  */
 public final class VmsApplication {
 
-    private static final Logger logger = Logger.getLogger("VmsApplication");
+    private static final Logger logger = LoggerFactory.getLogger(VmsApplication.class);
 
-    public static void start(String host, int port, String[] packages, String... entitiesToExclude){
+    public static void start(String host, int tcpPort, int httpPort,
+                             String[] packages, String... entitiesToExclude){
 
         // check first whether we are in decoupled or embed mode
         try {
@@ -47,46 +49,55 @@ public final class VmsApplication {
 
             VmsEmbeddedInternalChannels vmsInternalPubSubService = new VmsEmbeddedInternalChannels();
 
-            VmsRuntimeMetadata vmsMetadata = EmbedMetadataLoader.loadRuntimeMetadata(packages);
+            VmsRuntimeMetadata vmsRuntimeMetadata = EmbedMetadataLoader.loadRuntimeMetadata(packages);
 
             Set<String> toExclude = entitiesToExclude != null ? Arrays.stream(entitiesToExclude).collect(
                     Collectors.toSet()) : new HashSet<>();
 
-            TransactionFacade transactionFacade = EmbedMetadataLoader.loadTransactionFacadeAndInjectIntoRepositories(vmsMetadata, toExclude);
+            TransactionFacade transactionFacade = EmbedMetadataLoader.loadTransactionFacadeAndInjectIntoRepositories(vmsRuntimeMetadata, toExclude);
 
-            assert vmsMetadata != null;
+            Map<String, Class<?>> tableNameToEntityClazzMap =
+                    vmsRuntimeMetadata.entityToTableNameMap().entrySet()
+                            .stream()
+                            .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
 
-            // could be higher. must adjust according to the number of cores available
-            ExecutorService readTaskPool = Executors.newSingleThreadExecutor();
+            // instantiate loader?
+            /*
+            BulkDataLoader loader = new BulkDataLoader( vmsRuntimeMetadata.repositoryFacades(), tableNameToEntityClazzMap, VmsSerdesProxyBuilder.build() );
+            vmsRuntimeMetadata.loadedVmsInstances().put("data_loader", loader);
+            */
 
             IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
 
-            // for now only giving support to one vms
-            Optional<Map.Entry<String, Object>> entryOptional = vmsMetadata.loadedVmsInstances().entrySet().stream().findFirst();
-            if(entryOptional.isEmpty()) throw new IllegalStateException("Cannot find a single instance of VMS");
-            String vmsName = entryOptional.get().getKey();
+            // instantiate http handler
+            VmsHttpServer httpServer = new VmsHttpServer(host, httpPort, vmsRuntimeMetadata.repositoryFacades(),
+                    tableNameToEntityClazzMap, serdes);
+
+            // could be higher. must adjust according to the number of cores available
+            ExecutorService readTaskPool = Executors.newSingleThreadExecutor();
 
             VmsTransactionScheduler scheduler =
                     new VmsTransactionScheduler(
                             readTaskPool,
                             vmsInternalPubSubService,
-                            vmsMetadata.queueToVmsTransactionMap(), null);
+                            vmsRuntimeMetadata.queueToVmsTransactionMap(), null, null);
 
             // ideally lastTid and lastBatch must be read from the storage
 
             VmsNode vmsIdentifier = new VmsNode(
-                    host, port, vmsName,
+                    host, tcpPort, vmsRuntimeMetadata.virtualMicroservice(),
                     0, 0,0,
-                    vmsMetadata.dataSchema(),
-                    vmsMetadata.inputEventSchema(),
-                    vmsMetadata.outputEventSchema());
+                    vmsRuntimeMetadata.tableSchema(),
+                    vmsRuntimeMetadata.replicatedTableSchema(),
+                    vmsRuntimeMetadata.inputEventSchema(),
+                    vmsRuntimeMetadata.outputEventSchema());
 
             // at least two, one for acceptor and one for new events
             ExecutorService socketPool = Executors.newFixedThreadPool(2);
 
             EmbeddedVmsEventHandler eventHandler = EmbeddedVmsEventHandler.buildWithDefaults(
                     vmsIdentifier, null,
-                    transactionFacade, vmsInternalPubSubService, vmsMetadata, serdes, socketPool );
+                    transactionFacade, transactionFacade, vmsInternalPubSubService, vmsRuntimeMetadata, serdes, socketPool );
 
             /*
              one way to accomplish that, but that would require keep checking the thread status
@@ -96,19 +107,21 @@ public final class VmsApplication {
             schedulerThread.start();
             */
 
-            // this is not the cause since the threads continue running in background...
             CompletableFuture<?>[] futures = new CompletableFuture[2];
             futures[0] = CompletableFuture.runAsync( eventHandler );
             futures[1] = CompletableFuture.runAsync( scheduler );
 
-            CompletableFuture.allOf(futures).join();
+            CompletableFuture.anyOf(futures).join();
+
+            scheduler.stop();
+            eventHandler.stop();
+            httpServer.stop();
 
         } catch (Exception e) {
-            logger.warning("Error on starting the VMS application: "+e.getMessage());
+            logger.warn("Error on starting the VMS application: "+e.getMessage());
+            // abnormal termination
+            System.exit(1);
         }
-
-        // abnormal termination
-        System.exit(1);
 
     }
 

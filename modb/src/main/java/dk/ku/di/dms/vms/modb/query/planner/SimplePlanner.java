@@ -160,7 +160,7 @@ public class SimplePlanner {
         // Table tb = queryTree.groupByProjections.get(0).columnReference.table;
 
         // get the operations
-        // groupby selection
+        // group by selection
 
         // then just one since it is simple
         switch (queryTree.groupByProjections.get(0).groupByOperation){
@@ -173,7 +173,7 @@ public class SimplePlanner {
                 if(indexSelected == null){
                     return new Sum(queryTree.groupByProjections.get(0).columnReference.dataType,
                             queryTree.groupByProjections.get(0).columnReference.columnPosition,
-                            queryTree.groupByProjections.get(0).columnReference.table.underlyingPrimaryKeyIndex());
+                            queryTree.groupByProjections.get(0).columnReference.table.primaryKeyIndex().underlyingIndex());
                 }
                 return new IndexSum(queryTree.groupByProjections.get(0).columnReference.dataType,
                         queryTree.groupByProjections.get(0).columnReference.columnPosition,
@@ -189,12 +189,12 @@ public class SimplePlanner {
                     // then no group by
 
                     // how the user can specify a distinct?
-                    return new IndexCount( indexSelected == null ? tb.underlyingPrimaryKeyIndex() : indexSelected );
+                    return new IndexCount( indexSelected == null ? tb.primaryKeyIndex().underlyingIndex() : indexSelected );
 
                 } else {
                     int[] columns = queryTree.groupByColumns.stream()
                             .mapToInt(ColumnReference::getColumnPosition ).toArray();
-                    return new IndexCountGroupBy( indexSelected == null ? tb.underlyingPrimaryKeyIndex() : indexSelected, columns );
+                    return new IndexCountGroupBy( indexSelected == null ? tb.primaryKeyIndex().underlyingIndex() : indexSelected, columns );
                 }
 
             }
@@ -217,7 +217,7 @@ public class SimplePlanner {
         Table tb = queryTree.projections.get(0).table;
 
         // avoid one of the columns to have expression different from EQUALS
-        // to be picked by unique and non unique index
+        // to be picked by unique and non-unique index
         ReadOnlyIndex<IKey> indexSelected = this.getOptimalIndex(tb, queryTree.wherePredicates).index;
 
         // build projection
@@ -233,12 +233,12 @@ public class SimplePlanner {
         }
 
         if(indexSelected != null) {
-            // return the indexscanwithprojection
+            // return the index scan with projection
             return new IndexScanWithProjection(tb, indexSelected, projectionColumns, entrySize);
 
         } else {
             // then must get the PK index, ScanWithProjection
-            return new FullScanWithProjection( tb, tb.underlyingPrimaryKeyIndex(), projectionColumns, entrySize );
+            return new FullScanWithProjection( tb, tb.primaryKeyIndex().underlyingIndex(), projectionColumns, entrySize );
 
         }
 

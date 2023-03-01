@@ -9,7 +9,7 @@ public class Main {
             { "localhost", "1080", "true" };
 
     public static void main(String[] args) {
-        VmsApplication.start("localhost", 8080, new String[]{
+        VmsApplication.start("localhost", 8080, 8081, new String[]{
                 "dk.ku.di.dms.vms.micro_tpcc.common",
                 "dk.ku.di.dms.vms.micro_tpcc.item"
         });

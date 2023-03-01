@@ -1,11 +1,11 @@
 package dk.ku.di.dms.vms.modb.common.utils;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
 
 import java.nio.ByteBuffer;
 import java.util.List;
 
-import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.BATCH_OF_EVENTS;
+import static dk.ku.di.dms.vms.modb.common.schema.Constants.BATCH_OF_TRANSACTION_EVENTS;
 
 public final class BatchUtils {
 
@@ -13,7 +13,7 @@ public final class BatchUtils {
         int remainingBytes = writeBuffer.remaining();
 
         writeBuffer.clear();
-        writeBuffer.put(BATCH_OF_EVENTS);
+        writeBuffer.put(BATCH_OF_TRANSACTION_EVENTS);
         writeBuffer.position(5);
 
         // batch them all in the buffer,

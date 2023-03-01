@@ -4,13 +4,13 @@ import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
-import dk.ku.di.dms.vms.modb.common.schema.network.Constants;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.follower.BatchReplication;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.follower.BatchReplicationAck;
-import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
-import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
+import dk.ku.di.dms.vms.modb.common.schema.Constants;
+import dk.ku.di.dms.vms.modb.common.schema.batch.follower.BatchReplication;
+import dk.ku.di.dms.vms.modb.common.schema.batch.follower.BatchReplicationAck;
+import dk.ku.di.dms.vms.modb.common.schema.control.Presentation;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
 import dk.ku.di.dms.vms.web_common.meta.Issue;
+import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 import dk.ku.di.dms.vms.web_common.runnable.SignalingStoppableRunnable;
 
 import java.io.IOException;
@@ -115,9 +115,9 @@ public final class Follower extends SignalingStoppableRunnable {
 
         while(isRunning()) {
 
-            try {
-                Issue issue = issueQueue.take();
-            } catch (InterruptedException ignored) { }
+//            try {
+//                Issue issue = issueQueue.take();
+//            } catch (InterruptedException ignored) { }
 
         }
 

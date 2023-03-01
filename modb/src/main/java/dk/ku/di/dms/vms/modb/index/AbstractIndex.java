@@ -2,10 +2,13 @@ package dk.ku.di.dms.vms.modb.index;
 
 import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.definition.Schema;
+import dk.ku.di.dms.vms.modb.definition.key.CompositeKey;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
-import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
+import dk.ku.di.dms.vms.modb.definition.key.SimpleKey;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import jdk.internal.misc.Unsafe;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 
@@ -20,6 +23,8 @@ public abstract class AbstractIndex<K> implements ReadWriteIndex<K> {
 
     protected static final Unsafe UNSAFE = MemoryUtils.UNSAFE;
 
+    protected static final Logger logger = LoggerFactory.getLogger(AbstractIndex.class);
+
     protected final int[] columns;
 
     // to speed up queries, so the filters can be build on flight
@@ -33,7 +38,7 @@ public abstract class AbstractIndex<K> implements ReadWriteIndex<K> {
     public AbstractIndex(Schema schema, int... columnsIndex) {
         this.schema = schema;
         this.columns = columnsIndex;
-        this.key = (IIndexKey) KeyUtils.buildKey(columnsIndex);
+        this.key = columnsIndex.length == 1 ? SimpleKey.of(columnsIndex) : CompositeKey.of(columnsIndex);
         this.columnsHash = new HashSet<>(columns.length);
         for(int i : columnsIndex) this.columnsHash.add(i);
     }
@@ -52,7 +57,7 @@ public abstract class AbstractIndex<K> implements ReadWriteIndex<K> {
 
     @Override
     public final boolean containsColumn(int columnPos) {
-        return columnsHash.contains(columnPos);
+        return this.columnsHash.contains(columnPos);
     }
 
     @Override

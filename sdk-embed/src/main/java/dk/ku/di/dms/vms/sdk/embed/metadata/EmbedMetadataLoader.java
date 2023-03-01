@@ -3,23 +3,26 @@ package dk.ku.di.dms.vms.sdk.embed.metadata;
 import dk.ku.di.dms.vms.modb.common.constraint.ForeignKeyReference;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
-import dk.ku.di.dms.vms.modb.common.schema.VmsDataSchema;
-import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsReplicatedTableSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsTableSchema;
+import dk.ku.di.dms.vms.modb.common.type.DataTypeUtils;
 import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.Table;
 import dk.ku.di.dms.vms.modb.index.non_unique.NonUniqueHashIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashIndex;
+import dk.ku.di.dms.vms.modb.query.analyzer.Analyzer;
+import dk.ku.di.dms.vms.modb.query.planner.SimplePlanner;
 import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyBuffer;
 import dk.ku.di.dms.vms.modb.storage.record.OrderedRecordBuffer;
 import dk.ku.di.dms.vms.modb.storage.record.RecordBufferContext;
 import dk.ku.di.dms.vms.modb.transaction.TransactionFacade;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.NonUniqueSecondaryIndex;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.PrimaryIndex;
+import dk.ku.di.dms.vms.modb.transaction.multiversion.pk.PrimaryKeyGeneratorBuilder;
 import dk.ku.di.dms.vms.sdk.core.facade.IVmsRepositoryFacade;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsMetadataLoader;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsRuntimeMetadata;
 import dk.ku.di.dms.vms.sdk.embed.facade.EmbedRepositoryFacade;
-import dk.ku.di.dms.vms.sdk.embed.ingest.BulkDataLoader;
 import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
 
@@ -30,32 +33,24 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.channels.FileChannel;
 import java.util.*;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static java.util.logging.Logger.GLOBAL_LOGGER_NAME;
-import static java.util.logging.Logger.getLogger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class EmbedMetadataLoader {
 
-    private static final Logger logger = getLogger(GLOBAL_LOGGER_NAME);
+    private static final Logger logger = LoggerFactory.getLogger(EmbedMetadataLoader.class);
 
     public static VmsRuntimeMetadata loadRuntimeMetadata(String... packages) {
-
         try {
-
             @SuppressWarnings("unchecked")
             Constructor<IVmsRepositoryFacade> constructor = (Constructor<IVmsRepositoryFacade>) EmbedRepositoryFacade.class.getConstructors()[0];
-
             return VmsMetadataLoader.load(packages, constructor);
-
         } catch (ClassNotFoundException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
-            logger.warning("Cannot start VMs, error loading metadata: "+e.getMessage());
+            throw new IllegalStateException("Cannot start VMs, error loading metadata: "+e.getMessage());
         }
-
-        return null;
-
     }
 
     public static TransactionFacade loadTransactionFacadeAndInjectIntoRepositories(VmsRuntimeMetadata vmsRuntimeMetadata) {
@@ -65,32 +60,34 @@ public class EmbedMetadataLoader {
     public static TransactionFacade loadTransactionFacadeAndInjectIntoRepositories(
             VmsRuntimeMetadata vmsRuntimeMetadata, Set<String> entitiesToExclude) {
 
-        Map<String, Table> catalog = loadCatalog(vmsRuntimeMetadata, entitiesToExclude);
+        Map<String, Table> tableSchema = createTables(vmsRuntimeMetadata, entitiesToExclude);
+        Map<String, UniqueHashIndex> replicaSchema = createReplicatedTables(vmsRuntimeMetadata);
 
-        TransactionFacade transactionFacade = TransactionFacade.build(catalog);
+        SimplePlanner planner = new SimplePlanner();
+        Analyzer analyzer = new Analyzer(tableSchema);
+        TransactionFacade transactionFacade = TransactionFacade.build(tableSchema, replicaSchema, planner, analyzer);
 
         for(Map.Entry<String, IVmsRepositoryFacade> facadeEntry : vmsRuntimeMetadata.repositoryFacades().entrySet()){
-            ((EmbedRepositoryFacade)facadeEntry.getValue()).setDynamicDatabaseModules(transactionFacade, catalog.get(facadeEntry.getKey()));
+            ((EmbedRepositoryFacade)facadeEntry.getValue()).setDynamicDatabaseModules(transactionFacade, tableSchema.get(facadeEntry.getKey()));
         }
-
-        // instantiate loader
-        BulkDataLoader loader = new BulkDataLoader( vmsRuntimeMetadata.repositoryFacades(), vmsRuntimeMetadata.entityToTableNameMap(), VmsSerdesProxyBuilder.build() );
-
-        vmsRuntimeMetadata.loadedVmsInstances().put("data_loader", loader);
 
         return transactionFacade;
 
     }
 
-    private static Map<String, Table> loadCatalog(VmsRuntimeMetadata vmsRuntimeMetadata, Set<String> entitiesToExclude) {
+    private static Map<String, UniqueHashIndex> createReplicatedTables(VmsRuntimeMetadata vmsRuntimeMetadata){
 
-        Map<String, Table> catalog = new HashMap<>(vmsRuntimeMetadata.dataSchema().size());
-        Map<VmsDataSchema, Tuple<Schema, Map<String, int[]>>> dataSchemaToPkMap = new HashMap<>(vmsRuntimeMetadata.dataSchema().size());
+    }
+
+    private static Map<String, Table> createTables(VmsRuntimeMetadata vmsRuntimeMetadata, Set<String> entitiesToExclude) {
+
+        Map<String, Table> catalog = new HashMap<>(vmsRuntimeMetadata.tableSchema().size());
+        Map<VmsTableSchema, Tuple<Schema, Map<String, int[]>>> dataSchemaToPkMap = new HashMap<>(vmsRuntimeMetadata.tableSchema().size());
 
         /*
          * Build primary key index and map the foreign keys (internal to this VMS)
          */
-        for (VmsDataSchema vmsDataSchema : vmsRuntimeMetadata.dataSchema().values()) {
+        for (VmsTableSchema vmsDataSchema : vmsRuntimeMetadata.tableSchema().values()) {
 
             if(entitiesToExclude != null && !entitiesToExclude.contains(vmsDataSchema.tableName)) continue;
 
@@ -101,9 +98,9 @@ public class EmbedMetadataLoader {
                 // build
                 Map<String, List<ForeignKeyReference>> res = Stream.of( vmsDataSchema.foreignKeyReferences )
                                 .sorted( (x,y) -> schema.columnPosition( x.columnName() ) <= schema.columnPosition( y.columnName() ) ? -1 : 1 )
-                        .collect( Collectors.groupingBy(ForeignKeyReference::vmsTableName ) ); // Collectors.toUnmodifiableList() ) );
+                        .collect( Collectors.groupingBy(ForeignKeyReference::vmsTableName ) );
 
-                Map<String, int[]> definitiveMap = buildSchemaForeignKeyMap( schema, vmsRuntimeMetadata.dataSchema(), res );
+                Map<String, int[]> definitiveMap = buildSchemaForeignKeyMap( schema, vmsRuntimeMetadata.tableSchema(), res );
 
                 dataSchemaToPkMap.put(vmsDataSchema, Tuple.of(schema, definitiveMap));
 
@@ -119,15 +116,29 @@ public class EmbedMetadataLoader {
 
         // page size in bytes for non unique index bucket
         int pageSize = MemoryUtils.DEFAULT_PAGE_SIZE;
+        VmsTableSchema vmsDataSchema;
 
         // mount vms data schema to consistent index map
         for (var entry : dataSchemaToPkMap.entrySet()) {
 
             Schema schema = entry.getValue().t1();
 
-            PrimaryIndex consistentIndex = createPrimaryIndex(entry.getKey().tableName, schema);
+            // map this to a file, so whenever a batch commit event arrives, it can trigger logging the entire file
+            RecordBufferContext recordBufferContext = loadRecordBuffer(10, schema.getRecordSize(), entry.getKey().tableName);
+            UniqueHashIndex pkIndex = new UniqueHashIndex(recordBufferContext, schema, schema.getPrimaryKeyColumns());
 
-            vmsDataSchemaToIndexMap.put( entry.getKey().vmsName, consistentIndex );
+            vmsDataSchema = entry.getKey();
+
+            PrimaryIndex consistentIndex;
+            if(vmsDataSchema.pkAutoGenerated) {
+                Class<?> type = DataTypeUtils.getJavaTypeFromDataType(vmsDataSchema.columnDataTypes[vmsDataSchema.primaryKeyColumns[0]]);
+                var gen = PrimaryKeyGeneratorBuilder.build(type);
+                consistentIndex = new PrimaryIndex(pkIndex, gen);
+            } else {
+                consistentIndex = new PrimaryIndex(pkIndex);
+            }
+
+            vmsDataSchemaToIndexMap.put( entry.getKey().tableName, consistentIndex );
 
             List<NonUniqueHashIndex> listSecIdxs = new ArrayList<>(entry.getValue().t2().size());
             vmsDataSchemaToSecondaryIndexMap.put(entry.getKey().tableName, listSecIdxs);
@@ -141,10 +152,10 @@ public class EmbedMetadataLoader {
 
         }
 
-        // now I have the pk indexes and the fks
+        // now I have the pk indexes and the fks, build the table
         for (var entry : dataSchemaToPkMap.entrySet()) {
 
-            VmsDataSchema vmsDataSchema = entry.getKey();
+            vmsDataSchema = entry.getKey();
             Tuple<Schema, Map<String, int[]>> tupleSchemaFKs = entry.getValue();
 
             Map<PrimaryIndex, int[]> fks = new HashMap<>(tupleSchemaFKs.t2().size());
@@ -156,7 +167,7 @@ public class EmbedMetadataLoader {
 
             List<NonUniqueSecondaryIndex> list = new ArrayList<>();
 
-            PrimaryIndex primaryIndex = vmsDataSchemaToIndexMap.get( vmsDataSchema.vmsName );
+            PrimaryIndex primaryIndex = vmsDataSchemaToIndexMap.get( vmsRuntimeMetadata.virtualMicroservice() );
 
             // build secondary indexes (for foreign keys)
             for(var idx : vmsDataSchemaToSecondaryIndexMap.get(vmsDataSchema.tableName)){
@@ -201,31 +212,15 @@ public class EmbedMetadataLoader {
 
     }
 
-    private static PrimaryIndex createPrimaryIndex(String fileName, Schema schema) {
-        // map this to a file, so whenever a batch commit event arrives, it can trigger logging the entire file
-        RecordBufferContext recordBufferContext = loadRecordBuffer(10, schema.getRecordSize(), fileName);
-        UniqueHashIndex pkIndex = new UniqueHashIndex(recordBufferContext, schema);
-        return new PrimaryIndex(pkIndex);
-    }
-
-    private static Map<String, int[]> buildSchemaForeignKeyMap(Schema schema, Map<String, VmsDataSchema> dataSchemaMap, Map<String, List<ForeignKeyReference>> map) {
-
+    private static Map<String, int[]> buildSchemaForeignKeyMap(Schema schema, Map<String, VmsTableSchema> dataSchemaMap, Map<String, List<ForeignKeyReference>> map) {
         Map<String, int[]> res = new HashMap<>();
-
         for( var entry : map.entrySet() ){
-
-            VmsDataSchema dataSchema = dataSchemaMap.get( entry.getKey() );
-
+            VmsTableSchema dataSchema = dataSchemaMap.get( entry.getKey() );
             var list = entry.getValue();
-
             int[] intArray = list.stream().mapToInt(p-> schema.columnPosition( p.columnName() ) ).toArray();
-
-            res.put( dataSchema.vmsName, intArray );
-
+            res.put( dataSchema.tableName, intArray );
         }
-
         return res;
-
     }
 
     private static OrderedRecordBuffer loadOrderedRecordBuffer(long address, int size){
@@ -242,7 +237,7 @@ public class EmbedMetadataLoader {
             MemorySegment segment = mapFileIntoMemorySegment(sizeInBytes, append);
             return new RecordBufferContext(segment, maxNumberOfRecords);
         } catch (Exception e){
-            logger.warning("Could not map file. Resorting to direct memory allocation attempt: "+e.getMessage());
+            logger.warn("Could not map file. Resorting to direct memory allocation attempt: "+e.getMessage());
             MemorySegment segment = MemorySegment.allocateNative(sizeInBytes, scope);
             return new RecordBufferContext(segment, maxNumberOfRecords);
         }
@@ -254,7 +249,7 @@ public class EmbedMetadataLoader {
         String userHome = System.getProperty("user.home");
 
         if(userHome == null){
-            logger.warning("User home directory is not set in the environment. Resorting to /usr/local/lib");
+            logger.warn("User home directory is not set in the environment. Resorting to /usr/local/lib");
             userHome = "/usr/local/lib";
         }
 

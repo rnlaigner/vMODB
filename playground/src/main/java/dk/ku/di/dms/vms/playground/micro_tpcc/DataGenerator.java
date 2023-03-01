@@ -6,9 +6,11 @@ import dk.ku.di.dms.vms.micro_tpcc.order.entity.NewOrder;
 import dk.ku.di.dms.vms.micro_tpcc.order.entity.Order;
 import dk.ku.di.dms.vms.micro_tpcc.order.entity.OrderLine;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
-import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
+import dk.ku.di.dms.vms.modb.common.schema.control.Presentation;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -21,14 +23,13 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.logging.Logger;
 
-import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.BATCH_OF_EVENTS;
+import static dk.ku.di.dms.vms.modb.common.schema.Constants.BATCH_OF_TRANSACTION_EVENTS;
 import static java.net.StandardSocketOptions.*;
 
 public class DataGenerator {
 
-    private static final Logger logger = Logger.getLogger("DataLoader");
+    private static final Logger logger = LoggerFactory.getLogger("DataLoader");
 
     private static final IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
 
@@ -145,7 +146,7 @@ public class DataGenerator {
 
             while (i < n) {
 
-                writeBuffer.put(BATCH_OF_EVENTS);
+                writeBuffer.put(BATCH_OF_TRANSACTION_EVENTS);
                 // first int is to write the number of objects
                 writeBuffer.position(1 + Integer.BYTES);
 
@@ -176,7 +177,7 @@ public class DataGenerator {
                 try {
                     this.channel.write( writeBuffer ).get();
                 } catch (InterruptedException | ExecutionException e) {
-                    logger.warning("Error on sending bulk data to VMS!");
+                    logger.warn("Error on sending bulk data to VMS!");
                 } finally {
                     writeBuffer.clear();
                 }

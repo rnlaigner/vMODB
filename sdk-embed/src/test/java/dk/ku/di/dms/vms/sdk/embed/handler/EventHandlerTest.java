@@ -1,16 +1,18 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
-import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
-import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
-import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.NetworkNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.control.Presentation;
+import dk.ku.di.dms.vms.modb.common.schema.meta.NetworkAddress;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsEventSchema;
+import dk.ku.di.dms.vms.modb.common.schema.node.NetworkNode;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
-import dk.ku.di.dms.vms.modb.transaction.CheckpointingAPI;
+import dk.ku.di.dms.vms.modb.common.transaction.TransactionWrite;
+import dk.ku.di.dms.vms.modb.transaction.api.CheckpointingAPI;
+import dk.ku.di.dms.vms.modb.common.transaction.api.ReplicationAPI;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsRuntimeMetadata;
 import dk.ku.di.dms.vms.sdk.core.operational.InboundEvent;
 import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionResult;
@@ -22,6 +24,8 @@ import dk.ku.di.dms.vms.sdk.embed.events.OutputEventExample2;
 import dk.ku.di.dms.vms.sdk.embed.events.OutputEventExample3;
 import dk.ku.di.dms.vms.sdk.embed.metadata.EmbedMetadataLoader;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -33,9 +37,8 @@ import java.nio.channels.CompletionHandler;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Logger;
 
-import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.BATCH_OF_EVENTS;
+import static dk.ku.di.dms.vms.modb.common.schema.Constants.BATCH_OF_TRANSACTION_EVENTS;
 import static java.net.StandardSocketOptions.SO_KEEPALIVE;
 import static java.net.StandardSocketOptions.TCP_NODELAY;
 
@@ -64,14 +67,30 @@ public class EventHandlerTest {
         }
     }
 
-    private static final Logger logger = Logger.getLogger(EventHandlerTest.class.getName());
+    private static final Logger logger = LoggerFactory.getLogger(EventHandlerTest.class);
     private static final IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
 
-    private static final class DumbCheckpointAPI implements CheckpointingAPI {
+    private static final class DumbCheckpointAPI implements CheckpointingAPI, ReplicationAPI {
         @Override
         public void checkpoint() {
              logger.info("Checkpoint called at: "+System.currentTimeMillis());
         }
+
+        @Override
+        public boolean addSubscription(String table) {
+            return false;
+        }
+
+        @Override
+        public boolean removeSubscription(String table) {
+            return false;
+        }
+
+        @Override
+        public void applyUpdates(Map<String, List<TransactionWrite>> updates) {
+            // do nothing
+        }
+
     }
 
     /**
@@ -82,7 +101,7 @@ public class EventHandlerTest {
      * to be discarded for a given
      */
     private static VmsCtx loadMicroservice(NetworkNode node,
-                                           Map<String, Deque<ConsumerVms>> eventToConsumersMap,
+                                           Map<String, Set<ConsumerVms>> eventToConsumersMap,
                                            boolean eventHandlerActive,
                                            VmsEmbeddedInternalChannels vmsInternalPubSubService, String vmsName,
                                            List<String> inToDiscard, List<String> outToDiscard, List<String> inToSwap, List<String> outToSwap)
@@ -91,7 +110,6 @@ public class EventHandlerTest {
         VmsRuntimeMetadata vmsMetadata = EmbedMetadataLoader.loadRuntimeMetadata("dk.ku.di.dms.vms.sdk.embed");
 
         // discard events
-        assert vmsMetadata != null;
 
         for (String in : inToDiscard)
             vmsMetadata.inputEventSchema().remove(in);
@@ -114,18 +132,20 @@ public class EventHandlerTest {
         IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
 
         VmsTransactionScheduler scheduler = new VmsTransactionScheduler(readTaskPool, vmsInternalPubSubService,
-                        vmsMetadata.queueToVmsTransactionMap(),null);
+                        vmsMetadata.queueToVmsTransactionMap(),null, null);
 
         VmsNode vmsIdentifier = new VmsNode(
                 node.host, node.port, vmsName,
                 1, 0, 0,
-                vmsMetadata.dataSchema(),
+                vmsMetadata.tableSchema(), vmsMetadata.replicatedTableSchema(),
                 vmsMetadata.inputEventSchema(), vmsMetadata.outputEventSchema());
 
         ExecutorService socketPool = Executors.newFixedThreadPool(2);
 
+        var dumb = new DumbCheckpointAPI();
+
         EmbeddedVmsEventHandler eventHandler = EmbeddedVmsEventHandler.buildWithDefaults(
-                vmsIdentifier, eventToConsumersMap, new DumbCheckpointAPI(),
+                vmsIdentifier, eventToConsumersMap, dumb, dumb,
                 vmsInternalPubSubService,  vmsMetadata, serdes, socketPool );
 
         if(eventHandlerActive) {
@@ -189,15 +209,15 @@ public class EventHandlerTest {
                 outToSwap);
 
         InputEventExample1 eventExample = new InputEventExample1(0);
-        InboundEvent event = new InboundEvent(1,0,1,"in", InputEventExample1.class, eventExample);
+        InboundEvent event = new InboundEvent(1,0,1,"in", eventExample, Collections.emptyMap());
         channelForAddingInput.transactionInputQueue().add(event);
 
         var input1ForVms2 = channelForAddingInput.transactionOutputQueue().poll(5, TimeUnit.SECONDS);
         assert input1ForVms2 != null;
 
         for(var res : input1ForVms2.resultTasks){
-            Class<?> clazz =  res.outputQueue().equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
-            InboundEvent event_ = new InboundEvent(1,0,1,res.outputQueue(),clazz,res.output());
+            // Class<?> clazz =  res.outputQueue().equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
+            InboundEvent event_ = new InboundEvent(1,0,1, res.outputQueue(), res.output(), Collections.emptyMap());
             channelForGettingOutput.transactionInputQueue().add(event_);
         }
 
@@ -250,9 +270,9 @@ public class EventHandlerTest {
             }
         });
 
-        Deque<ConsumerVms> consumerSet = new ArrayDeque<>();
+        Set<ConsumerVms> consumerSet = new HashSet<>();
         consumerSet.add(me);
-        Map<String, Deque<ConsumerVms>> eventToConsumersMap = new HashMap<>();
+        Map<String, Set<ConsumerVms>> eventToConsumersMap = new HashMap<>();
         eventToConsumersMap.put("out1", consumerSet);
         eventToConsumersMap.put("out2", consumerSet);
 
@@ -311,9 +331,9 @@ public class EventHandlerTest {
         serverSocket.bind(address);
 
         // 3 - set consumer of events
-        Deque<ConsumerVms> consumerSet = new ArrayDeque<>();
+        Set<ConsumerVms> consumerSet = new HashSet<>();
         consumerSet.add(me);
-        Map<String, Deque<ConsumerVms>> eventToConsumersMap = new HashMap<>();
+        Map<String, Set<ConsumerVms>> eventToConsumersMap = new HashMap<>();
         eventToConsumersMap.put("out1", consumerSet);
         eventToConsumersMap.put("out2", consumerSet);
 
@@ -353,7 +373,7 @@ public class EventHandlerTest {
         Map<String,Long> precedenceMap = new HashMap<>();
         precedenceMap.put("example1", 0L);
 
-        TransactionEvent.Payload eventInput = TransactionEvent.of(1,1,"in", inputPayload, serdes.serializeMap(precedenceMap));
+        TransactionEvent.Payload eventInput = TransactionEvent.Payload.of(1,1,"in", inputPayload, serdes.serializeMap(precedenceMap));
         TransactionEvent.write(buffer, eventInput);
         buffer.flip();
         channel.write(buffer).get(); // no need to wait
@@ -377,14 +397,14 @@ public class EventHandlerTest {
         // 9 - assert the batch of events is received
         buffer.position(0);
         byte messageType = buffer.get();
-        assert messageType == BATCH_OF_EVENTS;
+        assert messageType == BATCH_OF_TRANSACTION_EVENTS;
         int size = buffer.getInt();
         assert size == 2;
 
         TransactionEvent.Payload payload;
         for(int i = 0; i < size; i++){
             buffer.get(); // exclude event
-            payload = TransactionEvent.read(buffer);
+            payload = TransactionEvent.readFromVMS(buffer);
             Class<?> clazz =  payload.event().equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
             Object obj = serdes.deserialize(payload.payload(), clazz);
             assert !payload.event().equalsIgnoreCase("out1") || obj instanceof OutputEventExample1;
@@ -562,7 +582,7 @@ public class EventHandlerTest {
         Map<String,Long> precedenceMap = new HashMap<>();
         precedenceMap.put("example1", 0L);
 
-        TransactionEvent.Payload eventInput = TransactionEvent.of(1,0,"in", inputPayload, serdes.serializeMap(precedenceMap));
+        TransactionEvent.Payload eventInput = TransactionEvent.Payload.of(1,0,"in", inputPayload, serdes.serializeMap(precedenceMap));
         TransactionEvent.write(buffer, eventInput);
         buffer.flip();
         channel.write(buffer).get(); // no need to wait
@@ -578,7 +598,7 @@ public class EventHandlerTest {
         // 9 - assert the batch of events is received
         buffer.position(0);
         byte messageType = buffer.get();
-        assert messageType == BATCH_OF_EVENTS;
+        assert messageType == BATCH_OF_TRANSACTION_EVENTS;
         int size = buffer.getInt();
         assert size == 2;
 
@@ -586,7 +606,7 @@ public class EventHandlerTest {
 
         for(int i = 0; i < size; i++){
             buffer.get(); // exclude event
-            payload = TransactionEvent.read(buffer);
+            payload = TransactionEvent.readFromLeader(buffer);
             Class<?> clazz =  payload.event().equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
             Object obj = serdes.deserialize(payload.payload(), clazz);
             assert !payload.event().equalsIgnoreCase("out1") || obj instanceof OutputEventExample1;

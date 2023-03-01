@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.coordinator.election.schema;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

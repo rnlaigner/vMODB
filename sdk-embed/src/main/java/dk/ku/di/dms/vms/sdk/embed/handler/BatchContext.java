@@ -1,7 +1,7 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitInfo;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitCommand;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitCommand;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitInfo;
 
 public class BatchContext {
 
@@ -16,6 +16,7 @@ public class BatchContext {
     // whether this vms is a terminal for this batch
     public final boolean terminal;
 
+    // for terminal nodes in a batch
     public static BatchContext build(BatchCommitInfo.Payload batchCommitInfo){
         return new BatchContext(batchCommitInfo.batch(), batchCommitInfo.lastTidOfBatch(), batchCommitInfo.previousBatch(), true);
     }
@@ -24,6 +25,7 @@ public class BatchContext {
         return new BatchContext(batch, lastTidOfBatch, previousBatch, false);
     }
 
+    // for non-terminal nodes in a batch
     public static BatchContext build(BatchCommitCommand.Payload batchCommitRequest) {
         return new BatchContext(batchCommitRequest.batch(), batchCommitRequest.lastTidOfBatch(),
                 batchCommitRequest.previousBatch(),false);
@@ -47,7 +49,7 @@ public class BatchContext {
         // newly received batch
         OPEN(0),
         // this status is set after all TIDs of the batch have been processed
-        BATCH_COMPLETED(1),
+        BATCH_EXECUTION_COMPLETED(1),
         // this status is set when the logging process starts right after the leader sends the batch commit request
         LOGGING(2),
         // this status is set when the state is logged
@@ -60,11 +62,7 @@ public class BatchContext {
     }
 
     public boolean isOpen(){
-        return this.status < Status.BATCH_COMPLETED.value;
-    }
-
-    public boolean isCompleted(){
-        return this.status == Status.BATCH_COMPLETED.value;
+        return this.status < Status.BATCH_EXECUTION_COMPLETED.value;
     }
 
     public boolean isCommitted(){

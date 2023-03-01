@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.modb.service.server;
 
-import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsEventSchema;
 import dk.ku.di.dms.vms.web_common.runnable.SignalingStoppableRunnable;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 

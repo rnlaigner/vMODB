@@ -1,16 +1,18 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitAck;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchComplete;
-import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitAck;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchComplete;
+import dk.ku.di.dms.vms.modb.common.schema.control.Presentation;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionAbort;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.utils.BatchUtils;
 import dk.ku.di.dms.vms.web_common.runnable.StoppableRunnable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
@@ -19,9 +21,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
-import java.util.logging.Logger;
 
-import static dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation.YES;
+import static dk.ku.di.dms.vms.modb.common.schema.control.Presentation.YES;
 import static dk.ku.di.dms.vms.sdk.embed.handler.EmbeddedVmsEventHandler.DEFAULT_DELAY_FOR_BATCH_SEND;
 
 /**
@@ -32,7 +33,7 @@ import static dk.ku.di.dms.vms.sdk.embed.handler.EmbeddedVmsEventHandler.DEFAULT
  */
 final class LeaderWorker extends StoppableRunnable {
 
-    private final Logger logger;
+    private final static Logger logger = LoggerFactory.getLogger(LeaderWorker.class);
 
     // defined after presentation
     private ServerIdentifier leader;
@@ -101,23 +102,21 @@ final class LeaderWorker extends StoppableRunnable {
         this.queuesLeaderSubscribesTo = queuesLeaderSubscribesTo;
         this.leaderWorkerQueue = leaderWorkerQueue;
         this.serdesProxy = serdesProxy;
-        this.logger = Logger.getLogger("leader-worker");
-        this.logger.setUseParentHandlers(true);
     }
 
     @Override
     public void run() {
 
-        this.logger.info("Leader worker started!");
+        logger.info("Leader worker started!");
 
         // complete handshake first
         Future<Integer> writePresentationRes = this.processLeaderPresentation();
         try {
             writePresentationRes.get();
             this.writeBuffer.clear();
-            this.logger.info("Leader presentation processed");
+            logger.info("Leader presentation processed");
         } catch (InterruptedException | ExecutionException e) {
-            this.logger.warning("Could not finish handshake protocol. Turning leader worker off.");
+            logger.warn("Could not finish handshake protocol. Turning leader worker off.");
             this.stop();
             this.writeBuffer.clear();
             MemoryManager.releaseTemporaryDirectBuffer(this.writeBuffer);
@@ -142,7 +141,7 @@ final class LeaderWorker extends StoppableRunnable {
                 }
 
             } catch (InterruptedException e) {
-                this.logger.warning("Error on taking message from worker queue: "+e.getMessage());
+                logger.warn("Error on taking message from worker queue: "+e.getMessage());
             }
         }
     }
@@ -166,14 +165,13 @@ final class LeaderWorker extends StoppableRunnable {
         this.writeBuffer.clear();
 
         if(includeMetadata) {
-            String vmsDataSchemaStr = serdesProxy.serializeDataSchema(vmsNode.dataSchema);
+            String vmsDataSchemaStr = serdesProxy.serializeDataSchema(vmsNode.tableSchema);
             String vmsInputEventSchemaStr = serdesProxy.serializeEventSchema(vmsNode.inputEventSchema);
             String vmsOutputEventSchemaStr = serdesProxy.serializeEventSchema(vmsNode.outputEventSchema);
-
-            Presentation.writeVms(this.writeBuffer, vmsNode, vmsNode.vmsIdentifier, vmsNode.batch, vmsNode.lastTidOfBatch, vmsNode.previousBatch, vmsDataSchemaStr, vmsInputEventSchemaStr, vmsOutputEventSchemaStr);
+            Presentation.writeVms(this.writeBuffer, vmsNode, vmsNode.name, vmsNode.batch, vmsNode.lastTidOfBatch, vmsNode.previousBatch, vmsDataSchemaStr, vmsInputEventSchemaStr, vmsOutputEventSchemaStr);
             // the protocol requires the leader to wait for the vms metadata in order to start sending vms messages
         } else {
-            Presentation.writeVms(this.writeBuffer, vmsNode, vmsNode.vmsIdentifier, vmsNode.batch, vmsNode.lastTidOfBatch, vmsNode.previousBatch);
+            Presentation.writeVms(this.writeBuffer, vmsNode, vmsNode.name, vmsNode.batch, vmsNode.lastTidOfBatch, vmsNode.previousBatch);
         }
 
         this.writeBuffer.flip();

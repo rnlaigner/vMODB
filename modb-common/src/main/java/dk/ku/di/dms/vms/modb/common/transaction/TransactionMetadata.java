@@ -22,12 +22,13 @@ public final class TransactionMetadata {
         lastWriteTaskFinished = TRANSACTION_CONTEXT.get().tid;
     }
 
-    public static void registerTransactionStart(long tid, int identifier, boolean readOnly){
-        TRANSACTION_CONTEXT.set( new TransactionContext(
+    public static TransactionContext registerTransactionStart(long tid, int identifier, boolean readOnly){
+        TransactionContext txCtx = new TransactionContext(
                 new TransactionId(tid, identifier),
                 lastWriteTaskFinished,
-                readOnly )
-        );
+                readOnly);
+        TRANSACTION_CONTEXT.set( txCtx );
+        return txCtx;
     }
 
     // tid 1 W -- executing

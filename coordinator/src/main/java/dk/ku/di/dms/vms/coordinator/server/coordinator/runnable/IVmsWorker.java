@@ -1,9 +1,9 @@
 package dk.ku.di.dms.vms.coordinator.server.coordinator.runnable;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitCommand;
-import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitInfo;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitCommand;
+import dk.ku.di.dms.vms.modb.common.schema.batch.BatchCommitInfo;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionAbort;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionEvent;
 
 import java.util.Map;
 import java.util.concurrent.*;
@@ -50,7 +50,7 @@ public interface IVmsWorker {
         SEND_BATCH_OF_EVENTS_WITH_COMMIT_INFO, // to terminals only
         SEND_BATCH_COMMIT_COMMAND,
         SEND_TRANSACTION_ABORT,
-        SEND_CONSUMER_SET
+        SEND_CONSUMER_CTX
     }
 
     enum State {
@@ -62,8 +62,8 @@ public interface IVmsWorker {
         VMS_PRESENTATION_RECEIVED,
         VMS_PRESENTATION_RECEIVE_FAILED,
         VMS_PRESENTATION_PROCESSED,
-        CONSUMER_SET_READY_FOR_SENDING,
-        CONSUMER_SET_SENDING_FAILED,
+        CONSUMER_CTX_READY_FOR_SENDING,
+        CONSUMER_CTX_SENDING_FAILED,
         CONSUMER_EXECUTING
     }
 

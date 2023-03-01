@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.sdk.core.event.channel;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
+import dk.ku.di.dms.vms.modb.common.schema.transaction.TransactionAbort;
 import dk.ku.di.dms.vms.sdk.core.operational.InboundEvent;
 import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionResult;
 import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionScheduler;
@@ -19,7 +19,7 @@ import java.util.concurrent.BlockingQueue;
  * To decouple the components, this interface is used to hide the queue concrete implementations
  * and each component makes use of the queue of interest of its own work.
  * In the end, these are just explicit channels for different threads to communicate with
- * each other. Basically a message-passing mechanism.
+ * each other. Basically what Java offers for message-passing mechanism.
  *
  */
 public interface IVmsInternalChannels {
@@ -52,6 +52,9 @@ public interface IVmsInternalChannels {
 
     //
     BlockingQueue<TransactionAbort.Payload> transactionAbortOutputQueue();
+
+    // used internally by terminal VMSs to log internal state
+    BlockingQueue<Object> batchCommitCommandQueue();
 
     /*
      *  This is sent by the leader by all non-terminal VMSs involved in the last batch commit

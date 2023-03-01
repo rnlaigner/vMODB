@@ -1,7 +1,7 @@
 package dk.ku.di.dms.vms;
 
 import com.google.gson.*;
-import dk.ku.di.dms.vms.modb.common.schema.VmsDataSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsTableSchema;
 import org.junit.Test;
 
 import java.io.*;
@@ -9,7 +9,7 @@ import java.util.Base64;
 
 public class JsonTests {
 
-    private static VmsDataSchema buildDefaultMetadata(){
+    private static VmsTableSchema buildDefaultMetadata(){
         // return new VmsDataSchema("test","table", new int[]{1,2,3}, new String[]{"1"}, new DataType[]{DataType.INT}, null, null );
         return null;
     }
@@ -41,7 +41,7 @@ public class JsonTests {
 
     @Test
     public void test1(){
-        VmsDataSchema schema = buildDefaultMetadata();
+        VmsTableSchema schema = buildDefaultMetadata();
 
         GsonBuilder builder = new GsonBuilder();
         builder.registerTypeAdapter(byte[].class, (JsonSerializer<byte[]>) (src, typeOfSrc, context) -> new JsonPrimitive(Base64.getEncoder().encodeToString(src)));

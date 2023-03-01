@@ -38,6 +38,17 @@ public class CoordinatorOptions {
     // defines how the batch metadata is replicated across servers
     private BatchReplicationStrategy batchReplicationStrategy = BatchReplicationStrategy.NONE;
 
+    // defines whether coordinator should wait For Starter VMSs to send their vms node in order To Send Consumer Context to the VMSs
+    private boolean waitForStarterVMSsToSendConsumerContext = true;
+
+    public boolean waitForStarters(){
+        return this.waitForStarterVMSsToSendConsumerContext;
+    }
+
+    public void withWaitForStarters(boolean value){
+        this.waitForStarterVMSsToSendConsumerContext = value;
+    }
+
     public boolean isNetworkEnabled() {
         return this.networkEnabled;
     }

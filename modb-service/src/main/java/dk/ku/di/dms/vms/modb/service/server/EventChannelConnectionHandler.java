@@ -1,21 +1,22 @@
 package dk.ku.di.dms.vms.modb.service.server;
 
-import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsEventSchema;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.logging.Logger;
 
 /**
  * Handler might be better to avoid the handlers from consuming CPU...
  */
 public class EventChannelConnectionHandler implements CompletionHandler<AsynchronousSocketChannel, String> {
 
-    private static final Logger logger = Logger.getLogger("EventChannelConnectionHandler");
+    private static final Logger logger = LoggerFactory.getLogger("EventChannelConnectionHandler");
 
     private final CountDownLatch latch;
     private final IVmsSerdesProxy serdes;

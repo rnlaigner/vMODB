@@ -1,6 +1,8 @@
 package dk.ku.di.dms.vms.modb.transaction.multiversion;
 
 import dk.ku.di.dms.vms.modb.common.transaction.TransactionId;
+import dk.ku.di.dms.vms.modb.common.transaction.TransactionWrite;
+import dk.ku.di.dms.vms.modb.common.transaction.WriteType;
 import dk.ku.di.dms.vms.modb.transaction.internal.SingleWriterMultipleReadersFIFO;
 
 /**

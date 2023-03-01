@@ -13,7 +13,6 @@ import dk.ku.di.dms.vms.modb.storage.record.RecordBufferContext;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 
 import static dk.ku.di.dms.vms.modb.definition.Header.inactive;
 
@@ -24,35 +23,27 @@ import static dk.ku.di.dms.vms.modb.definition.Header.inactive;
  */
 public final class UniqueHashIndex extends AbstractIndex<IKey> {
 
-    private static final Logger logger = Logger.getLogger("UniqueHashIndex");
-
     private final RecordBufferContext recordBufferContext;
 
+    // can be thread local to avoid synchronization between threads
     private final Map<IKey, Object[]> cacheObjectStore;
 
     // cache to avoid getting data from schema
-    private volatile int size = 0;
+    private int size = 0;
 
     private final long recordSize;
 
     /**
      * Based on HashMap how handle bucket overflow
-     * After 8, records will be overwritten or stored in a non unique hash index
+     * After 8, records will be overwritten or stored in a non-unique hash index
      */
     // static final int TREEIFY_THRESHOLD = 8;
-
-    public UniqueHashIndex(RecordBufferContext recordBufferContext, Schema schema){
-        super(schema, schema.getPrimaryKeyColumns());
-        this.recordBufferContext = recordBufferContext;
-        this.cacheObjectStore = new ConcurrentHashMap<>();
-        this.recordSize = schema.getRecordSize();
-    }
 
     /**
      * Unique index for non-primary keys.
      * In other words, a constructor for a secondary index
      */
-    public UniqueHashIndex(RecordBufferContext recordBufferContext, Schema schema, int... columnsIndex){
+    public UniqueHashIndex(RecordBufferContext recordBufferContext, Schema schema,  int... columnsIndex){
         super(schema, columnsIndex);
         this.recordBufferContext = recordBufferContext;
         this.cacheObjectStore = new ConcurrentHashMap<>();
@@ -74,7 +65,7 @@ public final class UniqueHashIndex extends AbstractIndex<IKey> {
         long pos = getPosition(key.hashCode());
 
         if(UNSAFE.getBoolean(null, pos)){
-            logger.warning("Overwriting previously written record.");
+            logger.warn("Overwriting previously written record.");
         }
 
         UNSAFE.putBoolean(null, pos, true);

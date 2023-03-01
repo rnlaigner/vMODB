@@ -4,11 +4,9 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import dk.ku.di.dms.vms.modb.common.event.DataRequestEvent;
 import dk.ku.di.dms.vms.modb.common.event.DataResponseEvent;
-import dk.ku.di.dms.vms.modb.common.schema.VmsDataSchema;
-import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
-import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.NetworkNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsTableSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsEventSchema;
+import dk.ku.di.dms.vms.modb.common.schema.meta.NetworkAddress;
 
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +30,8 @@ final class DefaultVmsSerdes implements IVmsSerdesProxy {
      VMS METADATA EVENTS
      **/
 
+    private static final Type EVENT_TYPE = new TypeToken<Map<String, VmsEventSchema>>(){}.getType();
+
     @Override
     public String serializeEventSchema(Map<String, VmsEventSchema> vmsEventSchema) {
         return this.gson.toJson( vmsEventSchema );
@@ -39,24 +39,26 @@ final class DefaultVmsSerdes implements IVmsSerdesProxy {
 
     @Override
     public Map<String, VmsEventSchema> deserializeEventSchema(String vmsEventSchemaStr) {
-        return this.gson.fromJson(vmsEventSchemaStr, new TypeToken<Map<String, VmsEventSchema>>(){}.getType());
+        return this.gson.fromJson(vmsEventSchemaStr, EVENT_TYPE);
     }
 
     @Override
-    public String serializeDataSchema(Map<String, VmsDataSchema> vmsDataSchema) {
+    public String serializeDataSchema(Map<String, VmsTableSchema> vmsDataSchema) {
         return this.gson.toJson( vmsDataSchema );
     }
 
+    private static final Type DATA_TYPE = new TypeToken<Map<String, VmsTableSchema>>(){}.getType();
+
     @Override
-    public Map<String, VmsDataSchema> deserializeDataSchema(String dataSchemaStr) {
-        return this.gson.fromJson(dataSchemaStr, new TypeToken<Map<String, VmsDataSchema>>(){}.getType());
+    public Map<String, VmsTableSchema> deserializeDataSchema(String dataSchemaStr) {
+        return this.gson.fromJson(dataSchemaStr, DATA_TYPE);
     }
 
     /**
         DATA
     **/
 
-     @Override
+    @Override
     public byte[] serializeDataRequestEvent(DataRequestEvent event) {
         String json = this.gson.toJson(event);
         return json.getBytes(StandardCharsets.UTF_8);

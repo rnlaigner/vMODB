@@ -5,11 +5,11 @@ import dk.ku.di.dms.vms.coordinator.server.coordinator.runnable.Coordinator;
 import dk.ku.di.dms.vms.coordinator.server.schema.TransactionInput;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionBootstrap;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
-import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
-import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.NetworkNode;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
+import dk.ku.di.dms.vms.modb.common.schema.meta.NetworkAddress;
+import dk.ku.di.dms.vms.modb.common.schema.meta.VmsEventSchema;
+import dk.ku.di.dms.vms.modb.common.schema.node.NetworkNode;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.modb.transaction.TransactionFacade;
@@ -19,6 +19,8 @@ import dk.ku.di.dms.vms.sdk.core.scheduler.VmsTransactionScheduler;
 import dk.ku.di.dms.vms.sdk.embed.channel.VmsEmbeddedInternalChannels;
 import dk.ku.di.dms.vms.sdk.embed.handler.EmbeddedVmsEventHandler;
 import dk.ku.di.dms.vms.sdk.embed.metadata.EmbedMetadataLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -29,7 +31,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
-import java.util.logging.Logger;
 
 /**
  *
@@ -47,7 +48,7 @@ import java.util.logging.Logger;
 public class App 
 {
 
-    protected static final Logger logger = Logger.getLogger("App");
+    static final Logger logger = LoggerFactory.getLogger(App.class);
 
     private static final String transactionName = "tx_example";
 
@@ -191,8 +192,6 @@ public class App
 
         TransactionFacade transactionFacade = EmbedMetadataLoader.loadTransactionFacadeAndInjectIntoRepositories(vmsMetadata);
 
-        assert vmsMetadata != null;
-
         ExecutorService readTaskPool = Executors.newSingleThreadExecutor();
 
         IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
@@ -201,19 +200,18 @@ public class App
                 new VmsTransactionScheduler(
                         readTaskPool,
                         vmsInternalPubSubService,
-                        vmsMetadata.queueToVmsTransactionMap(),
-                        null);
+                        vmsMetadata.queueToVmsTransactionMap(),null,null
+                        );
 
         VmsNode vmsIdentifier = new VmsNode(
-                node.host, node.port, vmsName,
-                0, 0,0,
-                vmsMetadata.dataSchema(),
+                node.host, node.port, vmsName,0, 0,0,
+                vmsMetadata.tableSchema(),   vmsMetadata.replicatedTableSchema(),
                 vmsMetadata.inputEventSchema(), vmsMetadata.outputEventSchema());
 
         ExecutorService socketPool = Executors.newFixedThreadPool(2);
 
         EmbeddedVmsEventHandler eventHandler = EmbeddedVmsEventHandler.buildWithDefaults(
-                    vmsIdentifier, null, null, vmsInternalPubSubService, vmsMetadata, serdes, socketPool );
+                    vmsIdentifier, null, transactionFacade, transactionFacade, vmsInternalPubSubService, vmsMetadata, serdes, socketPool );
 
         Thread eventHandlerThread = new Thread(eventHandler);
         eventHandlerThread.start();

@@ -1,5 +1,7 @@
 package dk.ku.di.dms.vms.modb.transaction.internal;
 
+import dk.ku.di.dms.vms.modb.common.transaction.TransactionWrite;
+
 import java.util.*;
 
 /**
@@ -13,7 +15,7 @@ import java.util.*;
  * intersect. In other words, concurrent threads are supposed to always operate on
  * distinct partitions of the data structure.
  * @param <K> {@link dk.ku.di.dms.vms.modb.common.transaction.TransactionId}
- * @param <V> {@link dk.ku.di.dms.vms.modb.transaction.multiversion.TransactionWrite}
+ * @param <V> {@link TransactionWrite}
  */
 public final class SingleWriterMultipleReadersFIFO<K extends Comparable<K>,V> {
 

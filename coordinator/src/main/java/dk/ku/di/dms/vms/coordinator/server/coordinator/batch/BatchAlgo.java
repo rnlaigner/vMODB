@@ -1,6 +1,6 @@
 package dk.ku.di.dms.vms.coordinator.server.coordinator.batch;
 
-import dk.ku.di.dms.vms.coordinator.server.coordinator.runnable.VmsIdentifier;
+import dk.ku.di.dms.vms.coordinator.server.coordinator.runnable.VmsContext;
 import dk.ku.di.dms.vms.coordinator.transaction.EventIdentifier;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
 
@@ -15,11 +15,11 @@ public final class BatchAlgo {
      * A map of vms and corresponding precedent TID for a given tid
      * Build precedence for the downstream events of an (input) event
      */
-    public static Map<String, Long> buildPrecedenceMap(EventIdentifier inputEvent, TransactionDAG transactionDAG, Map<String, VmsIdentifier> vmsMetadata) {
+    public static Map<String, Long> buildPrecedenceMap(EventIdentifier inputEvent, TransactionDAG transactionDAG, Map<String, VmsContext> vmsMetadata) {
         return buildPrecedenceRecursive(inputEvent, transactionDAG, vmsMetadata);
     }
 
-    public static Map<String, Long> buildPrecedenceMap(TransactionDAG transactionDAG, Map<String, VmsIdentifier> vmsMetadata) {
+    public static Map<String, Long> buildPrecedenceMap(TransactionDAG transactionDAG, Map<String, VmsContext> vmsMetadata) {
         List<Map<String, Long>> listOfMapPerInputEvent = new ArrayList<>(transactionDAG.inputEvents.size());
         for(EventIdentifier inputEvent : transactionDAG.inputEvents.values()) {
             listOfMapPerInputEvent.add( buildPrecedenceRecursive(inputEvent, transactionDAG, vmsMetadata) );
@@ -33,7 +33,7 @@ public final class BatchAlgo {
 
     private static Map<String, Long> buildPrecedenceRecursive(EventIdentifier event,
                                                               TransactionDAG transactionDAG,
-                                                              Map<String, VmsIdentifier> vmsMetadata){
+                                                              Map<String, VmsContext> vmsMetadata){
         Map<String, Long> listToBuildMap = new HashMap<>();
 
         // input and internal nodes first, since they have children

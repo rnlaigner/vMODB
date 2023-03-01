@@ -4,7 +4,7 @@ import dk.ku.di.dms.vms.coordinator.election.schema.LeaderRequest;
 import dk.ku.di.dms.vms.coordinator.election.schema.VoteRequest;
 import dk.ku.di.dms.vms.coordinator.election.schema.VoteResponse;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
 import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 import dk.ku.di.dms.vms.web_common.runnable.SignalingStoppableRunnable;
 import dk.ku.di.dms.vms.web_common.runnable.StoppableRunnable;
@@ -262,7 +262,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
 
         } catch(InterruptedException | IOException | ExecutionException ignored){
 
-            logger.warning("It was not possible to connect to node "+
+            logger.warn("It was not possible to connect to node "+
                     server.host+":"+server.port);
 
             if(connectionMetadata != null) {
@@ -492,7 +492,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
                     state = FOLLOWER;
                 }
 
-                default -> logger.warning("Message identifier is unknown.");
+                default -> logger.warn("Message identifier is unknown.");
             }
 
             readBuffer.clear();
@@ -581,11 +581,11 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
                         }
 
                     } else {
-                        logger.warning("Unknown message Type");
+                        logger.warn("Unknown message Type");
                     }
 
                 } catch (Exception ignored) {
-                    logger.warning("Error on write. I am " + me.host + ":" + me.port + " message type is ...");
+                    logger.warn("Error on write. I am " + me.host + ":" + me.port + " message type is ...");
                 }
 
             }
@@ -634,7 +634,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
                         connMeta.channel.write(connMeta.writeBuffer, connMeta, writeCompletionHandler);
 
                     } else {
-                        logger.warning("Could not connect to server: "+
+                        logger.warn("Could not connect to server: "+
                                 msgContext.target.host+":"+msgContext.target.port);
                     }
 

@@ -5,7 +5,6 @@ import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryRefNode;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
-import dk.ku.di.dms.vms.modb.definition.key.IntKey;
 import dk.ku.di.dms.vms.modb.definition.key.SimpleKey;
 import jdk.internal.misc.Unsafe;
 

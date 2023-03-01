@@ -1,8 +1,10 @@
 package dk.ku.di.dms.vms.coordinator.election;
 
-import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerIdentifier;
+import dk.ku.di.dms.vms.modb.common.schema.node.ServerIdentifier;
 import dk.ku.di.dms.vms.web_common.runnable.VmsDaemonThreadFactory;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -12,7 +14,6 @@ import java.nio.channels.AsynchronousServerSocketChannel;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 
 import static dk.ku.di.dms.vms.coordinator.election.Constants.LEADER_REQUEST;
 import static dk.ku.di.dms.vms.web_common.runnable.SignalingStoppableRunnable.FINISHED;
@@ -25,7 +26,7 @@ import static java.lang.Thread.sleep;
 public class LeaderElectionTest
 {
 
-    protected final Logger logger = Logger.getLogger(this.getClass().getName());
+    final static Logger logger = LoggerFactory.getLogger(LeaderElectionTest.class);
 
     @Test
     public void testBufferRead(){
