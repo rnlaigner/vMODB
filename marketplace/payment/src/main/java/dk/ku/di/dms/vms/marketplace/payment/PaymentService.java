@@ -23,7 +23,7 @@ import java.util.Properties;
 import static dk.ku.di.dms.vms.marketplace.common.Constants.INVOICE_ISSUED;
 import static dk.ku.di.dms.vms.marketplace.common.Constants.PAYMENT_CONFIRMED;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.W;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
 
 @Microservice("payment")
 public final class PaymentService {

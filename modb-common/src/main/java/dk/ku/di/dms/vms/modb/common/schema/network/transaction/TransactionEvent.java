@@ -39,23 +39,24 @@ public final class TransactionEvent {
         buffer.put( payload.precedenceMap );
     }
 
-    public static Payload read(ByteBuffer buffer){
+    public static PayloadRaw read(ByteBuffer buffer){
         long tid = buffer.getLong();
         long batch = buffer.getLong();
         int eventSize = buffer.getInt();
-        String event = ByteUtils.extractStringFromByteBuffer( buffer, eventSize );
+        byte[] event = ByteUtils.extractByteArrayFromByteBuffer( buffer, eventSize );
         int payloadSize = buffer.getInt();
-        String payload = ByteUtils.extractStringFromByteBuffer( buffer, payloadSize );
+        byte[] payload = ByteUtils.extractByteArrayFromByteBuffer( buffer, payloadSize );
         int precedenceSize = buffer.getInt();
-        String precedenceMap = ByteUtils.extractStringFromByteBuffer( buffer, precedenceSize );
-        return new Payload(tid, batch, event, payload, precedenceMap);
+        byte[] precedenceMap = ByteUtils.extractByteArrayFromByteBuffer( buffer, precedenceSize );
+        return new PayloadRaw(tid, batch, event, payload, precedenceMap, 0);
     }
+
 
     /**
      * This is the base class for representing the data transferred across the framework and the sidecar
      * It serves both for input and output
      * Why total size? to know the size beforehand, before inserting into the byte buffer
-     * otherwise would need further controls...
+     * otherwise it would be necessary to employ further controls.
      */
     public record PayloadRaw(
             long tid, long batch, byte[] event, byte[] payload, byte[] precedenceMap, int totalSize
@@ -69,30 +70,23 @@ public final class TransactionEvent {
         }
     }
 
-    public record Payload(
-            long tid, long batch, String event, String payload, String precedenceMap
-    ){
-        @Override
-        public String toString() {
-            return "{"
-                    + "\"batch\":\"" + batch + "\""
-                    + ",\"tid\":\"" + tid + "\""
-                    + ",\"event\":\"" + event + "\""
-                    + ",\"payload\":\"" + payload + "\""
-                    + ",\"precedenceMap\":\"" + precedenceMap + "\""
-                    + "}";
-        }
-    }
-
     /**
      * <a href="https://www.quora.com/How-many-bytes-can-a-string-hold">Considering UTF-8</a>
      */
-    public static PayloadRaw of(long tid, long batch, String event, String payload, String precedenceMap){
+    public static PayloadRaw of(long tid, long batch, String event, byte[] eventOutputBytes, String precedenceMap){
         byte[] eventBytes = event.getBytes(StandardCharsets.UTF_8);
-        byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
         byte[] precedenceMapBytes = precedenceMap.getBytes(StandardCharsets.UTF_8);
-        return new PayloadRaw(tid, batch, eventBytes, payloadBytes, precedenceMapBytes,
-                FIXED_LENGTH + eventBytes.length + payloadBytes.length + precedenceMapBytes.length);
+        return new PayloadRaw(tid, batch, eventBytes, eventOutputBytes, precedenceMapBytes,
+                FIXED_LENGTH + eventBytes.length + eventOutputBytes.length + precedenceMapBytes.length);
+    }
+
+    // for transaction worker only
+    public static PayloadRaw of(long tid, long batch, String event, String eventOutput, String precedenceMap){
+        byte[] eventBytes = event.getBytes(StandardCharsets.UTF_8);
+        byte[] eventOutputBytes = eventOutput.getBytes(StandardCharsets.UTF_8);
+        byte[] precedenceMapBytes = precedenceMap.getBytes(StandardCharsets.UTF_8);
+        return new PayloadRaw(tid, batch, eventBytes, eventOutputBytes, precedenceMapBytes,
+                FIXED_LENGTH + eventBytes.length + eventOutputBytes.length + precedenceMapBytes.length);
     }
 
 }

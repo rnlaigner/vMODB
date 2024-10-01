@@ -19,7 +19,7 @@ import java.util.*;
 
 import static dk.ku.di.dms.vms.marketplace.common.Constants.*;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
 
 @Microservice("order")
 public final class OrderService {

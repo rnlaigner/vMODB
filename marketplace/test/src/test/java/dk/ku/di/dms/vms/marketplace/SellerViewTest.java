@@ -53,7 +53,7 @@ public final class SellerViewTest extends AbstractWorkflowTest {
                             i, 1.0f, new Date(), 1.0f, 1, 1.0f, 1.0f, 0.0f) )
                     , String.valueOf(i));
 
-            String payload_ = serdes.serialize(invoiceIssued, InvoiceIssued.class);
+            String payload_ = serdes.serializeAsString(invoiceIssued, InvoiceIssued.class);
             TransactionInput.Event eventPayload_ = new TransactionInput.Event(INVOICE_ISSUED, payload_);
 
             TransactionInput txInput_ = new TransactionInput(UPDATE_DELIVERY, eventPayload_);
@@ -98,7 +98,7 @@ public final class SellerViewTest extends AbstractWorkflowTest {
                 serverIdentifier,
                 new CoordinatorOptions().withBatchWindow(3000),
                 1,
-                1,  _ -> new IHttpHandler() { },
+                1,  ignored -> new IHttpHandler() { },
                 serdes
         );
     }

@@ -16,7 +16,7 @@ import java.util.Properties;
 
 import static dk.ku.di.dms.vms.marketplace.seller.SellerService.EMPTY_DASHBOARD;
 import static dk.ku.di.dms.vms.marketplace.seller.SellerService.SELLER_VIEW_BASE;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
 
 public final class Main {
 

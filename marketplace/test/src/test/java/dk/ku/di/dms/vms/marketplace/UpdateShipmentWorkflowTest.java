@@ -102,7 +102,7 @@ public non-sealed class UpdateShipmentWorkflowTest extends CheckoutWorkflowTest 
                         ),
                         String.valueOf(val)
                 );
-                String payload_ = serdes.serialize(reserveStockEvent, ReserveStock.class);
+                String payload_ = serdes.serializeAsString(reserveStockEvent, ReserveStock.class);
                 TransactionInput.Event eventPayload_ = new TransactionInput.Event("reserve_stock", payload_);
                 TransactionInput txInput_ = new TransactionInput("customer_checkout", eventPayload_);
                 LOGGER.log(INFO, "["+ NAME +"] New reserve stock event with version: "+val);
@@ -128,7 +128,7 @@ public non-sealed class UpdateShipmentWorkflowTest extends CheckoutWorkflowTest 
             IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
             LOGGER.log(INFO, "["+ NAME +"] Starting...");
             UpdateDelivery updateDelivery = new UpdateDelivery("11");
-            String payload_ = serdes.serialize(updateDelivery, UpdateDelivery.class);
+            String payload_ = serdes.serializeAsString(updateDelivery, UpdateDelivery.class);
             // event name
             TransactionInput.Event eventPayload_ = new TransactionInput.Event(UPDATE_DELIVERY, payload_);
 
@@ -188,7 +188,7 @@ public non-sealed class UpdateShipmentWorkflowTest extends CheckoutWorkflowTest 
                 serverIdentifier,
                 new CoordinatorOptions().withBatchWindow(BATCH_WINDOW_INTERVAL),
                 1,
-                1,  _ -> new IHttpHandler() { },
+                1,  ignored -> new IHttpHandler() { },
                 serdes
         );
     }

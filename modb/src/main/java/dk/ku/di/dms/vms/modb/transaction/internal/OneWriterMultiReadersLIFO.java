@@ -9,8 +9,6 @@ package dk.ku.di.dms.vms.modb.transaction.internal;
  * concurrently with a writer, as long as the keys being inserted, removed, and read do not
  * intersect. In other words, concurrent threads are supposed to always operate on
  * distinct partitions of the data structure.
- * @param <K> {@link dk.ku.di.dms.vms.modb.common.transaction.TransactionId}
- * @param <V> {@link dk.ku.di.dms.vms.modb.transaction.multiversion.TransactionWrite}
  */
 public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits OperationSetOfKey {
 

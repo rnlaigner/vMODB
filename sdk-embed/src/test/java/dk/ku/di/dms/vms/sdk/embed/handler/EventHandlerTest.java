@@ -1,6 +1,8 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
+import dk.ku.di.dms.vms.modb.common.compressing.CompressingUtils;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
+import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
 import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
 import dk.ku.di.dms.vms.modb.common.schema.network.meta.NetworkAddress;
@@ -12,6 +14,7 @@ import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
+import dk.ku.di.dms.vms.modb.common.utils.BatchUtils;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsMetadataLoader;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsRuntimeMetadata;
 import dk.ku.di.dms.vms.sdk.core.operational.InboundEvent;
@@ -25,6 +28,9 @@ import dk.ku.di.dms.vms.sdk.embed.events.OutputEventExample2;
 import dk.ku.di.dms.vms.sdk.embed.events.OutputEventExample3;
 import dk.ku.di.dms.vms.web_common.IHttpHandler;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
+import dk.ku.di.dms.vms.web_common.channel.IChannel;
+import dk.ku.di.dms.vms.web_common.channel.PipeChannel;
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.net.InetSocketAddress;
@@ -34,15 +40,16 @@ import java.nio.channels.AsynchronousChannelGroup;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.BATCH_OF_EVENTS;
+import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.COMPRESSED_BATCH_OF_EVENTS;
 import static java.lang.System.Logger.Level.INFO;
+import static java.lang.Thread.sleep;
 
 /**
  * Test vms event handler
@@ -71,6 +78,98 @@ public class EventHandlerTest {
 
     private static final System.Logger logger = System.getLogger(EventHandlerTest.class.getName());
     private static final IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
+
+    @Test
+    public void basicCompressedBatch(){
+        var source = MemoryManager.getTemporaryDirectBuffer(MemoryUtils.DEFAULT_PAGE_SIZE);
+        List<TransactionEvent.PayloadRaw> list = new ArrayList<>();
+        var event = TransactionEvent.of(1, 1, "test",
+                serdes.serialize( Map.of("test","test"), Map.class), "{ }");
+        for(int i = 1; i <= 10; i++){
+            list.add(event);
+        }
+        BatchUtils.assembleBatchOfEvents( 10, list, source);
+        source.flip();
+        var compressed = MemoryManager.getTemporaryDirectBuffer(MemoryUtils.DEFAULT_PAGE_SIZE);
+        var decompressed = MemoryManager.getTemporaryDirectBuffer(MemoryUtils.DEFAULT_PAGE_SIZE);
+        int maxSize = source.remaining();
+        // CompressingUtils.compress(source, 0, source.limit(), compressed, 0, maxSize);
+        CompressingUtils.compress(source, compressed);
+        compressed.flip();
+        CompressingUtils.decompress(compressed, 0,  decompressed, 0, maxSize);
+        decompressed.limit(maxSize);
+        decompressed.position(0);
+        Assert.assertEquals( BATCH_OF_EVENTS, decompressed.get() );
+    }
+
+    @Test
+    public void testCompressedBatch() throws ExecutionException, InterruptedException {
+        Supplier<IChannel> supplier = new Supplier<>() {
+            PipeChannel pipeChannel = PipeChannel.create();
+            @Override
+            public IChannel get() {
+                return this.pipeChannel;
+            }
+        };
+
+        ConsumerVmsWorker consumerVmsWorker = ConsumerVmsWorker.build(
+                new VmsNode("0.0.0.0", 0, "test1", 0, 0, -1, Map.of(), Map.of(), Map.of()),
+                new IdentifiableNode("test2", "0.0.0.0", 0),
+                supplier,
+                new VmsEventHandler.VmsHandlerOptions(0, MemoryUtils.DEFAULT_PAGE_SIZE, 0, "default", 1, 0, 1, true, false, false),
+                serdes
+        );
+
+        Thread.ofPlatform().name("vms-consumer-test")
+                .inheritInheritableThreadLocals(false)
+                .start(consumerVmsWorker);
+
+        // generate few events
+        var event = TransactionEvent.of(1, 1, "test",
+                serdes.serialize( Map.of("test","test"), Map.class), "{ }");
+        consumerVmsWorker.queue(event);
+        consumerVmsWorker.queue(event);
+        consumerVmsWorker.queue(event);
+        consumerVmsWorker.queue(event);
+        consumerVmsWorker.queue(event);
+
+        sleep(3000);
+
+        // and then get compressed output
+        var compressed = MemoryManager.getTemporaryDirectBuffer(MemoryUtils.DEFAULT_PAGE_SIZE);
+        supplier.get().read(compressed).get();
+        compressed.flip();
+
+        byte messageType = compressed.get();
+        byte nodeType = compressed.get();
+        Presentation.readVms(compressed, serdes);
+
+        messageType = compressed.get();
+        Assert.assertEquals(COMPRESSED_BATCH_OF_EVENTS, messageType);
+        int bufferSize = compressed.getInt();
+        int count = compressed.getInt();
+        int maxLength = compressed.getInt();
+        while(compressed.remaining() < bufferSize - (1 + Integer.BYTES + Integer.BYTES + Integer.BYTES)){
+            supplier.get().read(compressed).get();
+        }
+
+        ByteBuffer decompressedBuffer = MemoryManager.getTemporaryDirectBuffer(MemoryUtils.DEFAULT_PAGE_SIZE);
+        decompressedBuffer.limit(maxLength);
+        decompressedBuffer.position(0);
+        CompressingUtils.decompress(compressed, compressed.position(), decompressedBuffer, 0, maxLength);
+        decompressedBuffer.limit(maxLength);
+        decompressedBuffer.flip();
+
+        TransactionEvent.PayloadRaw payload = null;
+        int i = 0;
+        while (i < count) {
+            payload = TransactionEvent.read(decompressedBuffer);
+            String eventStr = new String(payload.event(), StandardCharsets.UTF_8);
+            i++;
+        }
+
+        Assert.assertNotNull(payload);
+    }
 
     /**
      * Facility to load virtual microservice instances.
@@ -133,7 +232,6 @@ public class EventHandlerTest {
         schedulerThread.start();
 
         return new VmsCtx(eventHandler,scheduler);
-
     }
 
     /**
@@ -340,7 +438,7 @@ public class EventHandlerTest {
 
         // 7 - send event input
         InputEventExample1 eventExample = new InputEventExample1(1);
-        String inputPayload = serdes.serialize(eventExample, InputEventExample1.class);
+        var inputPayload = serdes.serialize(eventExample, InputEventExample1.class);
 
         Map<String,Long> precedenceMap = new HashMap<>();
         precedenceMap.put("example1", 0L);
@@ -373,14 +471,15 @@ public class EventHandlerTest {
         int size = buffer.getInt();
         assert size == 2;
 
-        TransactionEvent.Payload payload;
+        TransactionEvent.PayloadRaw payload;
         for(int i = 0; i < size; i++){
             buffer.get(); // exclude event
             payload = TransactionEvent.read(buffer);
-            Class<?> clazz =  payload.event().equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
+            String event = new String(payload.event(), StandardCharsets.UTF_8);
+            Class<?> clazz = event.equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
             Object obj = serdes.deserialize(payload.payload(), clazz);
-            assert !payload.event().equalsIgnoreCase("out1") || obj instanceof OutputEventExample1;
-            assert !payload.event().equalsIgnoreCase("out2") || obj instanceof OutputEventExample2;
+            assert !event.equalsIgnoreCase("out1") || obj instanceof OutputEventExample1;
+            assert !event.equalsIgnoreCase("out2") || obj instanceof OutputEventExample2;
         }
 
         vmsCtx.stop();
@@ -543,7 +642,7 @@ public class EventHandlerTest {
 
         // 5 - send event input
         InputEventExample1 eventExample = new InputEventExample1(1);
-        String inputPayload = serdes.serialize(eventExample, InputEventExample1.class);
+        var inputPayload = serdes.serialize(eventExample, InputEventExample1.class);
 
         Map<String,Long> precedenceMap = new HashMap<>();
         precedenceMap.put("example1", 0L);
@@ -568,37 +667,21 @@ public class EventHandlerTest {
         int size = buffer.getInt();
         assert size == 2;
 
-        TransactionEvent.Payload payload;
+        TransactionEvent.PayloadRaw payload;
 
         for(int i = 0; i < size; i++){
             buffer.get(); // exclude event
             payload = TransactionEvent.read(buffer);
-            Class<?> clazz =  payload.event().equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
+            String event = new String( payload.event(), StandardCharsets.UTF_8);
+            Class<?> clazz = event.equalsIgnoreCase("out1") ? OutputEventExample1.class : OutputEventExample2.class;
             Object obj = serdes.deserialize(payload.payload(), clazz);
-            assert !payload.event().equalsIgnoreCase("out1") || obj instanceof OutputEventExample1;
-            assert !payload.event().equalsIgnoreCase("out2") || obj instanceof OutputEventExample2;
+            assert !event.equalsIgnoreCase("out1") || obj instanceof OutputEventExample1;
+            assert !event.equalsIgnoreCase("out2") || obj instanceof OutputEventExample2;
         }
 
         channel.close();
         vmsCtx.stop();
 
     }
-
-    // @Test
-//    public void testCrossVmsTransactionWithEventHandler() {
-//        // set up a consumer to subscribe to both out1 and out2
-//        //  set up producer too, check if events are received end-to-end through the network
-//        assert true;
-//    }
-
-    // @Test
-//    public void testBatchCompletion(){
-//        assert true;
-//    }
-
-    // @Test
-//    public void testReceiveEventFromLeader(){
-//        assert true;
-//    }
 
 }

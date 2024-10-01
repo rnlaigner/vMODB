@@ -107,7 +107,7 @@ public final class CartProductStockWorkflowTest extends AbstractWorkflowTest {
                         .withNetworkThreadPoolSize(groupPoolSize)
                         .withNetworkBufferSize(networkBufferSize),
                 1,
-                1,  _ -> new IHttpHandler() { },
+                1,  ignored -> new IHttpHandler() { },
                 serdes
         );
     }
@@ -150,7 +150,7 @@ public final class CartProductStockWorkflowTest extends AbstractWorkflowTest {
             UpdateProduct updateProduct = new UpdateProduct(
                     1,1,"test","test","test","test",10.0F,10.0F,"test", String.valueOf(val)
             );
-            String payload = serdes.serialize(updateProduct, UpdateProduct.class);
+            String payload = serdes.serializeAsString(updateProduct, UpdateProduct.class);
             TransactionInput.Event eventPayload = new TransactionInput.Event(UPDATE_PRODUCT, payload);
             TransactionInput txInput = new TransactionInput(UPDATE_PRODUCT, eventPayload);
             LOGGER.log(INFO, "[Producer] New product version: "+ val);
@@ -159,7 +159,7 @@ public final class CartProductStockWorkflowTest extends AbstractWorkflowTest {
 
         private void producePriceUpdate(int val, IVmsSerdesProxy serdes) {
             PriceUpdate priceUpdate = new PriceUpdate(1,1,10.0F, String.valueOf(val), String.valueOf(val));
-            String payload = serdes.serialize(priceUpdate, PriceUpdate.class);
+            String payload = serdes.serializeAsString(priceUpdate, PriceUpdate.class);
             TransactionInput.Event eventPayload = new TransactionInput.Event(UPDATE_PRICE, payload);
             TransactionInput txInput = new TransactionInput(UPDATE_PRICE, eventPayload);
             LOGGER.log(INFO, "[Producer] New product price: "+ val);

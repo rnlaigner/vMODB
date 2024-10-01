@@ -109,7 +109,7 @@ public class CartProductWorkflowTest extends AbstractWorkflowTest {
                         .withNetworkBufferSize(networkBufferSize)
                         .withLogging(logging),
                 1,
-                1,  _ -> new IHttpHandler() { },
+                1,  ignored -> new IHttpHandler() { },
                 serdes
         );
     }
@@ -129,7 +129,7 @@ public class CartProductWorkflowTest extends AbstractWorkflowTest {
             while(val < 10) {
                 PriceUpdate priceUpdate = new PriceUpdate(
                         val,1,10.0F, "1", String.valueOf(val) );
-                String payload = serdes.serialize(priceUpdate, PriceUpdate.class);
+                String payload = serdes.serializeAsString(priceUpdate, PriceUpdate.class);
                 TransactionInput.Event eventPayload = new TransactionInput.Event(UPDATE_PRICE, payload);
                 TransactionInput txInput = new TransactionInput(UPDATE_PRICE, eventPayload);
                 LOGGER.log(INFO, "[Producer] Adding "+val);

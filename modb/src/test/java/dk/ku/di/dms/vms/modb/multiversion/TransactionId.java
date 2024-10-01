@@ -1,4 +1,4 @@
-package dk.ku.di.dms.vms.modb.common.transaction;
+package dk.ku.di.dms.vms.modb.multiversion;
 
 /**
  * This was initially designed to handle different tasks of the same transaction to see writes of other tasks from same transaction

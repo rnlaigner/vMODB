@@ -1,5 +1,6 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
+import dk.ku.di.dms.vms.modb.common.compressing.CompressingUtils;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.*;
 import dk.ku.di.dms.vms.modb.common.schema.network.control.ConsumerSet;
@@ -138,8 +139,8 @@ public final class VmsEventHandler extends ModbHttpServer {
             return new VmsEventHandler(me, vmsMetadata,
                     transactionalHandler, vmsInternalChannels,
                     new VmsEventHandler.VmsHandlerOptions( options.maxSleep(), options.networkBufferSize(),
-                            options.osBufferSize(), options.networkThreadPoolSize(), options.networkSendTimeout(),
-                            options.vmsThreadPoolSize(), options.numVmsWorkers(), options.isLogging(), options.isCheckpointing()),
+                            options.osBufferSize(), options.networkThreadPoolType(), options.networkThreadPoolSize(), options.networkSendTimeout(),
+                            options.numVmsWorkers(), true, options.isLogging(), options.isCheckpointing()),
                     httpHandler, serdesProxy);
         } catch (IOException e){
             throw new RuntimeException("Error on setting up event handler: "+e.getCause()+ " "+ e.getMessage());
@@ -149,10 +150,11 @@ public final class VmsEventHandler extends ModbHttpServer {
     public record VmsHandlerOptions(int maxSleep,
                                     int networkBufferSize,
                                     int osBufferSize,
+                                    String networkThreadPoolType,
                                     int networkThreadPoolSize,
                                     int networkSendTimeout,
-                                    int vmsThreadPoolSize,
                                     int numVmsWorkers,
+                                    boolean compressing,
                                     boolean logging,
                                     boolean checkpointing) {}
 
@@ -166,17 +168,18 @@ public final class VmsEventHandler extends ModbHttpServer {
         super();
 
         // network and executor
-        if(options.networkThreadPoolSize > 0){
-            // at least two, one for acceptor and one for new events
-            this.group = AsynchronousChannelGroup.withFixedThreadPool(
-                    options.networkThreadPoolSize,
+        switch (options.networkThreadPoolType){
+            case "default" -> this.group = AsynchronousChannelGroup.withFixedThreadPool(
+                    options.networkThreadPoolSize > 0 ? options.networkThreadPoolSize : Runtime.getRuntime().availableProcessors(),
                     Thread.ofPlatform().name("vms-network-thread").factory()
             );
-            this.serverSocket = AsynchronousServerSocketChannel.open(this.group);
-        } else {
-            this.group = null;
-            this.serverSocket = AsynchronousServerSocketChannel.open(null);
+            case "vthread" -> this.group = AsynchronousChannelGroup.withFixedThreadPool(
+                    options.networkThreadPoolSize > 0 ? options.networkThreadPoolSize : Runtime.getRuntime().availableProcessors(),
+                    Thread.ofVirtual().name("vms-network-vthread").factory()
+            );
+            case null, default -> this.group = null;
         }
+        this.serverSocket = AsynchronousServerSocketChannel.open(this.group);
         this.serverSocket.bind(me.asInetSocketAddress());
 
         this.vmsInternalChannels = vmsInternalChannels;
@@ -250,7 +253,7 @@ public final class VmsEventHandler extends ModbHttpServer {
         thisBatch.setStatus(BatchContext.BATCH_COMPLETED);
         if(this.options.checkpointing()){
             LOGGER.log(INFO, this.me.identifier + ": Requesting checkpoint for batch " + thisBatch.batch);
-            this.submitBackgroundTask(()->checkpoint(thisBatch.batch, batchMetadata.maxTidExecuted));
+            submitBackgroundTask(()->checkpoint(thisBatch.batch, batchMetadata.maxTidExecuted));
         }
         // if terminal, must send batch complete
         if (thisBatch.terminal) {
@@ -314,9 +317,9 @@ public final class VmsEventHandler extends ModbHttpServer {
      */
     private void processOutputEvent(OutboundEventResult outputEvent, String precedenceMap){
         Class<?> clazz = this.vmsMetadata.queueToEventMap().get(outputEvent.outputQueue());
-        String objStr = this.serdesProxy.serialize(outputEvent.output(), clazz);
+        byte[] outputEventBytes = this.serdesProxy.serialize(outputEvent.output(), clazz);
         /*
-         * does the leader consumes this queue?
+         * does the leader consume this queue?
         if( this.queuesLeaderSubscribesTo.contains( outputEvent.outputQueue() ) ){
             logger.log(DEBUG,me.identifier+": An output event (queue: "+outputEvent.outputQueue()+") will be queued to leader");
             this.leaderWorkerQueue.add(new LeaderWorker.Message(SEND_EVENT, payload));
@@ -327,7 +330,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             LOGGER.log(DEBUG,this.me.identifier+": An output event (queue: "+outputEvent.outputQueue()+") has no target virtual microservices.");
             return;
         }
-        TransactionEvent.PayloadRaw payload = TransactionEvent.of(outputEvent.tid(), outputEvent.batch(), outputEvent.outputQueue(), objStr, precedenceMap);
+        TransactionEvent.PayloadRaw payload = TransactionEvent.of(outputEvent.tid(), outputEvent.batch(), outputEvent.outputQueue(), outputEventBytes, precedenceMap);
         for(IVmsContainer consumerVmsContainer : consumerVMSs) {
             LOGGER.log(DEBUG,this.me.identifier+": An output event (queue: " + outputEvent.outputQueue() + ") will be queued to VMS: " + consumerVmsContainer.identifier());
             consumerVmsContainer.queue(payload);
@@ -410,7 +413,15 @@ public final class VmsEventHandler extends ModbHttpServer {
             }
             byte messageType = this.readBuffer.get();
             switch (messageType) {
-                case (BATCH_OF_EVENTS) -> {
+                case COMPRESSED_BATCH_OF_EVENTS -> {
+                    int bufferSize = this.getBufferSize();
+                    if(this.readBuffer.remaining() < bufferSize){
+                        this.fetchMoreBytes(startPos);
+                        return;
+                    }
+                    this.processCompressedBatchOfEvents();
+                }
+                case BATCH_OF_EVENTS -> {
                     int bufferSize = this.getBufferSize();
                     if(this.readBuffer.remaining() < bufferSize){
                         this.fetchMoreBytes(startPos);
@@ -418,13 +429,13 @@ public final class VmsEventHandler extends ModbHttpServer {
                     }
                     this.processBatchOfEvents(this.readBuffer);
                 }
-                case (EVENT) -> {
+                case EVENT -> {
                     int bufferSize = this.getBufferSize();
                     if(this.readBuffer.remaining() < bufferSize){
                         this.fetchMoreBytes(startPos);
                         return;
                     }
-                    this.processSingleEvent(this.readBuffer);
+                    this.processSingleEvent();
                 }
                 default -> LOGGER.log(ERROR,me.identifier+": Unknown message type "+messageType+" received from: "+node.identifier);
             }
@@ -458,13 +469,13 @@ public final class VmsEventHandler extends ModbHttpServer {
             this.connectionMetadata.channel.read(this.readBuffer, 0, this);
         }
 
-        private void processSingleEvent(ByteBuffer readBuffer) {
+        private void processSingleEvent() {
             try {
-                TransactionEvent.Payload payload = TransactionEvent.read(readBuffer);
+                TransactionEvent.PayloadRaw payload = TransactionEvent.read(this.readBuffer);
                 LOGGER.log(DEBUG,me.identifier+": 1 event received from "+node.identifier+"\n"+payload);
-                // send to scheduler
-                if (vmsMetadata.queueToEventMap().containsKey(payload.event())) {
-                    InboundEvent inboundEvent = buildInboundEvent(payload);
+                String eventStr = new String(payload.event(), StandardCharsets.UTF_8);
+                if (vmsMetadata.queueToEventMap().containsKey(eventStr)) {
+                    InboundEvent inboundEvent = buildInboundEventFromVms(payload, eventStr);
                     vmsInternalChannels.transactionInputQueue().add(inboundEvent);
                 }
             } catch (Exception e) {
@@ -481,13 +492,14 @@ public final class VmsEventHandler extends ModbHttpServer {
             try {
                 int count = readBuffer.getInt();
                 LOGGER.log(DEBUG,me.identifier + ": Batch of [" + count + "] events received from " + node.identifier);
-                TransactionEvent.Payload payload;
+                TransactionEvent.PayloadRaw payload;
                 int i = 0;
                 while (i < count) {
                     payload = TransactionEvent.read(readBuffer);
                     LOGGER.log(DEBUG, me.identifier+": Processed TID "+payload.tid());
-                    if (vmsMetadata.queueToEventMap().containsKey(payload.event())) {
-                        InboundEvent inboundEvent = buildInboundEvent(payload);
+                    String eventStr = new String(payload.event(), StandardCharsets.UTF_8);
+                    if (vmsMetadata.queueToEventMap().containsKey(eventStr)) {
+                        InboundEvent inboundEvent = this.buildInboundEventFromVms(payload, eventStr);
                         inboundEvents.add(inboundEvent);
                     }
                     i++;
@@ -496,7 +508,6 @@ public final class VmsEventHandler extends ModbHttpServer {
                     LOGGER.log(WARNING,me.identifier + ": Batch of [" +count+ "] events != from "+inboundEvents.size()+" that will be pushed to worker " + node.identifier);
                 }
                 vmsInternalChannels.transactionInputQueue().addAll(inboundEvents);
-                LOGGER.log(DEBUG, "Number of inputs pending processing: "+vmsInternalChannels.transactionInputQueue().size());
             } catch(Exception e){
                 if (e instanceof BufferUnderflowException)
                     LOGGER.log(ERROR,me.identifier + ": Buffer underflow exception while reading batch: " + e);
@@ -508,11 +519,26 @@ public final class VmsEventHandler extends ModbHttpServer {
             }
         }
 
+        private void processCompressedBatchOfEvents() {
+            ByteBuffer decompressedBuffer = MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize());
+            CompressingUtils.decompress(this.readBuffer, decompressedBuffer);
+            decompressedBuffer.flip();
+            this.processBatchOfEvents(decompressedBuffer);
+            decompressedBuffer.clear();
+            MemoryManager.releaseTemporaryDirectBuffer(decompressedBuffer);
+        }
+
         @Override
         public void failed(Throwable exc, Integer carryOn) {
             LOGGER.log(ERROR,me.identifier+": Error on reading VMS message from "+node.identifier+"\n"+exc);
             exc.printStackTrace(System.out);
             this.setUpNewRead();
+        }
+
+        private InboundEvent buildInboundEventFromVms(TransactionEvent.PayloadRaw payload, String eventStr){
+            Class<?> clazz = vmsMetadata.queueToEventMap().get(eventStr);
+            Object input = serdesProxy.deserialize(payload.payload(), clazz);
+            return buildInboundEvent(payload, eventStr, clazz, input);
         }
     }
 
@@ -784,21 +810,6 @@ public final class VmsEventHandler extends ModbHttpServer {
         }
     }
 
-    private InboundEvent buildInboundEvent(TransactionEvent.Payload payload){
-        Class<?> clazz = this.vmsMetadata.queueToEventMap().get(payload.event());
-        Object input = this.serdesProxy.deserialize(payload.payload(), clazz);
-        Map<String, Long> precedenceMap = this.serdesProxy.deserializeDependenceMap(payload.precedenceMap());
-        if(precedenceMap == null){
-            throw new IllegalStateException("Precedence map is null.");
-        }
-        if(!precedenceMap.containsKey(this.me.identifier)){
-            throw new IllegalStateException("Precedent tid of "+payload.tid()+" is unknown.");
-        }
-        this.tidToPrecedenceMap.put(payload.tid(), precedenceMap);
-        return new InboundEvent( payload.tid(), precedenceMap.get(this.me.identifier),
-                payload.batch(), payload.event(), clazz, input );
-    }
-
     private static final ConcurrentLinkedDeque<List<InboundEvent>> LIST_BUFFER = new ConcurrentLinkedDeque<>();
 
     private final class LeaderReadCompletionHandler implements CompletionHandler<Integer, Integer> {
@@ -955,7 +966,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             /*
              * Given a new batch of events sent by the leader, the last message is the batch info
              */
-            TransactionEvent.Payload payload;
+            TransactionEvent.PayloadRaw payload;
             try {
                 // to increase performance, one would buffer this buffer for processing and then read from another buffer
                 int count = readBuffer.getInt();
@@ -963,9 +974,9 @@ public final class VmsEventHandler extends ModbHttpServer {
                 // extract events batched
                 for (int i = 0; i < count; i++) {
                     payload = TransactionEvent.read(readBuffer);
-                    LOGGER.log(DEBUG, me.identifier+": Processed TID "+payload.tid());
-                    if (vmsMetadata.queueToEventMap().containsKey(payload.event())) {
-                        payloads.add(buildInboundEvent(payload));
+                    String eventStr = new String(payload.event(), StandardCharsets.UTF_8);
+                    if (vmsMetadata.queueToEventMap().containsKey(eventStr)) {
+                        payloads.add(buildInboundEventFromLeader(payload, eventStr));
                         continue;
                     }
                     LOGGER.log(WARNING,me.identifier + ": queue not identified for event received from the leader \n"+payload);
@@ -985,11 +996,12 @@ public final class VmsEventHandler extends ModbHttpServer {
 
         private void processSingleEvent(ByteBuffer readBuffer) {
             try {
-                TransactionEvent.Payload payload = TransactionEvent.read(readBuffer);
+                TransactionEvent.PayloadRaw payload = TransactionEvent.read(readBuffer);
                 LOGGER.log(DEBUG,me.identifier + ": 1 event received from the leader \n"+payload);
                 // send to scheduler.... drop if the event cannot be processed (not an input event in this vms)
-                if (vmsMetadata.queueToEventMap().containsKey(payload.event())) {
-                    InboundEvent event = buildInboundEvent(payload);
+                String eventStr = new String(payload.event(), StandardCharsets.UTF_8);
+                if (vmsMetadata.queueToEventMap().containsKey(eventStr)) {
+                    InboundEvent event = this.buildInboundEventFromLeader(payload, eventStr);
                     vmsInternalChannels.transactionInputQueue().add(event);
                     return;
                 }
@@ -1000,6 +1012,13 @@ public final class VmsEventHandler extends ModbHttpServer {
                 else
                     LOGGER.log(ERROR,me.identifier + ": Unknown exception: " + e);
             }
+        }
+
+        private InboundEvent buildInboundEventFromLeader(TransactionEvent.PayloadRaw payload, String eventStr){
+            Class<?> clazz = vmsMetadata.queueToEventMap().get(eventStr);
+            String payloadStr = new String(payload.payload(), StandardCharsets.UTF_8);
+            Object input = serdesProxy.deserialize(payloadStr, clazz);
+            return buildInboundEvent(payload, eventStr, clazz, input);
         }
 
         private void processNewBatchInfo(BatchCommitInfo.Payload batchCommitInfo){
@@ -1044,6 +1063,22 @@ public final class VmsEventHandler extends ModbHttpServer {
             exc.printStackTrace(System.out);
             this.setUpNewRead();
         }
+    }
+
+    /**
+     * Precedence map could also be serialized by message pack, but leave like this for now
+     */
+    private InboundEvent buildInboundEvent(TransactionEvent.PayloadRaw payload, String eventStr, Class<?> clazz, Object input) {
+        String precedenceMapStr = new String(payload.precedenceMap(), StandardCharsets.UTF_8);
+        Map<String, Long> precedenceMap = this.serdesProxy.deserializeMap(precedenceMapStr);
+        if(precedenceMap == null){
+            throw new IllegalStateException("Precedence map is null.");
+        }
+        if(!precedenceMap.containsKey(this.me.identifier)){
+            throw new IllegalStateException("Precedent tid of "+payload.tid()+" is unknown.");
+        }
+        this.tidToPrecedenceMap.put(payload.tid(), precedenceMap);
+        return new InboundEvent(payload.tid(), precedenceMap.get(this.me.identifier), payload.batch(), eventStr, clazz, input);
     }
 
 }

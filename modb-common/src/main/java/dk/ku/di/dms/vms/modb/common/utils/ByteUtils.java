@@ -18,4 +18,9 @@ public final class ByteUtils {
         return extracted;
     }
 
+    public static byte[] extractByteArrayFromByteBuffer(ByteBuffer buffer, int size) {
+        byte[] byteArray = new byte[size];
+        buffer.get(byteArray);
+        return byteArray;
+    }
 }

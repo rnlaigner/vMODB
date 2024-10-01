@@ -71,10 +71,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         return new VmsTransactionScheduler(
                 vmsIdentifier,
                 vmsThreadPoolSize == 0 ? ForkJoinPool.commonPool() :
-                        Executors.newFixedThreadPool( vmsThreadPoolSize,
-                                Thread.ofPlatform().name("vms-task-thread")
-                                        //.priority(Thread.MAX_PRIORITY)
-                                        .factory() ),
+                        Executors.newFixedThreadPool( vmsThreadPoolSize, Thread.ofPlatform().name("vms-task-thread").factory() ),
                 transactionInputQueue,
                 transactionMetadataMap,
                 transactionalHandler,

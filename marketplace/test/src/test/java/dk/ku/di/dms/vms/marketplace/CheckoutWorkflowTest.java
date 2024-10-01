@@ -87,7 +87,7 @@ public sealed class CheckoutWorkflowTest extends AbstractWorkflowTest permits Up
                 // customer checkout
                 var custCheckout = CUSTOMER_CHECKOUT_FUNCTION.apply( val );
 
-                String checkoutPayload = serdes.serialize(custCheckout, CustomerCheckout.class);
+                String checkoutPayload = serdes.serializeAsString(custCheckout, CustomerCheckout.class);
                 TransactionInput.Event eventPayload_ = new TransactionInput.Event(CUSTOMER_CHECKOUT, checkoutPayload);
 
                 TransactionInput txInput_ = new TransactionInput(CUSTOMER_CHECKOUT, eventPayload_);
@@ -130,7 +130,7 @@ public sealed class CheckoutWorkflowTest extends AbstractWorkflowTest permits Up
                 new CoordinatorOptions().withBatchWindow(BATCH_WINDOW_INTERVAL),
                 1,
                 1,
-                _ -> new IHttpHandler() { },
+                ignored -> new IHttpHandler() { },
                 serdes
         );
     }

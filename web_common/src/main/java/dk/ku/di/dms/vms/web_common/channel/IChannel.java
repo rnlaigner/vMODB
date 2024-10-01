@@ -25,6 +25,8 @@ public interface IChannel {
                           A attachment,
                           CompletionHandler<Integer,? super A> handler) { }
 
+    default Future<Integer> read(ByteBuffer dst) { return CompletableFuture.completedFuture(0); }
+
     default Future<Void> connect(InetSocketAddress inetSocketAddress) { return CompletableFuture.completedFuture(null); }
 
     default void close() { }

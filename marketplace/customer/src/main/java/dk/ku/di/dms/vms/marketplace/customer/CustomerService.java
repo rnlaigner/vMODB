@@ -12,7 +12,7 @@ import java.util.Date;
 import static dk.ku.di.dms.vms.marketplace.common.Constants.PAYMENT_CONFIRMED;
 import static dk.ku.di.dms.vms.marketplace.common.Constants.SHIPMENT_UPDATED;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
 
 @Microservice("customer")
 public final class CustomerService {

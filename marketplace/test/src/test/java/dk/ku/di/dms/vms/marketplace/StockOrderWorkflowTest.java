@@ -76,7 +76,7 @@ public final class StockOrderWorkflowTest extends AbstractWorkflowTest {
                         List.of( new CartItem(1,1,"test",1.0f, 1.0f, 1, 1.0f, "test") ),
                         String.valueOf(val)
                 );
-                String payload_ = serdes.serialize(reserveStockEvent, ReserveStock.class);
+                String payload_ = serdes.serializeAsString(reserveStockEvent, ReserveStock.class);
                 TransactionInput.Event eventPayload_ = new TransactionInput.Event(RESERVE_STOCK, payload_);
                 TransactionInput txInput_ = new TransactionInput(CUSTOMER_CHECKOUT, eventPayload_);
                 LOGGER.log(INFO, "[CheckoutProducer] New reserve stock event with version: "+val);
@@ -116,7 +116,7 @@ public final class StockOrderWorkflowTest extends AbstractWorkflowTest {
                 serverIdentifier,
                 new CoordinatorOptions().withBatchWindow(3000),
                 1,
-                1,  _ -> new IHttpHandler() { },
+                1,  ignored -> new IHttpHandler() { },
                 serdes
         );
     }

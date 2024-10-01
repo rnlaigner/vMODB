@@ -1,6 +1,5 @@
 package dk.ku.di.dms.vms.modb.multiversion;
 
-import dk.ku.di.dms.vms.modb.common.transaction.TransactionId;
 import dk.ku.di.dms.vms.modb.transaction.internal.OneWriterMultiReadersLIFO;
 import org.junit.BeforeClass;
 import org.junit.Test;

@@ -670,7 +670,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         while(remaining > 0) {
             try {
                 writeBuffer = this.retrieveByteBuffer();
-                remaining = BatchUtils.assembleBatchPayload(remaining, this.drained, writeBuffer);
+                remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer);
 
                 LOGGER.log(DEBUG, "Leader: Submitting ["+(count - remaining)+"] events to "+consumerVms.identifier);
                 count = remaining;

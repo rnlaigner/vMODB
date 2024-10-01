@@ -40,7 +40,6 @@
     <java.version>21</java.version>
     <maven.compiler.source>${java.version}</maven.compiler.source>
     <maven.compiler.target>${java.version}</maven.compiler.target>
-
     <!-- dependency versions -->
     <junit.version>4.13.2</junit.version>
     <slf4j.version>2.0.5</slf4j.version>
@@ -78,10 +77,8 @@
   </dependencies>
 
   <build>
-
     <pluginManagement>
       <plugins>
-
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
@@ -97,10 +94,14 @@
               <arg>java.base/jdk.internal.misc=ALL-UNNAMED</arg>
               <arg>--add-opens</arg>
               <arg>java.base/jdk.internal.misc=ALL-UNNAMED</arg>
+              <!-- for message pack using direct byte buffer -->
+              <arg>--add-opens</arg>
+              <arg>java.base/java.nio=ALL-UNNAMED</arg>
+              <arg>--add-opens</arg>
+              <arg> java.base/sun.nio.ch=ALL-UNNAMED</arg>
             </compilerArgs>
           </configuration>
         </plugin>
-
         <!-- prevent tests from running when building the solution -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -110,9 +111,7 @@
             <skipTests>true</skipTests>
           </configuration>
         </plugin>
-
       </plugins>
-
     </pluginManagement>
   </build>
 

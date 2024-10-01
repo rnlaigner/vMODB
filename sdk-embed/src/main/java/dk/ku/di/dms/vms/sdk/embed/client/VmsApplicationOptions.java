@@ -19,6 +19,8 @@ public final class VmsApplicationOptions {
 
     private final int numVmsWorkers;
 
+    private final String networkThreadPoolType;
+
     private final int vmsThreadPoolSize;
 
     private final int networkSendTimeout;
@@ -43,8 +45,9 @@ public final class VmsApplicationOptions {
         System.out.println("Properties: \n" + properties.toString());
 
         int networkBufferSize = Integer.parseInt(properties.getProperty("network_buffer_size"));
-        int soBufferSize = Integer.parseInt(properties.getProperty("os_buffer_size"));
+        int osBufferSize = Integer.parseInt(properties.getProperty("os_buffer_size"));
         int networkSendTimeout = Integer.parseInt(properties.getProperty("network_send_timeout"));
+        String networkThreadPoolType = properties.getProperty("network_thread_pool_type");
         int networkThreadPoolSize = Integer.parseInt(properties.getProperty("network_thread_pool_size"));
         int vmsThreadPoolSize = Integer.parseInt(properties.getProperty("vms_thread_pool_size"));
         int numVmsWorkers = Integer.parseInt(properties.getProperty("num_vms_workers"));
@@ -58,11 +61,12 @@ public final class VmsApplicationOptions {
                 port,
                 packages,
                 networkBufferSize == 0 ? MemoryUtils.DEFAULT_PAGE_SIZE : networkBufferSize,
+                networkThreadPoolType == null ? "default" : networkThreadPoolType,
                 networkThreadPoolSize,
                 numVmsWorkers,
                 vmsThreadPoolSize,
                 networkSendTimeout,
-                soBufferSize,
+                osBufferSize,
                 logging,
                 checkpointing,
                 maxRecords == 0 ? 100000 : maxRecords,
@@ -70,13 +74,15 @@ public final class VmsApplicationOptions {
     }
 
     private VmsApplicationOptions(String host, int port, String[] packages,
-                                  int networkBufferSize, int networkThreadPoolSize, int numVmsWorkers,
+                                  int networkBufferSize, String networkThreadPoolType,
+                                  int networkThreadPoolSize, int numVmsWorkers,
                                   int vmsThreadPoolSize, int networkSendTimeout, int osBufferSize,
                                   boolean logging, boolean checkpointing, int maxRecords, int maxSleep) {
         this.host = host;
         this.port = port;
         this.packages = packages;
         this.networkBufferSize = networkBufferSize;
+        this.networkThreadPoolType = networkThreadPoolType;
         this.networkThreadPoolSize = networkThreadPoolSize;
         this.numVmsWorkers = numVmsWorkers;
         this.vmsThreadPoolSize = vmsThreadPoolSize;
@@ -138,5 +144,9 @@ public final class VmsApplicationOptions {
 
     public int getMaxRecords() {
         return this.maxRecords;
+    }
+
+    public String networkThreadPoolType() {
+        return this.networkThreadPoolType;
     }
 }

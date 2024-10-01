@@ -16,14 +16,12 @@
 
   <dependencies>
 
-    <!-- modb -->
     <dependency>
       <groupId>dk.ku.di.dms.vms</groupId>
       <artifactId>modb</artifactId>
       <version>1.0-SNAPSHOT</version>
     </dependency>
 
-    <!-- sdk-core -->
     <dependency>
         <groupId>dk.ku.di.dms.vms</groupId>
         <artifactId>sdk-core</artifactId>

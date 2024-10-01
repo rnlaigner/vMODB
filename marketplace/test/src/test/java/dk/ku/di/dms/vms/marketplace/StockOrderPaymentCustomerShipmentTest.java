@@ -90,7 +90,7 @@ public class StockOrderPaymentCustomerShipmentTest extends AbstractWorkflowTest 
                         ),
                         String.valueOf(val)
                 );
-                String payload_ = serdes.serialize(reserveStockEvent, ReserveStock.class);
+                String payload_ = serdes.serializeAsString(reserveStockEvent, ReserveStock.class);
                 TransactionInput.Event eventPayload_ = new TransactionInput.Event("reserve_stock", payload_);
                 TransactionInput txInput_ = new TransactionInput("customer_checkout", eventPayload_);
                 LOGGER.log(INFO, "["+ NAME +"] New reserve stock event with version: "+val);

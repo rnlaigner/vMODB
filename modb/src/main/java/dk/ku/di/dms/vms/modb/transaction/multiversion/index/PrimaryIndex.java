@@ -20,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 import static dk.ku.di.dms.vms.modb.common.constraint.ConstraintConstants.*;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.WARNING;
 
 /**
  * A consistent view over an index.
@@ -205,8 +206,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
                 case NEGATIVE_OR_ZERO, MAX -> {
                     return comparator.compare(v1, v2) <= 0;
                 }
-                default ->
-                        throw new IllegalStateException("Cannot compare the constraint "+constraint+" for number type.");
+                default -> throw new IllegalStateException("Cannot compare the constraint "+constraint+" for number type.");
             }
         }
     }
@@ -240,19 +240,12 @@ public final class PrimaryIndex implements IMultiVersionIndex {
                 LOGGER.log(WARNING, "Primary key violation found in multi version map: " + key);
                 return false;
             }
-        }
-        /*
-        unknown error related to this block. only occurs in processStockConfirmed and after an initial run
-        either (a) the checkpoint is concurrently putting this entry or
-        (b) the reset is not appropriately cleaning the buffer or
-        (c) some hash buffer operation is buggy (although the record returned below indeed has the same key)
-         */
-        else if(this.primaryKeyIndex.exists(key)){
+        } else if(this.primaryKeyIndex.exists(key)){
             var existingRecord = this.primaryKeyIndex.lookupByKey(key);
             LOGGER.log(WARNING, "Primary key violation found in underlying primary key index: "+key+" Existing record:\n"+Arrays.stream(existingRecord).toList());
+            // if checkpoint and reset threads are not synchronized, it can lead to returning false and subsequent exception
             // return false;
         }
-
         if(this.nonPkConstraintViolation(record)) {
             LOGGER.log(WARNING, "Non PK violation found in underlying primary key index: "+key);
             return false;

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import dk.ku.di.dms.vms.modb.common.schema.VmsDataModel;
 import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.IdentifiableNode;
+import org.msgpack.jackson.dataformat.MessagePackFactory;
 
 import java.util.List;
 import java.util.Map;
@@ -15,11 +16,10 @@ import java.util.Set;
 
 final class JacksonVmsSerdes implements IVmsSerdesProxy {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper().
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper(new MessagePackFactory()).
             configure(MapperFeature.AUTO_DETECT_GETTERS, false)
             .configure(DeserializationFeature.ACCEPT_FLOAT_AS_INT, true)
-            .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false)
-        ;
+            .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
 
     @Override
     public String serializeEventSchema(Map<String, VmsEventSchema> vmsEventSchema) {
@@ -131,7 +131,6 @@ final class JacksonVmsSerdes implements IVmsSerdesProxy {
 
     private static final TypeReference<Map<String, Long>> DEP_MAP_CLAZZ = new TypeReference<>() { };
 
-
     @Override
     public Map<String, Long> deserializeDependenceMap(String dependenceMapStr) {
         try {
@@ -164,9 +163,19 @@ final class JacksonVmsSerdes implements IVmsSerdesProxy {
     }
 
     @Override
-    public String serialize(Object value, Class<?> clazz) {
+    public String serializeAsString(Object value, Class<?> clazz) {
         try {
             return OBJECT_MAPPER.writeValueAsString(value);
+        } catch (Throwable e) {
+            e.printStackTrace(System.out);
+            return null;
+        }
+    }
+
+    @Override
+    public byte[] serialize(Object value, Class<?> clazz) {
+        try {
+            return OBJECT_MAPPER.writeValueAsBytes(value);
         } catch (Throwable e) {
             e.printStackTrace(System.out);
             return null;
@@ -177,6 +186,16 @@ final class JacksonVmsSerdes implements IVmsSerdesProxy {
     public <T> T deserialize(String valueStr, Class<T> clazz) {
         try {
             return OBJECT_MAPPER.readValue(valueStr, clazz);
+        } catch (Throwable e) {
+            e.printStackTrace(System.out);
+            return null;
+        }
+    }
+
+    @Override
+    public <T> T deserialize(byte[] valueBytes, Class<T> clazz) {
+        try {
+            return OBJECT_MAPPER.readValue(valueBytes, clazz);
         } catch (Throwable e) {
             e.printStackTrace(System.out);
             return null;

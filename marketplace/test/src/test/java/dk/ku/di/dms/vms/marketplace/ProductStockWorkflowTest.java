@@ -93,7 +93,7 @@ public final class ProductStockWorkflowTest extends AbstractWorkflowTest {
                 serverIdentifier,
                 new CoordinatorOptions().withBatchWindow(BATCH_WINDOW_INTERVAL),
                 1,
-                1,  _ -> new IHttpHandler() { },
+                1,  ignored -> new IHttpHandler() { },
                 serdes
         );
     }
@@ -118,7 +118,7 @@ public final class ProductStockWorkflowTest extends AbstractWorkflowTest {
                         1,1,"test","test","test","test",10.0F,10.0F,"test", String.valueOf(val)
                 );
 
-                String payload = serdes.serialize(updateProduct, UpdateProduct.class);
+                String payload = serdes.serializeAsString(updateProduct, UpdateProduct.class);
 
                 TransactionInput.Event eventPayload = new TransactionInput.Event("update_product", payload);
 
