@@ -7,15 +7,19 @@ package dk.ku.di.dms.vms.modb.common.serdes;
  */
 public final class VmsSerdesProxyBuilder {
 
-    public static IVmsSerdesProxy build(){
-        IVmsSerdesProxy proxy;
+    private static IVmsSerdesProxy INSTANCE;
+
+    public synchronized static IVmsSerdesProxy build(){
+        if(INSTANCE != null){
+            return INSTANCE;
+        }
         try {
-            proxy = new JacksonVmsSerdes();
+            INSTANCE = new JacksonVmsSerdes();
         } catch (NoClassDefFoundError | Exception e){
             System.out.println("Failed to load default proxy: \n"+e);
-            proxy = new GsonVmsSerdes();
+            INSTANCE = new GsonVmsSerdes();
         }
-        return proxy;
+        return INSTANCE;
     }
 
 }

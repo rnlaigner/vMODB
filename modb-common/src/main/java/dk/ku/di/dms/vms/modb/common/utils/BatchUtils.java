@@ -12,14 +12,14 @@ public final class BatchUtils {
     public static final int HEADER = 1 + (2 * Integer.BYTES);
 
     public static int assembleBatchOfEvents(int remaining, List<TransactionEvent.PayloadRaw> events, ByteBuffer writeBuffer){
+        writeBuffer.put(BATCH_OF_EVENTS);
         return assembleBatchOfEvents(remaining, events, writeBuffer, HEADER);
     }
 
     public static int assembleBatchOfEvents(int remaining, List<TransactionEvent.PayloadRaw> events, ByteBuffer writeBuffer, int header){
         int remainingBytes = writeBuffer.remaining();
 
-        writeBuffer.put(BATCH_OF_EVENTS);
-        // jump 2 integers
+        // jump
         writeBuffer.position(header);
         remainingBytes = remainingBytes - header;
 

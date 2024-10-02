@@ -42,7 +42,7 @@ if `echo "$*" | grep -q cart`; then
     else
         echo "initializing cart..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -Xmx2048m -jar '$current_dir'/cart/target/cart-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Xmx2048m -jar '$current_dir'/cart/target/cart-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -55,7 +55,7 @@ if `echo "$*" | grep -q product`; then
     else
         echo "initializing product..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -Xmx2048m -jar '$current_dir'/product/target/product-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Xmx2048m -jar '$current_dir'/product/target/product-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -68,7 +68,7 @@ if `echo "$*" | grep -q stock`; then
     else
         echo "initializing stock..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -Xmx2048m -jar '$current_dir'/stock/target/stock-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Xmx2048m -jar '$current_dir'/stock/target/stock-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -81,7 +81,7 @@ if `echo "$*" | grep -q order`; then
     else
         echo "initializing order..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar '$current_dir'/order/target/order-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar '$current_dir'/order/target/order-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -94,7 +94,7 @@ if `echo "$*" | grep -q payment`; then
     else
         echo "initializing payment..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar '$current_dir'/payment/target/payment-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar '$current_dir'/payment/target/payment-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -107,7 +107,7 @@ if `echo "$*" | grep -q shipment`; then
     else
         echo "initializing shipment..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar '$current_dir'/shipment/target/shipment-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar '$current_dir'/shipment/target/shipment-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -120,7 +120,7 @@ if `echo "$*" | grep -q seller`; then
     else
         echo "initializing seller..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar '$current_dir'/seller/target/seller-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar '$current_dir'/seller/target/seller-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -133,7 +133,7 @@ if `echo "$*" | grep -q customer`; then
     else
         echo "initializing customer..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar '$current_dir'/customer/target/customer-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar '$current_dir'/customer/target/customer-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi
@@ -148,7 +148,7 @@ if `echo "$*" | grep -q proxy`; then
         sleep 3
         echo "initializing Proxy..."
         osascript -e 'tell app "Terminal"
-            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar '$current_dir'/proxy/target/proxy-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            do script "java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar '$current_dir'/proxy/target/proxy-1.0-SNAPSHOT-jar-with-dependencies.jar"
         end tell'
     fi
 fi

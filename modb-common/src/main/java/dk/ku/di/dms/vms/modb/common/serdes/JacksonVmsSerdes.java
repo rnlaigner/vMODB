@@ -16,8 +16,13 @@ import java.util.Set;
 
 final class JacksonVmsSerdes implements IVmsSerdesProxy {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper(new MessagePackFactory()).
-            configure(MapperFeature.AUTO_DETECT_GETTERS, false)
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .configure(MapperFeature.AUTO_DETECT_GETTERS, false)
+            .configure(DeserializationFeature.ACCEPT_FLOAT_AS_INT, true)
+            .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+
+    private static final ObjectMapper OBJECT_MAPPER_MSGPACK = new ObjectMapper(new MessagePackFactory())
+            .configure(MapperFeature.AUTO_DETECT_GETTERS, false)
             .configure(DeserializationFeature.ACCEPT_FLOAT_AS_INT, true)
             .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
 
@@ -175,7 +180,7 @@ final class JacksonVmsSerdes implements IVmsSerdesProxy {
     @Override
     public byte[] serialize(Object value, Class<?> clazz) {
         try {
-            return OBJECT_MAPPER.writeValueAsBytes(value);
+            return OBJECT_MAPPER_MSGPACK.writeValueAsBytes(value);
         } catch (Throwable e) {
             e.printStackTrace(System.out);
             return null;
@@ -195,7 +200,7 @@ final class JacksonVmsSerdes implements IVmsSerdesProxy {
     @Override
     public <T> T deserialize(byte[] valueBytes, Class<T> clazz) {
         try {
-            return OBJECT_MAPPER.readValue(valueBytes, clazz);
+            return OBJECT_MAPPER_MSGPACK.readValue(valueBytes, clazz);
         } catch (Throwable e) {
             e.printStackTrace(System.out);
             return null;

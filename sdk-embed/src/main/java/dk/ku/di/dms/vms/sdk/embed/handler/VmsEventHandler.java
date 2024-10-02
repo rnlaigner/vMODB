@@ -265,7 +265,7 @@ public final class VmsEventHandler extends ModbHttpServer {
 
     private BatchMetadata updateBatchMetadataAtomically(OutboundEventResult outputEvent) {
         return this.trackingBatchMap.compute(outputEvent.batch(),
-                (x,y) -> {
+                (ignored,y) -> {
                     BatchMetadata toMod = y;
                     if(toMod == null){
                         toMod = new BatchMetadata();
@@ -419,7 +419,7 @@ public final class VmsEventHandler extends ModbHttpServer {
                         this.fetchMoreBytes(startPos);
                         return;
                     }
-                    this.processCompressedBatchOfEvents();
+                    this.processCompressedBatchOfEvents(startPos, bufferSize);
                 }
                 case BATCH_OF_EVENTS -> {
                     int bufferSize = this.getBufferSize();
@@ -487,10 +487,14 @@ public final class VmsEventHandler extends ModbHttpServer {
         }
 
         private void processBatchOfEvents(ByteBuffer readBuffer) {
+            int count = readBuffer.getInt();
+            this.processBatchOfEvents(count, readBuffer);
+        }
+
+        private void processBatchOfEvents(int count, ByteBuffer readBuffer) {
             List<InboundEvent> inboundEvents = LIST_BUFFER.poll();
             if(inboundEvents == null) inboundEvents = new ArrayList<>(1024);
             try {
-                int count = readBuffer.getInt();
                 LOGGER.log(DEBUG,me.identifier + ": Batch of [" + count + "] events received from " + node.identifier);
                 TransactionEvent.PayloadRaw payload;
                 int i = 0;
@@ -519,11 +523,20 @@ public final class VmsEventHandler extends ModbHttpServer {
             }
         }
 
-        private void processCompressedBatchOfEvents() {
+        private void processCompressedBatchOfEvents(int startPos, int bufferSize) {
+            int count = this.readBuffer.getInt();
+            int maxLength = this.readBuffer.getInt();
+
             ByteBuffer decompressedBuffer = MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize());
-            CompressingUtils.decompress(this.readBuffer, decompressedBuffer);
-            decompressedBuffer.flip();
-            this.processBatchOfEvents(decompressedBuffer);
+            decompressedBuffer.limit(maxLength);
+            decompressedBuffer.position(0);
+
+            CompressingUtils.decompress(this.readBuffer, this.readBuffer.position(), decompressedBuffer, 0, maxLength);
+            decompressedBuffer.limit(maxLength);
+            // +5 is probably extra bytes used by lz4
+            this.readBuffer.position(  bufferSize + startPos + 5 );
+
+            this.processBatchOfEvents(count, decompressedBuffer);
             decompressedBuffer.clear();
             MemoryManager.releaseTemporaryDirectBuffer(decompressedBuffer);
         }
@@ -1070,7 +1083,7 @@ public final class VmsEventHandler extends ModbHttpServer {
      */
     private InboundEvent buildInboundEvent(TransactionEvent.PayloadRaw payload, String eventStr, Class<?> clazz, Object input) {
         String precedenceMapStr = new String(payload.precedenceMap(), StandardCharsets.UTF_8);
-        Map<String, Long> precedenceMap = this.serdesProxy.deserializeMap(precedenceMapStr);
+        Map<String, Long> precedenceMap = this.serdesProxy.deserializeDependenceMap(precedenceMapStr);
         if(precedenceMap == null){
             throw new IllegalStateException("Precedence map is null.");
         }

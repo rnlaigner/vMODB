@@ -356,35 +356,35 @@ public final class ConsumerVmsWorker extends StoppableRunnable implements IVmsCo
         this.drained.clear();
     }
 
+    private static final int customHeader = BatchUtils.HEADER + Integer.BYTES;
+
     private void sendCompressedBatchOfEvents() {
         int remaining = this.drained.size();
         int count = remaining;
         ByteBuffer writeBuffer = null;
-        int customheader = BatchUtils.HEADER + Integer.BYTES;
+
         while(remaining > 0){
             try {
                 writeBuffer = this.retrieveByteBuffer();
-                remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer, customheader);
+                remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer, customHeader);
                 writeBuffer.flip();
-                int maxLength = writeBuffer.limit() - customheader;
+                int maxLength = writeBuffer.limit() - customHeader;
                 // CompressingUtils.compress(writeBuffer, 5, writeBuffer.limit() - 5, compressedBuffer, 9, maxLength);
-                writeBuffer.position(customheader);
+                writeBuffer.position(customHeader);
 
                 ByteBuffer compressedBuffer = this.retrieveByteBuffer();
-                compressedBuffer.position(customheader);
+                compressedBuffer.position(customHeader);
                 CompressingUtils.compress(writeBuffer, compressedBuffer);
+                compressedBuffer.flip();
 
-                int limit = compressedBuffer.position();
+                int limit = compressedBuffer.limit();
                 compressedBuffer.put(0, COMPRESSED_BATCH_OF_EVENTS);
                 compressedBuffer.putInt(1, limit);
                 compressedBuffer.putInt(5, writeBuffer.getInt(5));
                 compressedBuffer.putInt(9, maxLength);
-                compressedBuffer.position(limit);
 
                 writeBuffer.clear();
                 this.returnByteBuffer(writeBuffer);
-
-                compressedBuffer.flip();
 
                 // maximize useful work
                 if(this.tryAcquireLock()){
