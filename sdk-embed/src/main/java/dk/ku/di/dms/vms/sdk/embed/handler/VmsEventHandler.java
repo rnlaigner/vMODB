@@ -140,7 +140,7 @@ public final class VmsEventHandler extends ModbHttpServer {
                     transactionalHandler, vmsInternalChannels,
                     new VmsEventHandler.VmsHandlerOptions( options.maxSleep(), options.networkBufferSize(),
                             options.osBufferSize(), options.networkThreadPoolType(), options.networkThreadPoolSize(), options.networkSendTimeout(),
-                            options.numVmsWorkers(), true, options.isLogging(), options.isCheckpointing()),
+                            options.numVmsWorkers(), options.isCompressing(), options.isLogging(), options.isCheckpointing()),
                     httpHandler, serdesProxy);
         } catch (IOException e){
             throw new RuntimeException("Error on setting up event handler: "+e.getCause()+ " "+ e.getMessage());
@@ -368,7 +368,7 @@ public final class VmsEventHandler extends ModbHttpServer {
         } else {
             IVmsContainer vmsContainer = this.consumerVmsContainerMap.get(node);
             if(vmsContainer instanceof MultiVmsContainer multiVmsContainer){
-                multiVmsContainer.addConsumerVms(consumerVmsWorker);
+                multiVmsContainer.addConsumerVms(identifier, consumerVmsWorker);
             } else {
                 // stop previous, replace by the new one
                 ((ConsumerVmsWorker)vmsContainer).stop();
@@ -419,7 +419,11 @@ public final class VmsEventHandler extends ModbHttpServer {
                         this.fetchMoreBytes(startPos);
                         return;
                     }
-                    this.processCompressedBatchOfEvents(startPos, bufferSize);
+                    int count = readBuffer.getInt();
+                    ByteBuffer decompressedBuffer = decompressBatchOfEvents(this.readBuffer, startPos, bufferSize);
+                    this.processBatchOfEvents(count, decompressedBuffer);
+                    decompressedBuffer.clear();
+                    MemoryManager.releaseTemporaryDirectBuffer(decompressedBuffer);
                 }
                 case BATCH_OF_EVENTS -> {
                     int bufferSize = this.getBufferSize();
@@ -523,24 +527,6 @@ public final class VmsEventHandler extends ModbHttpServer {
             }
         }
 
-        private void processCompressedBatchOfEvents(int startPos, int bufferSize) {
-            int count = this.readBuffer.getInt();
-            int maxLength = this.readBuffer.getInt();
-
-            ByteBuffer decompressedBuffer = MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize());
-            decompressedBuffer.limit(maxLength);
-            decompressedBuffer.position(0);
-
-            CompressingUtils.decompress(this.readBuffer, this.readBuffer.position(), decompressedBuffer, 0, maxLength);
-            decompressedBuffer.limit(maxLength);
-            // +5 is probably extra bytes used by lz4
-            this.readBuffer.position(  bufferSize + startPos + 5 );
-
-            this.processBatchOfEvents(count, decompressedBuffer);
-            decompressedBuffer.clear();
-            MemoryManager.releaseTemporaryDirectBuffer(decompressedBuffer);
-        }
-
         @Override
         public void failed(Throwable exc, Integer carryOn) {
             LOGGER.log(ERROR,me.identifier+": Error on reading VMS message from "+node.identifier+"\n"+exc);
@@ -553,6 +539,21 @@ public final class VmsEventHandler extends ModbHttpServer {
             Object input = serdesProxy.deserialize(payload.payload(), clazz);
             return buildInboundEvent(payload, eventStr, clazz, input);
         }
+    }
+
+    private ByteBuffer decompressBatchOfEvents(ByteBuffer readBuffer, int startPos, int bufferSize) {
+        int maxLength = readBuffer.getInt();
+
+        ByteBuffer decompressedBuffer = MemoryManager.getTemporaryDirectBuffer(this.options.networkBufferSize());
+        decompressedBuffer.limit(maxLength);
+        decompressedBuffer.position(0);
+
+        CompressingUtils.decompress(readBuffer, readBuffer.position(), decompressedBuffer, 0, maxLength);
+        decompressedBuffer.limit(maxLength);
+        // +5 is probably extra bytes used by lz4
+        readBuffer.position(  bufferSize + startPos + 5 );
+
+        return decompressedBuffer;
     }
 
     /**
@@ -857,6 +858,14 @@ public final class VmsEventHandler extends ModbHttpServer {
             byte messageType = this.readBuffer.get();
             try {
                 switch (messageType) {
+                    case COMPRESSED_BATCH_OF_EVENTS -> {
+                        int bufferSize = this.getBufferSize();
+                        if(this.readBuffer.remaining() < bufferSize){
+                            this.fetchMoreBytes(startPos);
+                            return;
+                        }
+                        this.processCompressedBatchOfEvents(startPos, bufferSize);
+                    }
                     case (BATCH_OF_EVENTS) -> {
                         int bufferSize = this.getBufferSize();
                         if(this.readBuffer.remaining() < bufferSize){
@@ -944,6 +953,14 @@ public final class VmsEventHandler extends ModbHttpServer {
             }
         }
 
+        private void processCompressedBatchOfEvents(Integer startPos, int bufferSize) {
+            int count = this.readBuffer.getInt();
+            ByteBuffer decompressedBuffer = decompressBatchOfEvents(this.readBuffer, startPos, bufferSize);
+            this.processBatchOfEvents(count, decompressedBuffer);
+            decompressedBuffer.clear();
+            MemoryManager.releaseTemporaryDirectBuffer(decompressedBuffer);
+        }
+
         private int getBufferSize() {
             int bufferSize = Integer.MAX_VALUE;
             // check if we can read an integer
@@ -974,6 +991,11 @@ public final class VmsEventHandler extends ModbHttpServer {
         }
 
         private void processBatchOfEvents(ByteBuffer readBuffer) {
+            int count = readBuffer.getInt();
+            this.processBatchOfEvents(count, readBuffer);
+        }
+
+        private void processBatchOfEvents(int count, ByteBuffer readBuffer) {
             List<InboundEvent> payloads = LIST_BUFFER.poll();
             if(payloads == null) payloads = new ArrayList<>(1024);
             /*
@@ -982,7 +1004,6 @@ public final class VmsEventHandler extends ModbHttpServer {
             TransactionEvent.PayloadRaw payload;
             try {
                 // to increase performance, one would buffer this buffer for processing and then read from another buffer
-                int count = readBuffer.getInt();
                 LOGGER.log(DEBUG,me.identifier + ": Batch of [" + count + "] events received from the leader");
                 // extract events batched
                 for (int i = 0; i < count; i++) {

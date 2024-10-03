@@ -128,6 +128,9 @@ public final class Main {
         int numQueuesVmsWorker = Integer.parseInt( properties.getProperty("num_queues_vms_worker"));
         int maxSleep = Integer.parseInt( properties.getProperty("max_sleep") );
 
+        // compression
+        boolean compression = Boolean.parseBoolean( properties.getProperty("compression") );
+
         // logging
         boolean logging = Boolean.parseBoolean( properties.getProperty("logging") );
 
@@ -147,6 +150,7 @@ public final class Main {
                         .withNumWorkersPerVms(numWorkersPerVms)
                         .withNumQueuesVmsWorker(numQueuesVmsWorker)
                         .withMaxVmsWorkerSleep(maxSleep)
+                        .withCompression(compression)
                         .withLogging(logging)
                         ,
                 STARTING_BATCH_ID,

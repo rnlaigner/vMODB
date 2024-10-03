@@ -7,12 +7,12 @@ public final class Constants {
      */
 
     // a server requesting a vote
-    public static final byte VOTE_REQUEST = 1;
+    public static final byte VOTE_REQUEST = 20;
 
     // a server responding a request
-    public static final byte VOTE_RESPONSE = 2;
+    public static final byte VOTE_RESPONSE = 21;
 
     // a server claims to be the leader
-    public static final byte LEADER_REQUEST = 3;
+    public static final byte LEADER_REQUEST = 22;
 
 }

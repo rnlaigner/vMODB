@@ -19,6 +19,7 @@ public final class MemoryUtils {
 
             DEFAULT_PAGE_SIZE = getPageSize();
             DEFAULT_NUM_BUCKETS = 10;
+            DEFAULT_NUM_RECORDS= 100000;
         } catch (Exception ignored) {}
 
     }
@@ -32,6 +33,8 @@ public final class MemoryUtils {
     public static int DEFAULT_PAGE_SIZE;
 
     public static int DEFAULT_NUM_BUCKETS;
+
+    public static int DEFAULT_NUM_RECORDS;
 
     /**
      * <a href="https://stackoverflow.com/questions/19047584/getting-virtual-memory-page-size-by-java-code">link</a>

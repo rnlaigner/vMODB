@@ -100,7 +100,7 @@ public final class Coordinator extends ModbHttpServer {
     private final Map<Long, BatchContext> batchContextMap;
 
     // transaction requests coming from the http event loop
-    private final List<ConcurrentLinkedDeque<TransactionInput>> transactionInputDeques;
+    private final Deque<TransactionInput>[] transactionInputDeques;
 
     // transaction definitions coming from the http event loop
     private final Map<String, TransactionDAG> transactionMap;
@@ -138,6 +138,7 @@ public final class Coordinator extends ModbHttpServer {
                 httpHandlerSupplier, serdesProxy);
     }
 
+    @SuppressWarnings("unchecked")
     private Coordinator(Map<Integer, ServerNode> servers,
                         Map<Integer, LockConnectionMetadata> serverConnectionMetadataMap,
                         Map<String, IdentifiableNode> startersVMSs,
@@ -180,18 +181,18 @@ public final class Coordinator extends ModbHttpServer {
         this.serdesProxy = serdesProxy;
 
         // shared data structure with http handler
-        this.transactionInputDeques = new ArrayList<>();
+        this.transactionInputDeques = new Deque[options.getNumTransactionWorkers()];
         for(int i = 0; i < options.getNumTransactionWorkers(); i++){
-            this.transactionInputDeques.add(new ConcurrentLinkedDeque<>());
+            this.transactionInputDeques[i] = new ConcurrentLinkedDeque<>();
         }
 
         if(options.getNumTransactionWorkers() == 1){
-            var inputQueue = this.transactionInputDeques.getFirst();
+            var inputQueue = this.transactionInputDeques[0];
             transactionInputConsumer = inputQueue::offerLast;
         } else {
             transactionInputConsumer = transactionInput -> {
                 int idx = ThreadLocalRandom.current().nextInt(0, options.getNumTransactionWorkers());
-                transactionInputDeques.get(idx).offerLast(transactionInput);
+                transactionInputDeques[idx].offerLast(transactionInput);
             };
         }
 
@@ -284,7 +285,7 @@ public final class Coordinator extends ModbHttpServer {
                 // complete the ring
                 precedenceMapOutputQueue = firstPrecedenceInputQueue;
             }
-            var txInputQueue = this.transactionInputDeques.get(idx-1);
+            Deque<TransactionInput> txInputQueue = this.transactionInputDeques[idx-1];
             TransactionWorker txWorker = TransactionWorker.build(idx, txInputQueue, initTid,
                     this.options.getMaxTransactionsPerBatch(), this.options.getBatchWindow(),
                     numWorkers, precedenceMapInputQueue, precedenceMapOutputQueue, this.transactionMap,
@@ -338,6 +339,7 @@ public final class Coordinator extends ModbHttpServer {
                                     () -> JdkAsyncChannel.create(this.group),
                                     new VmsWorkerOptions(
                                             true,
+                                            this.options.isCompressing(),
                                             this.options.logging(),
                                             this.options.getMaxVmsWorkerSleep(),
                                             this.options.getNetworkBufferSize(),
@@ -427,6 +429,7 @@ public final class Coordinator extends ModbHttpServer {
                         () -> JdkAsyncChannel.create(this.group),
                         new VmsWorkerOptions(
                                 active,
+                                this.options.isCompressing(),
                                 this.options.logging(),
                                 this.options.getMaxVmsWorkerSleep(),
                                 this.options.getNetworkBufferSize(),

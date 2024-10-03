@@ -219,7 +219,7 @@ public final class TransactionWorker extends StoppableRunnable {
         long lastBatchOffset = this.batchContext.batchOffset - this.numWorkers;
         PendingTransactionInput pendingInput = new PendingTransactionInput(
                 this.tid, this.batchContext.batchOffset, transactionInput, pendingVMSs, previousTidPerVms);
-        this.pendingInputMap.computeIfAbsent(lastBatchOffset, (x) -> new ArrayList<>()).add(pendingInput);
+        this.pendingInputMap.computeIfAbsent(lastBatchOffset, (ignored) -> new ArrayList<>()).add(pendingInput);
     }
 
     public static class PrecedenceInfo {
@@ -330,7 +330,7 @@ public final class TransactionWorker extends StoppableRunnable {
         this.coordinatorQueue.add(this.batchContext);
 
         // optimization: iterate over all vms in the last batch, filter those which last tid != this.tid
-        // after filtering, send a map containing the vms (identifier) and their corresponding last tids to the next transaction worker in the ring
+        // after filtering, send a map containing the vms (identifier) and their corresponding last TIDs to the next transaction worker in the ring
         // must save this in a batch context map?
         this.batchContext = new BatchContext(this.batchContext.batchOffset + this.numWorkers);
 

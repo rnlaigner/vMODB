@@ -29,6 +29,8 @@ public final class VmsApplicationOptions {
 
     private final int maxSleep;
 
+    private final boolean compressing;
+
     private final boolean logging;
 
     private final boolean checkpointing;
@@ -55,6 +57,7 @@ public final class VmsApplicationOptions {
         boolean logging = Boolean.parseBoolean(properties.getProperty("logging"));
         boolean checkpointing = Boolean.parseBoolean(properties.getProperty("checkpointing"));
         int maxRecords = Integer.parseInt(properties.getProperty("max_records"));
+        boolean compression = Boolean.parseBoolean(properties.getProperty("compression"));
 
         return new VmsApplicationOptions(
                 host,
@@ -67,16 +70,17 @@ public final class VmsApplicationOptions {
                 vmsThreadPoolSize,
                 networkSendTimeout,
                 osBufferSize,
+                compression,
                 logging,
                 checkpointing,
-                maxRecords == 0 ? 100000 : maxRecords,
+                maxRecords == 0 ? MemoryUtils.DEFAULT_NUM_RECORDS : maxRecords,
                 maxSleep);
     }
 
     private VmsApplicationOptions(String host, int port, String[] packages,
                                   int networkBufferSize, String networkThreadPoolType,
                                   int networkThreadPoolSize, int numVmsWorkers,
-                                  int vmsThreadPoolSize, int networkSendTimeout, int osBufferSize,
+                                  int vmsThreadPoolSize, int networkSendTimeout, int osBufferSize, boolean compressing,
                                   boolean logging, boolean checkpointing, int maxRecords, int maxSleep) {
         this.host = host;
         this.port = port;
@@ -88,6 +92,7 @@ public final class VmsApplicationOptions {
         this.vmsThreadPoolSize = vmsThreadPoolSize;
         this.networkSendTimeout = networkSendTimeout;
         this.osBufferSize = osBufferSize;
+        this.compressing = compressing;
         this.logging = logging;
         this.checkpointing = checkpointing;
         this.maxRecords = maxRecords;
@@ -149,4 +154,9 @@ public final class VmsApplicationOptions {
     public String networkThreadPoolType() {
         return this.networkThreadPoolType;
     }
+
+    public boolean isCompressing() {
+        return this.compressing;
+    }
+
 }

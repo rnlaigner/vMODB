@@ -1,10 +1,8 @@
 package dk.ku.di.dms.vms.coordinator.vms;
 
 import dk.ku.di.dms.vms.coordinator.options.VmsWorkerOptions;
-import dk.ku.di.dms.vms.modb.common.logging.ILoggingHandler;
-import dk.ku.di.dms.vms.modb.common.logging.LoggingHandlerBuilder;
+import dk.ku.di.dms.vms.modb.common.compressing.CompressingUtils;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
-import dk.ku.di.dms.vms.modb.common.runnable.StoppableRunnable;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitAck;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitCommand;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitInfo;
@@ -19,22 +17,21 @@ import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.utils.BatchUtils;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
+import dk.ku.di.dms.vms.web_common.ProducerWorker;
 import dk.ku.di.dms.vms.web_common.channel.IChannel;
+import org.jctools.queues.MpscArrayQueue;
 
 import java.io.IOException;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
 import java.nio.BufferOverflowException;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.CompletionHandler;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -44,24 +41,9 @@ import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.*;
 import static java.lang.System.Logger.Level.*;
 import static java.lang.Thread.sleep;
 
-@SuppressWarnings("SequencedCollectionMethodCanBeUsed")
-public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
+public final class VmsWorker extends ProducerWorker implements IVmsWorker {
 
     private static final System.Logger LOGGER = System.getLogger(VmsWorker.class.getName());
-
-    private static final VarHandle WRITE_SYNCHRONIZER;
-
-    static {
-        try {
-            MethodHandles.Lookup l = MethodHandles.lookup();
-            WRITE_SYNCHRONIZER = l.findVarHandle(VmsWorker.class, "writeSynchronizer", int.class);
-        } catch (Exception e) {
-            throw new InternalError(e);
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private volatile int writeSynchronizer;
 
     enum State {
         NEW,
@@ -81,18 +63,9 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
     
     private final VmsWorkerOptions options;
 
-    // the vms this worker is responsible for
-    private final IdentifiableNode consumerVms;
-
     private State state;
 
-    private final ILoggingHandler loggingHandler;
-
-    private final IVmsSerdesProxy serdesProxy;
-
     private final ByteBuffer readBuffer;
-
-    private final Deque<ByteBuffer> writeBufferPool;
 
     /**
      * Queue to inform coordinator about an important event
@@ -103,13 +76,9 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
     private IChannel channel;
 
     // DTs particular to this vms worker
-    private final IVmsDeque transactionEventQueue;
+    private final IVmsQueue transactionEventQueue;
 
     private final Deque<Object> messageQueue;
-
-    private final Queue<ByteBuffer> loggingWriteBuffers = new ConcurrentLinkedQueue<>();
-
-    private final Deque<ByteBuffer> pendingWriteBuffers = new ConcurrentLinkedDeque<>();
 
     private final WriteCompletionHandler writeCompletionHandler = new WriteCompletionHandler();
 
@@ -117,64 +86,55 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 
     private final Consumer<Object> queueMessage_;
 
-    private interface IVmsDeque {
-        void drain(List<TransactionEvent.PayloadRaw> list, int maxSize);
-        void insert(TransactionEvent.PayloadRaw payloadRaw);
+    private interface IVmsQueue {
+        void drain(List<TransactionEvent.PayloadRaw> list);
+        void queue(TransactionEvent.PayloadRaw payloadRaw);
+        default void addAll(List<TransactionEvent.PayloadRaw> list){
+            for(var event : list){
+                this.queue(event);
+            }
+        }
     }
 
-    private static final class MultiDeque implements IVmsDeque {
+    private static final class MultiQueue implements IVmsQueue {
         private final int numQueues;
-        private int nextPos;
-        private final List<Deque<TransactionEvent.PayloadRaw>> queues;
-        private MultiDeque(int numQueues) {
+        private final Deque<TransactionEvent.PayloadRaw>[] queues;
+        @SuppressWarnings("unchecked")
+        private MultiQueue(int numQueues) {
             this.numQueues = numQueues;
-            this.nextPos = 0;
-            this.queues = new ArrayList<>(numQueues);
+            this.queues = new Deque[numQueues];
             for (int i = 0; i < numQueues; i++) {
-                this.queues.add(new ConcurrentLinkedDeque<>());
+                this.queues[i] = new ConcurrentLinkedDeque<>();
             }
         }
         @Override
-        public void insert(TransactionEvent.PayloadRaw payloadRaw) {
+        public void queue(TransactionEvent.PayloadRaw payloadRaw) {
             // this method can be called concurrently
-            int pos = this.nextPos-1; if(pos < 0) pos = 0;
-            this.queues.get(pos).add(payloadRaw);
+            int pos = ThreadLocalRandom.current().nextInt(0, this.numQueues);
+            this.queues[pos].addLast(payloadRaw);
         }
         @Override
-        public void drain(List<TransactionEvent.PayloadRaw> list, int maxSize){
-            int totalSize = 0;
+        public void drain(List<TransactionEvent.PayloadRaw> list){
             TransactionEvent.PayloadRaw txEvent;
-            while ((txEvent = this.queues.get(this.nextPos).poll()) != null){
-                list.add(txEvent);
-                totalSize += txEvent.totalSize();
-                if(totalSize >= maxSize) break;
-            }
-            this.nextPos++;
-            if(this.nextPos == this.numQueues){ this.nextPos=0; }
+            int nextPos = 0;
+            do {
+                while ((txEvent = this.queues[nextPos].pollFirst()) != null){
+                    list.add(txEvent);
+                }
+                nextPos++;
+            } while (nextPos < this.numQueues);
         }
     }
 
-    private static final class SingleDeque implements IVmsDeque {
-        private final ConcurrentLinkedDeque<TransactionEvent.PayloadRaw> queue = new ConcurrentLinkedDeque<>();
+    private static final class SingleQueue implements IVmsQueue {
+        private final MpscArrayQueue<TransactionEvent.PayloadRaw> queue = new MpscArrayQueue<>(1024*1000);
         @Override
-        public void insert(TransactionEvent.PayloadRaw payloadRaw) {
-            this.queue.offerLast(payloadRaw);
+        public void queue(TransactionEvent.PayloadRaw payloadRaw) {
+            this.queue.offer(payloadRaw);
         }
         @Override
-        public void drain(List<TransactionEvent.PayloadRaw> list, int maxSize){
-            int totalSize = 0;
-            TransactionEvent.PayloadRaw txEvent = this.queue.poll();
-            if(txEvent == null) return;
-            totalSize += txEvent.totalSize();
-            while(true) {
-                list.add(txEvent);
-                totalSize += txEvent.totalSize();
-                if(totalSize >= maxSize){
-                    break;
-                }
-                txEvent = this.queue.poll();
-                if(txEvent == null) break;
-            }
+        public void drain(List<TransactionEvent.PayloadRaw> list){
+            this.queue.drain(list::add);
         }
     }
     
@@ -187,8 +147,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
                                     Supplier<IChannel> channelFactory,
                                     VmsWorkerOptions options,
                                     IVmsSerdesProxy serdesProxy) throws IOException {
-        return new VmsWorker(me, consumerVms, coordinatorQueue,
-                channelFactory, options, serdesProxy);
+        return new VmsWorker(me, consumerVms, coordinatorQueue, channelFactory, options, serdesProxy);
     }
 
     private VmsWorker(// coordinator reference
@@ -200,35 +159,20 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
                       Supplier<IChannel> channelFactory,
                       VmsWorkerOptions options,
                       IVmsSerdesProxy serdesProxy) {
+        super("coordinator", consumerVms, serdesProxy, options.logging());
         this.me = me;
         this.state = State.NEW;
-        this.consumerVms = consumerVms;
-
         this.channelFactory = channelFactory;
         this.options = options;
 
-        // initialize the write buffer
-        this.writeBufferPool = new ConcurrentLinkedDeque<>();
-        // populate buffer pool
-        this.writeBufferPool.addFirst( retrieveByteBuffer() );
-        this.writeBufferPool.addFirst( retrieveByteBuffer() );
-
         this.readBuffer = MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize());
-
-        // logging
-        if(options.logging()) {
-            this.loggingHandler = LoggingHandlerBuilder.build("coordinator_"+consumerVms.identifier); }
-        else {
-            this.loggingHandler = new ILoggingHandler() { };
-        }
-        this.serdesProxy = serdesProxy;
 
         // in
         this.messageQueue = new ConcurrentLinkedDeque<>();
         if(options.numQueuesVmsWorker() > 1) {
-            this.transactionEventQueue = new MultiDeque(options.numQueuesVmsWorker());
+            this.transactionEventQueue = new MultiQueue(options.numQueuesVmsWorker());
         } else {
-            this.transactionEventQueue = new SingleDeque();
+            this.transactionEventQueue = new SingleQueue();
         }
 
         if(this.options.active()){
@@ -241,22 +185,9 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         this.coordinatorQueue = coordinatorQueue;
     }
 
-    @SuppressWarnings("StatementWithEmptyBody")
-    public void acquireLock(){
-        while(! WRITE_SYNCHRONIZER.compareAndSet(this, 0, 1) );
-    }
-
-    public boolean tryAcquireLock(){
-        return WRITE_SYNCHRONIZER.compareAndSet(this, 0, 1);
-    }
-
-    public void releaseLock(){
-        WRITE_SYNCHRONIZER.setVolatile(this, 0);
-    }
-
     private void connect() throws IOException, InterruptedException, ExecutionException {
         this.channel = channelFactory.get();
-        NetworkUtils.configure(this.channel, options.networkBufferSize());
+        NetworkUtils.configure(this.channel, this.options.networkBufferSize());
         // if not active, maybe set tcp_nodelay to true?
         this.channel.connect(this.consumerVms.asInetSocketAddress()).get();
     }
@@ -282,12 +213,12 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         try {
             LOGGER.log(INFO, "Leader: Sending presentation to "+this.consumerVms.identifier);
             this.state = CONNECTION_ESTABLISHED;
-            ByteBuffer writeBuffer = this.retrieveByteBuffer();
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
             this.sendLeaderPresentationToVms(writeBuffer);
             this.state = State.LEADER_PRESENTATION_SENT;
 
             // set read handler here
-            this.channel.read( this.readBuffer, 0, new VmsReadCompletionHandler() );
+            this.channel.read(this.readBuffer, 0, new VmsReadCompletionHandler());
         } catch (Exception e) {
             LOGGER.log(WARNING,"Failed to connect to a known VMS: " + this.consumerVms.identifier);
             this.releaseLock();
@@ -330,7 +261,11 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
             if (this.initSimpleConnection()) return;
         }
         if(this.options.active()) {
-            this.eventLoop();
+            if(this.options.compressing()){
+                this.eventLoopCompressing();
+            } else {
+                this.eventLoop();
+            }
         }
         LOGGER.log(INFO, "VmsWorker finished for consumer VMS: "+this.consumerVms);
     }
@@ -340,7 +275,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         LOGGER.log(DEBUG, Thread.currentThread().getName()+": Attempting additional connection to to VMS: " + this.consumerVms.identifier);
         try {
             this.connect();
-            ByteBuffer writeBuffer = this.retrieveByteBuffer();
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
             this.sendLeaderPresentationToVms(writeBuffer);
         } catch(Exception ignored){
             LOGGER.log(ERROR, Thread.currentThread().getName()+": Cannot connect to VMS: " + this.consumerVms.identifier);
@@ -348,6 +283,34 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         }
         LOGGER.log(INFO, Thread.currentThread().getName()+": Additional connection to "+this.consumerVms.identifier+" succeeded");
         return false;
+    }
+
+    private void eventLoopCompressing() {
+        int pollTimeout = 1;
+        while (this.isRunning()){
+            try {
+                this.transactionEventQueue.drain(this.drained);
+                if(this.drained.isEmpty()){
+                    pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep());
+                    this.processPendingNetworkTasks();
+                    this.processPendingLogging();
+                    this.giveUpCpu(pollTimeout);
+                    continue;
+                }
+                pollTimeout = pollTimeout > 0 ? pollTimeout / 2 : 0;
+                if(drained.size() == 1){
+                    this.sendEvent(this.drained.removeFirst());
+                } else if(drained.size() < 10){
+                    this.sendBatchOfEvents();
+                } else {
+                    this.sendCompressedBatchOfEvents();
+                }
+                this.processPendingNetworkTasks();
+                this.processPendingLogging();
+            } catch (Exception e) {
+                LOGGER.log(ERROR, "Leader: VMS worker for "+this.consumerVms.identifier+" has caught an exception: \n"+e);
+            }
+        }
     }
 
     /**
@@ -360,7 +323,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         int pollTimeout = 1;
         while (this.isRunning()){
             try {
-                this.transactionEventQueue.drain(this.drained, this.options.networkBufferSize());
+                this.transactionEventQueue.drain(this.drained);
                 if(this.drained.isEmpty()){
                     pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep());
                     this.processPendingNetworkTasks();
@@ -369,11 +332,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
                     continue;
                 }
                 pollTimeout = pollTimeout > 0 ? pollTimeout / 2 : 0;
-//                if(!this.transactionEventQueue.isEmpty()){
-                    this.sendBatchOfEvents();
-//                } else {
-//                    this.sendEvent(payloadRaw);
-//                }
+                this.sendBatchOfEvents();
                 this.processPendingNetworkTasks();
                 this.processPendingLogging();
             } catch (Exception e) {
@@ -384,16 +343,16 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 
     private void processPendingLogging(){
         ByteBuffer writeBuffer;
-        if((writeBuffer = this.loggingWriteBuffers.poll()) != null){
-            try {
-                writeBuffer.position(0);
-                this.loggingHandler.log(writeBuffer);
-                // return buffer
-                this.returnByteBuffer(writeBuffer);
-            } catch (IOException e) {
-                LOGGER.log(ERROR, "error on writing byte buffer to logging file: "+e.getMessage());
-                this.loggingWriteBuffers.add(writeBuffer);
-            }
+        if((writeBuffer = this.loggingWriteBuffers.poll()) == null) {
+            return;
+        }
+        try {
+            writeBuffer.position(0);
+            this.loggingHandler.log(writeBuffer);
+            returnByteBuffer(writeBuffer);
+        } catch (IOException e) {
+            LOGGER.log(ERROR, "Error on writing byte buffer to logging file: "+e.getMessage());
+            this.loggingWriteBuffers.add(writeBuffer);
         }
     }
 
@@ -402,14 +361,14 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         while((pendingMessage = this.messageQueue.pollFirst()) != null){
             this.sendMessage(pendingMessage);
         }
-        ByteBuffer bb = this.pendingWriteBuffers.poll();
-        if(bb != null){
-            LOGGER.log(INFO, "Leader: Retrying sending failed buffer send");
+
+        if(!this.pendingWritesBuffer.isEmpty() && this.tryAcquireLock()){
+            ByteBuffer bb = this.pendingWritesBuffer.pollFirst();
+            LOGGER.log(DEBUG, "Leader: Sending pending buffer");
             try {
-                this.acquireLock();
                 this.channel.write(bb, this.options.networkSendTimeout(), TimeUnit.MILLISECONDS, bb, this.batchWriteCompletionHandler);
             } catch (Exception e){
-                LOGGER.log(ERROR, "Leader: ERROR on retrying to send failed buffer: \n"+e);
+                LOGGER.log(ERROR, "Leader: ERROR on sending pending buffer: \n"+e);
                 if(e instanceof IllegalStateException){
                     // probably comes from the class {@AsynchronousSocketChannelImpl}:
                     // "Writing not allowed due to timeout or cancellation"
@@ -417,20 +376,22 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
                     this.stop();
                 }
                 this.releaseLock();
-                bb.clear();
-                this.pendingWriteBuffers.offer(bb);
+                if(bb != null) {
+                    bb.position(0);
+                    this.pendingWritesBuffer.offerFirst(bb);
+                }
             }
         }
     }
 
     @Override
     public void queueTransactionEvent(TransactionEvent.PayloadRaw payloadRaw) {
-        this.transactionEventQueue.insert(payloadRaw);
+        this.transactionEventQueue.queue(payloadRaw);
     }
 
     @SuppressWarnings("unused")
     private void sendEvent(TransactionEvent.PayloadRaw payload) {
-        ByteBuffer writeBuffer = this.retrieveByteBuffer();
+        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
         TransactionEvent.write( writeBuffer, payload );
         writeBuffer.flip();
         this.acquireLock();
@@ -454,13 +415,12 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
             }
             case TransactionAbort.Payload o -> this.sendTransactionAbort(o);
             case String o -> this.sendConsumerSet(o);
-            default ->
-                    LOGGER.log(WARNING, "Leader: VMS worker for " + this.consumerVms.identifier + " has unknown message type: " + message.getClass().getName());
+            default -> LOGGER.log(WARNING, "Leader: VMS worker for " + this.consumerVms.identifier + " has unknown message type: " + message.getClass().getName());
         }
     }
 
     private void sendTransactionAbort(TransactionAbort.Payload tidToAbort) {
-        ByteBuffer writeBuffer = retrieveByteBuffer();
+        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
         TransactionAbort.write(writeBuffer, tidToAbort);
         writeBuffer.flip();
         this.acquireLock();
@@ -470,7 +430,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 
     private void sendBatchCommitCommand(BatchCommitCommand.Payload batchCommitCommand) {
         try {
-            ByteBuffer writeBuffer = this.retrieveByteBuffer();
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
             BatchCommitCommand.write(writeBuffer, batchCommitCommand);
             writeBuffer.flip();
             this.acquireLock();
@@ -498,7 +458,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
             LOGGER.log(INFO, "Leader: Consumer set, another attempt to write to: "+this.consumerVms.identifier);
         } // else, nothing...
 
-        ByteBuffer writeBuffer = this.retrieveByteBuffer();
+        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
         try {
             ConsumerSet.write(writeBuffer, vmsConsumerSet);
             writeBuffer.flip();
@@ -631,7 +591,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         // then send only the batch commit info
         LOGGER.log(DEBUG, "Leader: Batch ("+batchCommitInfo.batch()+") commit info will be sent to " + this.consumerVms.identifier);
         try {
-            ByteBuffer writeBuffer = this.retrieveByteBuffer();
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
             BatchCommitInfo.write(writeBuffer, batchCommitInfo);
             writeBuffer.flip();
             this.acquireLock();
@@ -644,32 +604,17 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         }
     }
 
-    private ByteBuffer retrieveByteBuffer() {
-        ByteBuffer bb = this.writeBufferPool.poll();
-        if(bb != null) return bb;
-        //logger.log(INFO, "New ByteBuffer will be created");
-        // leads to several bugs =(
-        // return ByteBuffer.allocate(DEFAULT_BUFFER_SIZE);
-        return MemoryManager.getTemporaryDirectBuffer(this.options.networkBufferSize());
-    }
-
-    private void returnByteBuffer(ByteBuffer bb) {
-        bb.clear();
-        this.writeBufferPool.add(bb);
-    }
-
-    private final List<TransactionEvent.PayloadRaw> drained = new ArrayList<>(1024);
-
     /**
      * While a write operation is in progress, it must wait for completion and then submit the next write.
      */
     private void sendBatchOfEvents(){
         int remaining = this.drained.size();
         int count = remaining;
-        ByteBuffer writeBuffer;
+        ByteBuffer writeBuffer = null;
+        boolean lockAcquired = false;
         while(remaining > 0) {
             try {
-                writeBuffer = this.retrieveByteBuffer();
+                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
                 remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer);
 
                 LOGGER.log(DEBUG, "Leader: Submitting ["+(count - remaining)+"] events to "+consumerVms.identifier);
@@ -686,16 +631,15 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
                 while(!this.tryAcquireLock()){
                     this.processPendingLogging();
                 }
+                lockAcquired = true;
                 this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.batchWriteCompletionHandler);
             } catch (Exception e) {
-                LOGGER.log(ERROR, "Leader: Error on submitting ["+count+"] events to "+this.consumerVms.identifier+":"+e);
-                // return events to the deque
-                while(!this.drained.isEmpty()) {
-                    this.transactionEventQueue.insert(this.drained.remove(0));
-                }
+                this.failSafe(e, writeBuffer);
                 // force exit loop
                 remaining = 0;
-                this.releaseLock();
+                if(lockAcquired) {
+                    this.releaseLock();
+                }
             }
         }
         this.drained.clear();
@@ -746,9 +690,73 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
             releaseLock();
             LOGGER.log(ERROR, "Leader: ERROR on writing batch of events to "+consumerVms.identifier+": "+exc);
             byteBuffer.position(0);
-            pendingWriteBuffers.offer(byteBuffer);
-            LOGGER.log(INFO,  "Leader: Byte buffer added to pending queue. #pending: "+ pendingWriteBuffers.size());
+            pendingWritesBuffer.addFirst(byteBuffer);
+            LOGGER.log(INFO, "Leader: Byte buffer added to pending queue. #pending: "+ pendingWritesBuffer.size());
         }
+    }
+
+    private void failSafe(Exception e, ByteBuffer writeBuffer) {
+        LOGGER.log(ERROR, "Leader: Error submitting events to "+this.consumerVms.identifier+"\n"+ e);
+        // return non-processed events to original location or what?
+        if (!this.channel.isOpen()) {
+            LOGGER.log(WARNING, "The "+this.consumerVms.identifier+" VMS is offline");
+        }
+        // return events to the deque
+        this.transactionEventQueue.addAll(this.drained);
+        if(writeBuffer != null) {
+            returnByteBuffer(writeBuffer);
+        }
+    }
+
+    private void sendCompressedBatchOfEvents() {
+        int remaining = this.drained.size();
+        ByteBuffer writeBuffer = null;
+        boolean lockAcquired = false;
+        while(remaining > 0){
+            try {
+                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+                remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer, CUSTOM_HEADER);
+                writeBuffer.flip();
+                int maxLength = writeBuffer.limit() - CUSTOM_HEADER;
+                writeBuffer.position(CUSTOM_HEADER);
+
+                ByteBuffer compressedBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+                compressedBuffer.position(CUSTOM_HEADER);
+                CompressingUtils.compress(writeBuffer, compressedBuffer);
+                compressedBuffer.flip();
+
+                int limit = compressedBuffer.limit();
+                compressedBuffer.put(0, COMPRESSED_BATCH_OF_EVENTS);
+                compressedBuffer.putInt(1, limit);
+                compressedBuffer.putInt(5, writeBuffer.getInt(5));
+                compressedBuffer.putInt(9, maxLength);
+
+                writeBuffer.clear();
+                returnByteBuffer(writeBuffer);
+
+                // maximize useful work
+                lockAcquired = this.tryAcquireLock();
+                if(lockAcquired){
+                    // check if there is a pending one
+                    ByteBuffer pendingBuffer = this.pendingWritesBuffer.pollFirst();
+                    if(pendingBuffer != null) {
+                        this.channel.write(pendingBuffer, this.options.networkSendTimeout(), TimeUnit.MILLISECONDS, pendingBuffer, this.writeCompletionHandler);
+                        this.pendingWritesBuffer.addLast(compressedBuffer);
+                    } else {
+                        this.channel.write(compressedBuffer, this.options.networkSendTimeout(), TimeUnit.MILLISECONDS, compressedBuffer, this.writeCompletionHandler);
+                    }
+                } else {
+                    this.pendingWritesBuffer.addLast(compressedBuffer);
+                }
+            } catch (Exception e) {
+                this.failSafe(e, writeBuffer);
+                remaining = 0;
+                if(lockAcquired) {
+                    this.releaseLock();
+                }
+            }
+        }
+        this.drained.clear();
     }
 
 }

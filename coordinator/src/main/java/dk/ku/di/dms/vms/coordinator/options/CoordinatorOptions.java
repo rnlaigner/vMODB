@@ -36,6 +36,8 @@ public final class CoordinatorOptions {
 
     private int numQueuesVmsWorker = 1;
 
+    private boolean compression = false;
+
     private boolean logging = false;
 
     public int getNetworkThreadPoolSize() {
@@ -138,4 +140,12 @@ public final class CoordinatorOptions {
         return this;
     }
 
+    public CoordinatorOptions withCompression(boolean value) {
+        this.compression = value;
+        return this;
+    }
+
+    public boolean isCompressing() {
+        return this.compression;
+    }
 }

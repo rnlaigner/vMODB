@@ -95,11 +95,11 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.transactionInputQueue = transactionInputQueue;
 
         // operational (internal control of transactions and tasks)
-        this.transactionTaskMap = new ConcurrentHashMap<>(1000000);
+        this.transactionTaskMap = new ConcurrentHashMap<>(1024*1000);
         SchedulerCallback callback = new SchedulerCallback(eventHandler);
         this.vmsTransactionTaskBuilder = new VmsTransactionTaskBuilder(transactionalHandler, callback);
         this.transactionTaskMap.put( 0L, this.vmsTransactionTaskBuilder.buildFinished(0) );
-        this.lastTidToTidMap = new HashMap<>(1000000);
+        this.lastTidToTidMap = new HashMap<>(1024*1000);
 
         this.lastTidFinished = new AtomicLong(0);
     }
@@ -277,7 +277,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         return !this.singleThreadTaskRunning && this.numPartitionedTasksRunning.get() == 0;
     }
 
-    private final List<InboundEvent> drained = new ArrayList<>(1024*10);
+    private final List<InboundEvent> drained = new ArrayList<>(1024*1000);
 
     private void checkForNewEvents() throws InterruptedException {
         InboundEvent inboundEvent;
@@ -316,9 +316,9 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         if(this.lastTidToTidMap.containsKey(inboundEvent.lastTid())){
             LOGGER.log(ERROR, "Inbound event is attempting to overwrite precedence of TIDs. \nOriginal last TID:" +
                     this.lastTidToTidMap.get(inboundEvent.lastTid()) + "\n Corrupt event:" + inboundEvent);
-        } else {
-            this.lastTidToTidMap.put(inboundEvent.lastTid(), inboundEvent.tid());
+            return;
         }
+        this.lastTidToTidMap.put(inboundEvent.lastTid(), inboundEvent.tid());
     }
 
     public long lastTidFinished(){
