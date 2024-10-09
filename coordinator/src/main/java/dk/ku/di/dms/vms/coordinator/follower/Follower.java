@@ -12,20 +12,16 @@ import dk.ku.di.dms.vms.modb.common.schema.network.batch.follower.BatchReplicati
 import dk.ku.di.dms.vms.modb.common.schema.network.control.Presentation;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerNode;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
+import dk.ku.di.dms.vms.web_common.channel.IChannel;
+import dk.ku.di.dms.vms.web_common.channel.IServerChannel;
+import dk.ku.di.dms.vms.web_common.channel.ChannelBuilder;
 import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousChannelGroup;
-import java.nio.channels.AsynchronousServerSocketChannel;
-import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.*;
-
-import static java.net.StandardSocketOptions.SO_KEEPALIVE;
 
 /**
  * Follower
@@ -34,12 +30,7 @@ import static java.net.StandardSocketOptions.SO_KEEPALIVE;
  */
 public final class Follower extends StoppableRunnable {
 
-    private final AsynchronousServerSocketChannel serverSocket;
-
-    private final AsynchronousChannelGroup group;
-
-    // general tasks, like sending info to VMSs and other servers
-    private final ExecutorService taskExecutor;
+    private final IServerChannel serverSocket;
 
     // required in order to send votes if new election process starts
     private final Map<Integer, ServerNode> servers;
@@ -66,9 +57,7 @@ public final class Follower extends StoppableRunnable {
 
     private final Gson gson;
 
-    public Follower(AsynchronousServerSocketChannel serverSocket,
-                    AsynchronousChannelGroup group,
-                    ExecutorService taskExecutor,
+    public Follower(InetSocketAddress address,
                     FollowerOptions options,
                     Map<Integer, ServerNode> servers,
                     ServerNode me,
@@ -76,9 +65,7 @@ public final class Follower extends StoppableRunnable {
                     Gson gson) {
 
         // network and executor
-        this.serverSocket = Objects.requireNonNull(serverSocket);
-        this.group = group;
-        this.taskExecutor = Objects.requireNonNull(taskExecutor);
+        this.serverSocket = ChannelBuilder.buildServer(address, 1, "default");
 
         // options
         this.options = options;
@@ -97,7 +84,7 @@ public final class Follower extends StoppableRunnable {
     public void run() {
 
         // accept handler
-        serverSocket.accept( null, new AcceptCompletionHandler());
+        serverSocket.accept(new AcceptCompletionHandler());
 
         // connect to leader
         if(!connectToLeader()) {
@@ -126,7 +113,6 @@ public final class Follower extends StoppableRunnable {
     }
 
     private void checkHeartbeat(){
-
         // if heartbeat timed out, leave loop
         // can just sleep until the next timestamp (slightly after is better due to network latency)
 
@@ -137,71 +123,46 @@ public final class Follower extends StoppableRunnable {
 //            stop();
 //            this.signal.add( NO_RESULT );
 //        }
-
         // check whether leader has already connected
         if(leaderConnectionMetadata == null) return;
-
         if(!leaderConnectionMetadata.channel.isOpen()){
             stop();
             // this.signal.add( NO_RESULT );
         }
-
     }
 
     private boolean connectToLeader(){
-
         ByteBuffer readBuffer = MemoryManager.getTemporaryDirectBuffer();
         ByteBuffer writeBuffer = MemoryManager.getTemporaryDirectBuffer();
-
         // should try three times connection to leader, otherwise starts a new election...
         int maxAttempts = options.getMaximumLeaderConnectionAttempt();
         boolean finished = false;
-
         while(!finished && maxAttempts > 0) {
-
             try {
-
                 InetSocketAddress address = new InetSocketAddress(leader.host, leader.port);
-                AsynchronousSocketChannel channel = AsynchronousSocketChannel.open(group);
-                NetworkUtils.configure(channel, 4096);
-
+                var channel = ChannelBuilder.build(this.serverSocket);
                 channel.connect(address).get();
-
                 LockConnectionMetadata connectionMetadata = new LockConnectionMetadata(
                         leader.hashCode(),
                         LockConnectionMetadata.NodeType.SERVER,
                         readBuffer,
                         writeBuffer,
-                        channel,
-                        // new ReentrantLock()
-                        null // no need to lock, only one thread writing
+                        channel
                 );
-
                 Presentation.writeServer(connectionMetadata.writeBuffer, me);
-
                 channel.write(connectionMetadata.writeBuffer).get();
-
                 connectionMetadata.writeBuffer.clear();
-
                 channel.read(connectionMetadata.readBuffer, connectionMetadata, new ReadCompletionHandler());
-
                 // set up read completion handler for receiving heartbeats
                 // perhaps good to introduce a delta (to reflect possible network latency introduced by the link)
-
                 // if heartbeat threshold has been achieved, finish this class and return (signaling... false?)
-
                 finished = true;
-
             } catch (Exception ignored) {
                 System.out.println("Error connecting to host. I am " + me.host + ":" + me.port + " and the target is " + leader.host + ":" + leader.port);
             }
-
             if(!finished) maxAttempts--;
-
         }
-
         return finished;
-
     }
 
     private class ReadCompletionHandler implements CompletionHandler<Integer, LockConnectionMetadata> {
@@ -249,9 +210,7 @@ public final class Follower extends StoppableRunnable {
                 } catch (ExecutionException | InterruptedException ignored) { }
                 finally {
                     if(connectionMetadata.channel != null && connectionMetadata.channel.isOpen()) {
-                        try {
-                            connectionMetadata.channel.close();
-                        } catch (IOException ignored) {}
+                        connectionMetadata.channel.close();
                     }
                     MemoryManager.releaseTemporaryDirectBuffer(connectionMetadata.writeBuffer);
                     MemoryManager.releaseTemporaryDirectBuffer(connectionMetadata.readBuffer);
@@ -263,14 +222,13 @@ public final class Follower extends StoppableRunnable {
 
         @Override
         public void failed(Throwable exc, LockConnectionMetadata connectionMetadata) {
-            AsynchronousSocketChannel channel = connectionMetadata.channel;
-            if(channel != null && channel.isOpen()) {
-                try {
-                    if(!channel.getOption( SO_KEEPALIVE )) {
-                        channel.close();
-                        return;
-                    }
-                } catch (IOException ignored) {}
+            if(connectionMetadata.channel == null) return;
+
+            if(connectionMetadata.channel.isOpen()) {
+                //if(!connectionMetadata.channel.getOption( SO_KEEPALIVE )) {
+                    connectionMetadata.channel.close();
+                    return;
+                //}
             }
             connectionMetadata.readBuffer.clear();
             // read again
@@ -284,10 +242,10 @@ public final class Follower extends StoppableRunnable {
      * The coordinator for batch replication. This is the only assumption for now.
      * If that changes, we must read the presentation header and add the node to the servers list.
      */
-    private class AcceptCompletionHandler implements CompletionHandler<AsynchronousSocketChannel, Void> {
+    private class AcceptCompletionHandler implements CompletionHandler<IChannel, Void> {
 
         @Override
-        public void completed(AsynchronousSocketChannel channel, Void void_) {
+        public void completed(IChannel channel, Void void_) {
 
             ByteBuffer readBuffer = MemoryManager.getTemporaryDirectBuffer();
             ByteBuffer writeBuffer = MemoryManager.getTemporaryDirectBuffer();
@@ -301,8 +259,7 @@ public final class Follower extends StoppableRunnable {
                         LockConnectionMetadata.NodeType.SERVER,
                         readBuffer,
                         writeBuffer,
-                        channel,
-                        null // no need to lock, only one thread writing
+                        channel
                 );
 
                 channel.read( readBuffer, leaderConnectionMetadata, new ReadCompletionHandler() );
@@ -315,7 +272,7 @@ public final class Follower extends StoppableRunnable {
             }
 
             if (serverSocket.isOpen()){
-                serverSocket.accept(null, this);
+                serverSocket.accept(this);
             }
 
         }
@@ -323,7 +280,7 @@ public final class Follower extends StoppableRunnable {
         @Override
         public void failed(Throwable exc, Void void_) {
             if (serverSocket.isOpen()){
-                serverSocket.accept(null, this);
+                serverSocket.accept(this);
             }
         }
 

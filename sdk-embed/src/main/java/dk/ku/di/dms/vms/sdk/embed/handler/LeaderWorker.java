@@ -7,11 +7,11 @@ import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.web_common.channel.IChannel;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousSocketChannel;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -44,7 +44,7 @@ final class LeaderWorker extends StoppableRunnable {
 
     private final ServerNode leader;
 
-    private final AsynchronousSocketChannel channel;
+    private final IChannel channel;
     
     private final ByteBuffer writeBuffer;
 
@@ -54,7 +54,7 @@ final class LeaderWorker extends StoppableRunnable {
 
     public LeaderWorker(VmsNode vmsNode,
                         ServerNode leader,
-                        AsynchronousSocketChannel channel,
+                        IChannel channel,
                         ByteBuffer writeBuffer){
         this.vmsNode = vmsNode;
         this.leader = leader;

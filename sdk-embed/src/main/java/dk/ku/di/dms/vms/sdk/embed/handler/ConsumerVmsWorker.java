@@ -39,7 +39,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
     private static final System.Logger LOGGER = System.getLogger(ConsumerVmsWorker.class.getName());
 
     private final VmsNode me;
-    
+
     private final IChannel channel;
 
     private final WriteCompletionHandler writeCompletionHandler;
@@ -71,7 +71,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
         this.channel = channel;
         this.options = options;
         this.writeCompletionHandler = new WriteCompletionHandler();
-        this.transactionEventQueue = new MpscBlockingConsumerArrayQueue<>(1024*1000);
+        this.transactionEventQueue = new MpscBlockingConsumerArrayQueue<>(1024*100);
         this.state = NEW;
     }
 
@@ -114,9 +114,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
         while(this.isRunning()){
             try {
                 if(this.loggingWriteBuffers.isEmpty()){
-                    //LOGGER.log(WARNING, me.identifier+": Going to block since no logging buffers");
                     this.drained.add(this.transactionEventQueue.take());
-                    //LOGGER.log(WARNING, me.identifier+": Woke up");
                 }
                 this.transactionEventQueue.drain(this.drained::add);
                 if(this.drained.isEmpty()){
@@ -136,7 +134,13 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
                 if(this.pendingWritesBuffer.isEmpty()) {
                     this.drained.add(this.transactionEventQueue.take());
                     this.transactionEventQueue.drain(this.drained::add);
-                    this.sendCompressedBatchOfEvents();
+                    if(this.drained.size() == 1){
+                        this.sendEventNonBlocking(this.drained.removeFirst());
+                    } else if(this.drained.size() < 10){
+                        this.sendBatchOfEventsNonBlocking();
+                    } else {
+                        this.sendCompressedBatchOfEvents();
+                    }
                 } else {
                     this.processPendingWrites();
                 }
@@ -146,14 +150,21 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
         }
     }
 
+    private void sendEventNonBlocking(TransactionEvent.PayloadRaw payload) {
+        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+        TransactionEvent.write(writeBuffer, payload);
+        writeBuffer.flip();
+        this.acquireLock();
+        this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+    }
+
     /**
-     * Responsible for making sure the handshake protocol is
-     * successfully performed with a consumer VMS
+     * Responsible for making sure the handshake protocol is successfully performed with a consumer VMS
      */
     private boolean connect() {
         ByteBuffer buffer = MemoryManager.getTemporaryDirectBuffer(this.options.networkBufferSize());
         try{
-            NetworkUtils.configure(this.channel, options.osBufferSize());
+            NetworkUtils.configure(this.channel, this.options.osBufferSize());
             this.channel.connect(this.consumerVms.asInetSocketAddress()).get();
             this.state = CONNECTED;
             LOGGER.log(DEBUG,this.me.identifier+ ": The node "+ this.consumerVms.host+" "+ this.consumerVms.port+" status = "+this.state);

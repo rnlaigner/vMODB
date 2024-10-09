@@ -27,15 +27,12 @@ import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.web_common.IHttpHandler;
 import dk.ku.di.dms.vms.web_common.ModbHttpServer;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
-import dk.ku.di.dms.vms.web_common.channel.JdkAsyncChannel;
+import dk.ku.di.dms.vms.web_common.channel.*;
 import dk.ku.di.dms.vms.web_common.meta.ConnectionMetadata;
 import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousChannelGroup;
-import java.nio.channels.AsynchronousServerSocketChannel;
-import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -55,6 +52,7 @@ import static java.lang.System.Logger.Level.*;
  * Class that encapsulates all logic related to issuing of
  * transactions, batch commits, transaction aborts, ...
  */
+@SuppressWarnings("unchecked")
 public final class Coordinator extends ModbHttpServer {
 
     private static final System.Logger LOGGER = System.getLogger(Coordinator.class.getName());
@@ -62,10 +60,7 @@ public final class Coordinator extends ModbHttpServer {
     private final CoordinatorOptions options;
 
     // this server socket
-    private final AsynchronousServerSocketChannel serverSocket;
-
-    // group for channels
-    private final AsynchronousChannelGroup group;
+    private final IServerChannel serverSocket;
 
     // even though we can start with a known number of servers, their payload may have changed after a crash
     private final Map<Integer, ServerNode> servers;
@@ -154,20 +149,7 @@ public final class Coordinator extends ModbHttpServer {
         // coordinator options
         this.options = options;
 
-        if(options.getNetworkThreadPoolSize() > 0) {
-            this.group = AsynchronousChannelGroup.withThreadPool(Executors.newWorkStealingPool(options.getNetworkThreadPoolSize()));
-            this.serverSocket = AsynchronousServerSocketChannel.open(this.group);
-        } else {
-            /* may lead to better performance than default group
-            this.group = AsynchronousChannelGroup.withThreadPool(ForkJoinPool.commonPool());
-            this.serverSocket = AsynchronousServerSocketChannel.open(this.group);
-             */
-            this.group = null;
-            this.serverSocket = AsynchronousServerSocketChannel.open();
-        }
-
-        // network and executor
-        this.serverSocket.bind(me.asInetSocketAddress());
+        this.serverSocket = ChannelBuilder.buildServer(me.asInetSocketAddress(), this.options.getNetworkThreadPoolSize(), "default");
 
         this.starterVMSs = startersVMSs;
         this.vmsMetadataMap = new ConcurrentHashMap<>();
@@ -231,7 +213,7 @@ public final class Coordinator extends ModbHttpServer {
     @Override
     public void run() {
         // setup asynchronous listener for new connections
-        this.serverSocket.accept(null, new AcceptCompletionHandler());
+        this.serverSocket.accept(new AcceptCompletionHandler());
         // connect to all virtual microservices
         this.setupStarterVMSs();
         this.preprocessDAGs();
@@ -241,10 +223,6 @@ public final class Coordinator extends ModbHttpServer {
         try {
             Object message;
             do {
-//            try {
-//                message = this.coordinatorQueue.take();
-//                this.processVmsMessage(message);
-//            } catch (InterruptedException ignored) { }
                 // tends to be faster than blocking
                 while ((message = this.coordinatorQueue.poll(250, TimeUnit.MILLISECONDS)) != null) {
                     this.processVmsMessage(message);
@@ -254,7 +232,7 @@ public final class Coordinator extends ModbHttpServer {
             e.printStackTrace(System.out);
         }
 
-        this.failSafeClose();
+        this.serverSocket.close();
         LOGGER.log(INFO,"Leader: Finished execution.");
     }
 
@@ -336,7 +314,7 @@ public final class Coordinator extends ModbHttpServer {
                     if(this.vmsWorkerContainerMap.containsKey(inputVms.getValue().targetVms)) {
                         try {
                             VmsWorker newWorker = VmsWorker.build(this.me, vmsNode, this.coordinatorQueue,
-                                    () -> JdkAsyncChannel.create(this.group),
+                                    () -> ChannelBuilder.build(this.serverSocket),
                                     new VmsWorkerOptions(
                                             true,
                                             this.options.isCompressing(),
@@ -426,7 +404,7 @@ public final class Coordinator extends ModbHttpServer {
                 // coordinator will later keep track of this thread when
                 // the connection with the VMS is fully established
                 VmsWorker vmsWorker = VmsWorker.build(this.me, vmsNode, this.coordinatorQueue,
-                        () -> JdkAsyncChannel.create(this.group),
+                        () -> ChannelBuilder.build(this.serverSocket),
                         new VmsWorkerOptions(
                                 active,
                                 this.options.isCompressing(),
@@ -471,20 +449,15 @@ public final class Coordinator extends ModbHttpServer {
         return list;
     }
 
-    private void failSafeClose(){
-        // safe close
-        try { this.serverSocket.close(); } catch (IOException ignored) {}
-    }
-
     /**
      * This is where I define whether the connection must be kept alive
      * Depending on the nature of the request:
      * <a href="https://www.baeldung.com/java-nio2-async-socket-channel">...</a>
      * The first read must be a presentation message, informing what is this server (follower or VMS)
      */
-    private final class AcceptCompletionHandler implements CompletionHandler<AsynchronousSocketChannel, Void> {
+    private final class AcceptCompletionHandler implements CompletionHandler<IChannel, Void> {
         @Override
-        public void completed(AsynchronousSocketChannel channel, Void void_) {
+        public void completed(IChannel channel, Void void_) {
             ByteBuffer buffer = null;
             try {
                 NetworkUtils.configure(channel, options.getOsBufferSize());
@@ -513,7 +486,7 @@ public final class Coordinator extends ModbHttpServer {
             } finally {
                 // continue listening
                 if (serverSocket.isOpen()) {
-                    serverSocket.accept(null, this);
+                    serverSocket.accept(this);
                 }
             }
         }
@@ -521,7 +494,7 @@ public final class Coordinator extends ModbHttpServer {
         @Override
         public void failed(Throwable exc, Void attachment) {
             if (serverSocket.isOpen()) {
-                serverSocket.accept(null, this);
+                serverSocket.accept(this);
             }
         }
 
@@ -531,7 +504,7 @@ public final class Coordinator extends ModbHttpServer {
          * We would no longer need to establish connection in case the {@link dk.ku.di.dms.vms.coordinator.election.ElectionWorker}
          * maintains the connections.
          */
-        private void processReadAfterAcceptConnection(AsynchronousSocketChannel channel, ByteBuffer buffer){
+        private void processReadAfterAcceptConnection(IChannel channel, ByteBuffer buffer){
 
             // message identifier
             byte messageIdentifier = buffer.get(0);
@@ -545,12 +518,9 @@ public final class Coordinator extends ModbHttpServer {
                 if(channel.isOpen()) {
                     LeaderRequest.write(buffer, me);
                     buffer.flip();
-                    try (channel) {
-                        channel.write(buffer); // write and forget
-                    } catch (IOException ignored) {
-                    } finally {
-                        MemoryManager.releaseTemporaryDirectBuffer(buffer);
-                    }
+                    channel.write(buffer); // write and forget
+                    channel.close();
+                    MemoryManager.releaseTemporaryDirectBuffer(buffer);
                 }
                 return;
             }
@@ -558,7 +528,8 @@ public final class Coordinator extends ModbHttpServer {
             if(messageIdentifier == LEADER_REQUEST){
                 // buggy node intending to pose as leader...
                 LOGGER.log(WARNING,"Leader: A node is trying to present itself as leader!");
-                try (channel) { MemoryManager.releaseTemporaryDirectBuffer(buffer); } catch(Exception ignored){}
+                channel.close();
+                MemoryManager.releaseTemporaryDirectBuffer(buffer);
                 return;
             }
 
@@ -581,7 +552,7 @@ public final class Coordinator extends ModbHttpServer {
                     LOGGER.log(WARNING,"Leader: A node is trying to connect without a presentation message. \n" + request);
                     buffer.clear();
                     MemoryManager.releaseTemporaryDirectBuffer(buffer);
-                    try { channel.close(); } catch (IOException ignored) { }
+                    channel.close();
                 }
                 return;
             }
@@ -595,14 +566,15 @@ public final class Coordinator extends ModbHttpServer {
             } else {
                 // simply unknown... probably a bug?
                 LOGGER.log(WARNING,"Unknown type of client connection. Probably a bug? ");
-                try (channel) { MemoryManager.releaseTemporaryDirectBuffer(buffer); } catch (Exception ignored){}
+                channel.close();
+                MemoryManager.releaseTemporaryDirectBuffer(buffer);
             }
         }
 
         /**
          * Still need to define what to do with connections from replicas....
          */
-        private void processServerPresentationMessage(AsynchronousSocketChannel channel, ByteBuffer buffer) {
+        private void processServerPresentationMessage(IChannel channel, ByteBuffer buffer) {
             // server
             ServerNode newServer = Presentation.readServer(buffer);
 
@@ -619,8 +591,7 @@ public final class Coordinator extends ModbHttpServer {
                         SERVER,
                         buffer,
                         MemoryManager.getTemporaryDirectBuffer(options.getNetworkBufferSize()),
-                        channel,
-                        new Semaphore(1) );
+                        channel);
                 serverConnectionMetadataMap.put( newServer.hashCode(), connectionMetadata );
             }
         }

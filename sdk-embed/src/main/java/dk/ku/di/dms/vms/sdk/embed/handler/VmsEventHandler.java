@@ -21,17 +21,20 @@ import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.web_common.IHttpHandler;
 import dk.ku.di.dms.vms.web_common.ModbHttpServer;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
-import dk.ku.di.dms.vms.web_common.channel.JdkAsyncChannel;
+import dk.ku.di.dms.vms.web_common.channel.*;
 import dk.ku.di.dms.vms.web_common.meta.ConnectionMetadata;
 
 import java.io.IOException;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
-import java.nio.channels.*;
+import java.nio.channels.AsynchronousCloseException;
+import java.nio.channels.ClosedChannelException;
+import java.nio.channels.CompletionHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.TimeUnit;
 
 import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.*;
 import static java.lang.System.Logger.Level.*;
@@ -51,9 +54,7 @@ public final class VmsEventHandler extends ModbHttpServer {
     
     /** SERVER SOCKET **/
     // other VMSs may want to connect in order to send events
-    private final AsynchronousServerSocketChannel serverSocket;
-
-    private final AsynchronousChannelGroup group;
+    private final IServerChannel serverSocket;
 
     /** INTERNAL CHANNELS **/
     private final VmsEmbedInternalChannels vmsInternalChannels;
@@ -167,20 +168,7 @@ public final class VmsEventHandler extends ModbHttpServer {
                             IVmsSerdesProxy serdesProxy) throws IOException {
         super();
 
-        // network and executor
-        switch (options.networkThreadPoolType){
-            case "default" -> this.group = AsynchronousChannelGroup.withFixedThreadPool(
-                    options.networkThreadPoolSize > 0 ? options.networkThreadPoolSize : Runtime.getRuntime().availableProcessors(),
-                    Thread.ofPlatform().name("vms-network-thread").factory()
-            );
-            case "vthread" -> this.group = AsynchronousChannelGroup.withFixedThreadPool(
-                    options.networkThreadPoolSize > 0 ? options.networkThreadPoolSize : Runtime.getRuntime().availableProcessors(),
-                    Thread.ofVirtual().name("vms-network-vthread").factory()
-            );
-            case null, default -> this.group = null;
-        }
-        this.serverSocket = AsynchronousServerSocketChannel.open(this.group);
-        this.serverSocket.bind(me.asInetSocketAddress());
+        this.serverSocket = ChannelBuilder.buildServer(me.asInetSocketAddress(), options.networkThreadPoolSize(), options.networkThreadPoolType());
 
         this.vmsInternalChannels = vmsInternalChannels;
         this.me = me;
@@ -214,7 +202,7 @@ public final class VmsEventHandler extends ModbHttpServer {
     public void run() {
         LOGGER.log(INFO,this.me.identifier+": Event handler has started");
         // setup accept since we need to accept connections from the coordinator and other VMSs
-        this.serverSocket.accept(null, new AcceptCompletionHandler());
+        this.serverSocket.accept(new AcceptCompletionHandler());
         LOGGER.log(INFO,this.me.identifier+": Accept handler has been setup");
         LOGGER.log(INFO,this.me.identifier+": Event handler has finished execution.");
     }
@@ -346,7 +334,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             return;
         }
         ConsumerVmsWorker consumerVmsWorker = ConsumerVmsWorker.build(this.me, node,
-                        () -> JdkAsyncChannel.create(this.group),
+                        () -> ChannelBuilder.build(this.serverSocket),
                         this.options,
                         this.serdesProxy);
         Thread.ofPlatform().name("vms-consumer-"+node.identifier+"-"+identifier)
@@ -403,9 +391,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             if(result == -1){
                 // end-of-stream signal, no more data can be read
                 LOGGER.log(WARNING,me.identifier+": VMS "+node.identifier+" has disconnected!");
-                try {
-                    this.connectionMetadata.channel.close();
-                } catch (IOException ignored) { }
+                this.connectionMetadata.channel.close();
                 return;
             }
             if(startPos == 0){
@@ -562,27 +548,24 @@ public final class VmsEventHandler extends ModbHttpServer {
      */
     private final class UnknownNodeReadCompletionHandler implements CompletionHandler<Integer, Void> {
 
-        private final AsynchronousSocketChannel channel;
+        private final IChannel channel;
         private final ByteBuffer buffer;
 
-        public UnknownNodeReadCompletionHandler(AsynchronousSocketChannel channel, ByteBuffer buffer) {
+        public UnknownNodeReadCompletionHandler(IChannel channel, ByteBuffer buffer) {
             this.channel = channel;
             this.buffer = buffer;
         }
 
         @Override
         public void completed(Integer result, Void void_) {
-            String remoteAddress = "";
-            try {
-                remoteAddress = channel.getRemoteAddress().toString();
-            } catch (IOException ignored) { }
+            String remoteAddress = channel.getRemoteAddress().toString();
             if(result == 0){
                 LOGGER.log(WARNING,me.identifier+": A node ("+remoteAddress+") is trying to connect with an empty message!");
-                try { this.channel.close(); } catch (IOException ignored) {}
+                this.channel.close();
                 return;
             } else if(result == -1){
                 LOGGER.log(WARNING,me.identifier+": A node ("+remoteAddress+") died before sending the presentation message");
-                try { this.channel.close(); } catch (IOException ignored) {}
+                this.channel.close();
                 return;
             }
             // message identifier
@@ -604,7 +587,7 @@ public final class VmsEventHandler extends ModbHttpServer {
                     LOGGER.log(WARNING, me.identifier + ": A node is trying to connect without a presentation message.\n"+request);
                     this.buffer.clear();
                     MemoryManager.releaseTemporaryDirectBuffer(this.buffer);
-                    try { this.channel.close(); } catch (IOException ignored) { }
+                    this.channel.close();
                 }
                 return;
             }
@@ -676,9 +659,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             LOGGER.log(WARNING,me.identifier+": Presentation message from unknown source:" + nodeTypeIdentifier);
             this.buffer.clear();
             MemoryManager.releaseTemporaryDirectBuffer(this.buffer);
-            try {
-                this.channel.close();
-            } catch (IOException ignored) { }
+            this.channel.close();
         }
 
         @Override
@@ -690,9 +671,9 @@ public final class VmsEventHandler extends ModbHttpServer {
     /**
      * Class is iteratively called by the socket pool threads.
      */
-    private final class AcceptCompletionHandler implements CompletionHandler<AsynchronousSocketChannel, Void> {
+    private final class AcceptCompletionHandler implements CompletionHandler<IChannel, Void> {
         @Override
-        public void completed(AsynchronousSocketChannel channel, Void void_) {
+        public void completed(IChannel channel, Void void_) {
             LOGGER.log(DEBUG,me.identifier+": An unknown host has started a connection attempt.");
             final ByteBuffer buffer = MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize);
             try {
@@ -706,7 +687,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             } finally {
                 LOGGER.log(DEBUG,me.identifier+": Accept handler set up again for listening to new connections");
                 // continue listening
-                serverSocket.accept(null, this);
+                serverSocket.accept(this);
             }
         }
 
@@ -729,7 +710,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             }
 
             if (serverSocket.isOpen()){
-                serverSocket.accept(null, this);
+                serverSocket.accept(this);
             } else if(logError) {
                 LOGGER.log(WARNING,me.identifier+": Socket is not open anymore. Cannot set up accept again");
             }
@@ -739,11 +720,11 @@ public final class VmsEventHandler extends ModbHttpServer {
 
     private final class ConnectionFromLeaderProtocol {
         private State state;
-        private final AsynchronousSocketChannel channel;
+        private final IChannel channel;
         private final ByteBuffer buffer;
         public final CompletionHandler<Integer, Void> writeCompletionHandler;
 
-        public ConnectionFromLeaderProtocol(AsynchronousSocketChannel channel, ByteBuffer buffer) {
+        public ConnectionFromLeaderProtocol(IChannel channel, ByteBuffer buffer) {
             this.state = State.PRESENTATION_RECEIVED;
             this.channel = channel;
             this.writeCompletionHandler = new WriteCompletionHandler();
@@ -820,7 +801,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             this.buffer.flip();
             this.state = State.PRESENTATION_PROCESSED;
             LOGGER.log(INFO,me.identifier+": Message successfully received from the Leader  = "+state);
-            this.channel.write( this.buffer, null, this.writeCompletionHandler );
+            this.channel.write( this.buffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, null, this.writeCompletionHandler );
         }
     }
 
@@ -842,11 +823,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             if(result == -1){
                 LOGGER.log(INFO,me.identifier+": Leader has disconnected");
                 leader.off();
-                try {
-                    this.connectionMetadata.channel.close();
-                } catch (IOException e) {
-                    e.printStackTrace(System.out);
-                }
+                this.connectionMetadata.channel.close();
                 return;
             }
             if(startPos == 0){

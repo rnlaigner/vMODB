@@ -15,6 +15,10 @@ public class IdentifiableNode extends NetworkAddress {
         this.identifier = identifier;
     }
 
+    public static IdentifiableNode build(String identifier, NetworkAddress address){
+        return new IdentifiableNode(identifier, address.host, address.port);
+    }
+
     @Override
     public String toString() {
         return "{" +

@@ -74,4 +74,9 @@ public final class PipeChannel implements IChannel {
         } catch (Exception ignored){}
     }
 
+    @Override
+    public boolean isOpen() {
+        return this.sourceChannel.isOpen() || this.sinkChannel.isOpen();
+    }
+
 }

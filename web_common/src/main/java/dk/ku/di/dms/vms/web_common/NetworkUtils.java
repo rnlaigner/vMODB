@@ -40,8 +40,7 @@ public final class NetworkUtils {
                 channel.setOption(ExtendedSocketOptions.TCP_QUICKACK, true);
             }
         } catch (IOException e) {
-            LOGGER.log(ERROR, "Error: "+e.getMessage(), e);
-
+            LOGGER.log(ERROR, "Error captured:\n", e);
         }
     }
 

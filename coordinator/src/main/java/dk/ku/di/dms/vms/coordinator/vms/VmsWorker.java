@@ -39,7 +39,6 @@ import java.util.function.Supplier;
 import static dk.ku.di.dms.vms.coordinator.vms.VmsWorker.State.*;
 import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.*;
 import static java.lang.System.Logger.Level.*;
-import static java.lang.Thread.sleep;
 
 public final class VmsWorker extends ProducerWorker implements IVmsWorker {
 
@@ -127,7 +126,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
     }
 
     private static final class SingleQueue implements IVmsQueue {
-        private final MpscArrayQueue<TransactionEvent.PayloadRaw> queue = new MpscArrayQueue<>(1024*1000);
+        private final MpscArrayQueue<TransactionEvent.PayloadRaw> queue = new MpscArrayQueue<>(1024*100);
         @Override
         public void queue(TransactionEvent.PayloadRaw payloadRaw) {
             this.queue.offer(payloadRaw);
@@ -186,7 +185,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
     }
 
     private void connect() throws IOException, InterruptedException, ExecutionException {
-        this.channel = channelFactory.get();
+        this.channel = this.channelFactory.get();
         NetworkUtils.configure(this.channel, this.options.networkBufferSize());
         // if not active, maybe set tcp_nodelay to true?
         this.channel.connect(this.consumerVms.asInetSocketAddress()).get();
@@ -204,7 +203,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
             } catch (IOException | InterruptedException | ExecutionException e) {
                 LOGGER.log(ERROR, "Leader: Connection attempt to " + this.consumerVms.identifier + " failed. Retrying in "+waitTime/1000+" second(s)...");
                 try {
-                    sleep(waitTime);
+                    Thread.sleep(waitTime);
                     waitTime = waitTime + 1000;
                 } catch (InterruptedException ignored) { }
             }
@@ -298,9 +297,9 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
                     continue;
                 }
                 pollTimeout = pollTimeout > 0 ? pollTimeout / 2 : 0;
-                if(drained.size() == 1){
+                if(this.drained.size() == 1){
                     this.sendEvent(this.drained.removeFirst());
-                } else if(drained.size() < 10){
+                } else if(this.drained.size() < 10){
                     this.sendBatchOfEvents();
                 } else {
                     this.sendCompressedBatchOfEvents();
@@ -389,10 +388,9 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         this.transactionEventQueue.queue(payloadRaw);
     }
 
-    @SuppressWarnings("unused")
     private void sendEvent(TransactionEvent.PayloadRaw payload) {
         ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
-        TransactionEvent.write( writeBuffer, payload );
+        TransactionEvent.write(writeBuffer, payload);
         writeBuffer.flip();
         this.acquireLock();
         this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);

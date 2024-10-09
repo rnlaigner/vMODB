@@ -94,10 +94,14 @@
               <arg>--add-opens</arg>
               <arg>java.base/jdk.internal.misc=ALL-UNNAMED</arg>
               <!-- for message pack using direct byte buffer -->
-              <arg>--add-opens</arg>
+              <arg>--add-exports</arg>
               <arg>java.base/java.nio=ALL-UNNAMED</arg>
               <arg>--add-opens</arg>
-              <arg> java.base/sun.nio.ch=ALL-UNNAMED</arg>
+              <arg>java.base/java.nio=ALL-UNNAMED</arg>
+              <arg>--add-exports</arg>
+              <arg>java.base/sun.nio.ch=ALL-UNNAMED</arg>
+              <arg>--add-opens</arg>
+              <arg>java.base/sun.nio.ch=ALL-UNNAMED</arg>
             </compilerArgs>
           </configuration>
         </plugin>

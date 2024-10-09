@@ -5,16 +5,17 @@ import dk.ku.di.dms.vms.coordinator.election.schema.VoteRequest;
 import dk.ku.di.dms.vms.coordinator.election.schema.VoteResponse;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
 import dk.ku.di.dms.vms.modb.common.runnable.StoppableRunnable;
+import dk.ku.di.dms.vms.modb.common.schema.network.node.IdentifiableNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerNode;
+import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
+import dk.ku.di.dms.vms.web_common.ProducerWorker;
+import dk.ku.di.dms.vms.web_common.channel.*;
 import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousChannelGroup;
-import java.nio.channels.AsynchronousServerSocketChannel;
-import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.util.Map;
 import java.util.Objects;
@@ -40,7 +41,7 @@ import static java.lang.System.Logger.Level.WARNING;
  * Protocol SCTP is maybe a better fit for leader election since it is message-oriented, rather than stream oriented
  * SCTP also allows multicast, preventing UDP usage
  */
-public final class ElectionWorker extends SignalingStoppableRunnable {
+public final class ElectionWorker extends ProducerWorker {
 
     private static final System.Logger logger = System.getLogger(ElectionWorker.class.getName());
 
@@ -50,9 +51,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
     public static final int LEADER       = 2; // has received the ACKs from a majority
     public static final int FOLLOWER     = 3;
 
-    private final AsynchronousServerSocketChannel serverSocket;
-
-    private final AsynchronousChannelGroup group;
+    private final IServerChannel serverSocket;
 
     // general tasks, like sending info to VMSs and other servers
     private final ExecutorService taskExecutor;
@@ -111,16 +110,14 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
         }
     }
 
-    public ElectionWorker(AsynchronousServerSocketChannel serverSocket,
-                          AsynchronousChannelGroup group,
+    public ElectionWorker(IServerChannel serverSocket,
                           ExecutorService taskExecutor,
                           ServerNode me,
                           Map<Integer, ServerNode> servers,
                           ElectionOptions options){
-        super();
+        super("election-worker", IdentifiableNode.build("election", me), VmsSerdesProxyBuilder.build(), false);
         this.state = NEW;
         this.serverSocket = serverSocket;
-        this.group = group;
         this.taskExecutor = taskExecutor;
         this.me = me;
         this.servers = servers;
@@ -207,15 +204,12 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
     private void finish(Broadcaster broadcaster, SimpleSender simpleSender){
         simpleSender.stop();
         broadcaster.stop();
-
-        // signal the server
-        signal.add(FINISHED);
     }
 
     private void initialize(Broadcaster broadcaster, SimpleSender simpleSender) {
 
         // being single thread makes it easier to avoid data races
-        serverSocket.accept( null, new AcceptCompletionHandler() );
+        serverSocket.accept( new AcceptCompletionHandler() );
 
         // then start the broadcaster and vote response threads
         taskExecutor.submit( broadcaster );
@@ -232,7 +226,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
         try {
 
             InetSocketAddress address = new InetSocketAddress(server.host, server.port);
-            AsynchronousSocketChannel channel = AsynchronousSocketChannel.open(group);
+            IChannel channel = ChannelBuilder.build(this.serverSocket);
 
             NetworkUtils.configure(channel, 4096);
 
@@ -241,8 +235,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
                     LockConnectionMetadata.NodeType.SERVER,
                     MemoryManager.getTemporaryDirectBuffer(128),
                     MemoryManager.getTemporaryDirectBuffer(128),
-                    channel,
-                    new Semaphore(1)
+                    channel
                     );
 
             channel.connect(address).get();
@@ -270,13 +263,9 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
                 MemoryManager.releaseTemporaryDirectBuffer(connectionMetadata.writeBuffer);
 
                 if(connectionMetadata.channel.isOpen()){
-                    try {
-                        connectionMetadata.channel.close();
-                    } catch (IOException ignored1) { }
-                    finally {
-                        if(connectionMetadataMap.get(connectionMetadata.key) != null ){
-                            connectionMetadataMap.remove( connectionMetadata.key );
-                        }
+                    connectionMetadata.channel.close();
+                    if(connectionMetadataMap.get(connectionMetadata.key) != null ){
+                        connectionMetadataMap.remove( connectionMetadata.key );
                     }
                 }
 
@@ -297,84 +286,60 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
         this.opN.set(0);
     }
 
-    private class AcceptCompletionHandler implements CompletionHandler<AsynchronousSocketChannel, Void> {
-
+    private class AcceptCompletionHandler implements CompletionHandler<IChannel, Void> {
         @Override
-        public void completed(AsynchronousSocketChannel channel, Void void_) {
-
+        public void completed(IChannel channel, Void void_) {
             // logger.log(INFO,"I am "+me.host+":"+me.port+". Initializing message handler for "+server.host+":"+server.port);
-
-            try {
-                InetSocketAddress remoteAddress = (InetSocketAddress) channel.getRemoteAddress();
-                String host = remoteAddress.getHostName();
-                int port = remoteAddress.getPort();
-                int key = Objects.hash( host, port );
-
-                // is in the list of known servers?
-                if (servers.get( key ) != null) {
-
-                    LockConnectionMetadata connMeta = connectionMetadataMap.get(key);
-                    if (connMeta == null) {
-
-                        connMeta = new LockConnectionMetadata(
-                                key,
-                                LockConnectionMetadata.NodeType.SERVER,
-                                MemoryManager.getTemporaryDirectBuffer(128),
-                                MemoryManager.getTemporaryDirectBuffer(128),
-                                channel,
-                                new Semaphore(1)
-                        );
-
-                        connectionMetadataMap.put(key, connMeta);
-
-                    } else {
-                        // update channel if not active
-                        if(!connMeta.channel.isOpen()) {
-                            // connMeta.channel = channel;
-                            servers.get( key ).on();
-                        } else {
-
-                            // disconnect because it was a concurrent connection made
-                            channel.close();
-
-                        }
-                    }
-
-                    channel.read(connMeta.readBuffer, connMeta, new ReadCompletionHandler());
-
-                } else {
-
-                    // new server added dynamically
-
-                    ServerNode newServer = new ServerNode( host, port);
-                    servers.put(key, newServer);
-
-                    opN.addAndGet(1);
-
-                    LockConnectionMetadata connMeta = new LockConnectionMetadata(
+            InetSocketAddress remoteAddress = (InetSocketAddress) channel.getRemoteAddress();
+            String host = remoteAddress.getHostName();
+            int port = remoteAddress.getPort();
+            int key = Objects.hash( host, port );
+            // is in the list of known servers?
+            if (servers.get( key ) != null) {
+                LockConnectionMetadata connMeta = connectionMetadataMap.get(key);
+                if (connMeta == null) {
+                    connMeta = new LockConnectionMetadata(
                             key,
                             LockConnectionMetadata.NodeType.SERVER,
                             MemoryManager.getTemporaryDirectBuffer(128),
                             MemoryManager.getTemporaryDirectBuffer(128),
-                            channel,
-                            new Semaphore(1)
+                            channel
                     );
-
                     connectionMetadataMap.put(key, connMeta);
+                } else {
+                    // update channel if not active
+                    if(!connMeta.channel.isOpen()) {
+                        // connMeta.channel = channel;
+                        servers.get( key ).on();
+                    } else {
 
-                    channel.read( connMeta.readBuffer, connMeta, new ReadCompletionHandler() );
+                        // disconnect because it was a concurrent connection made
+                        channel.close();
 
+                    }
                 }
-
-            } catch(IOException ignored) {}
-
+                channel.read(connMeta.readBuffer, connMeta, new ReadCompletionHandler());
+            } else {
+                // new server added dynamically
+                ServerNode newServer = new ServerNode( host, port);
+                servers.put(key, newServer);
+                opN.addAndGet(1);
+                LockConnectionMetadata connMeta = new LockConnectionMetadata(
+                        key,
+                        LockConnectionMetadata.NodeType.SERVER,
+                        MemoryManager.getTemporaryDirectBuffer(128),
+                        MemoryManager.getTemporaryDirectBuffer(128),
+                        channel
+                );
+                connectionMetadataMap.put(key, connMeta);
+                channel.read( connMeta.readBuffer, connMeta, new ReadCompletionHandler() );
+            }
         }
 
         @Override
         public void failed(Throwable exc, Void attachment) {
             // nothing to do
         }
-
     }
 
     /**
@@ -513,23 +478,20 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
 
     }
 
-    private static final WriteCompletionHandler writeCompletionHandler = new WriteCompletionHandler();
+    private final WriteCompletionHandler writeCompletionHandler = new WriteCompletionHandler();
 
-    private static final class WriteCompletionHandler implements CompletionHandler<Integer, LockConnectionMetadata> {
+    private final class WriteCompletionHandler implements CompletionHandler<Integer, LockConnectionMetadata> {
 
         @Override
         public void completed(Integer result, LockConnectionMetadata connectionMetadata) {
-            unlockSafely(connectionMetadata);
+            connectionMetadata.writeBuffer.rewind();
+            releaseLock();
         }
 
         @Override
         public void failed(Throwable exc, LockConnectionMetadata connectionMetadata) {
-            unlockSafely(connectionMetadata);
-        }
-
-        private void unlockSafely(LockConnectionMetadata connectionMetadata){
             connectionMetadata.writeBuffer.rewind();
-            connectionMetadata.writeLock.release();
+            releaseLock();
         }
 
     }
@@ -558,7 +520,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
                             LockConnectionMetadata connMeta = getConnection(server);
 
                             if (connMeta != null) {
-                                connMeta.writeLock.acquire();
+                                acquireLock();
                                 VoteRequest.write(connMeta.writeBuffer, me);
                                 connMeta.writeBuffer.position(0);
                                 connMeta.channel.write(connMeta.writeBuffer, connMeta, writeCompletionHandler);
@@ -572,7 +534,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
 
                             LockConnectionMetadata connMeta = getConnection(server);
                             if (connMeta != null) {
-                                connMeta.writeLock.acquire();
+                                acquireLock();
                                 LeaderRequest.write(connMeta.writeBuffer, me);
                                 connMeta.writeBuffer.position(0);
                                 connMeta.channel.write(connMeta.writeBuffer, connMeta, writeCompletionHandler);
@@ -622,7 +584,7 @@ public final class ElectionWorker extends SignalingStoppableRunnable {
 
                     if(connMeta != null) {
 
-                        connMeta.writeLock.acquire();
+                        acquireLock();
 
                         if(msgContext.type == VOTE_RESPONSE) {
                             VoteResponse.write(connMeta.writeBuffer, me, msgContext.response);

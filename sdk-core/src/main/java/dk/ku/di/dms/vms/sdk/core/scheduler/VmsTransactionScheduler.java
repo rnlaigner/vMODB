@@ -148,7 +148,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             // in this case, the error must be informed to the event handler, so the event handler
             // can forward the error to downstream VMSs. if input VMS, easier to handle, just send a noop to them
             LOGGER.log(WARNING, "Error captured during application execution: \n"+e.getCause().getMessage());
-            // remove from map to avoid reescheduling? no, it will lead to null pointer in scheduler loop
+            // remove from map to avoid re-scheduling? no, it will lead to null pointer in scheduler loop
             VmsTransactionTask task = transactionTaskMap.get(tid);
             task.signalFailed();
             this.updateSchedulerTaskStats(executionMode, task);
@@ -277,7 +277,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         return !this.singleThreadTaskRunning && this.numPartitionedTasksRunning.get() == 0;
     }
 
-    private final List<InboundEvent> drained = new ArrayList<>(1024*1000);
+    private final List<InboundEvent> drained = new ArrayList<>(1024*100);
 
     private void checkForNewEvents() throws InterruptedException {
         InboundEvent inboundEvent;

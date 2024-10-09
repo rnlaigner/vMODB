@@ -11,7 +11,7 @@ public interface ICartItemRepository extends IRepository<CartItem.CartItemId, Ca
     @Query("select * from cart_items where customer_id = :customerId")
     List<CartItem> getCartItemsByCustomerId(int customerId);
 
-    @Query("select * from cart_items where seller_id = :customerId and product_id = :productId and version = :version")
+    @Query("select * from cart_items where seller_id = :sellerId and product_id = :productId and version = :version")
     List<CartItem> getCartItemsBySellerIdAndProductIdAndVersion(int sellerId, int productId, String version);
 
 }

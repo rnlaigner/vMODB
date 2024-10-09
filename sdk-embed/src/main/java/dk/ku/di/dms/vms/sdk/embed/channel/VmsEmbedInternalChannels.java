@@ -24,7 +24,7 @@ public final class VmsEmbedInternalChannels implements IVmsInternalChannels {
 
     public VmsEmbedInternalChannels() {
         /* transaction **/
-        this.transactionInputQueue = new MpscBlockingConsumerArrayQueueWrapper(1024*1000);
+        this.transactionInputQueue = new MpscBlockingConsumerArrayQueueWrapper(1024*100);
         this.transactionOutputQueue = new LinkedBlockingQueue<>();
         /* abort **/
         this.transactionAbortInputQueue = new ConcurrentLinkedQueue<>();

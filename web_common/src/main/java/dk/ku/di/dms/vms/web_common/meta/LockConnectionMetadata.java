@@ -1,8 +1,8 @@
 package dk.ku.di.dms.vms.web_common.meta;
 
+import dk.ku.di.dms.vms.web_common.channel.IChannel;
+
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousSocketChannel;
-import java.util.concurrent.Semaphore;
 
 /**
  * Reads are performed via single-thread anyway by design (completion handler),
@@ -20,18 +20,15 @@ public final class LockConnectionMetadata extends ConnectionMetadata {
      * The coordinator is responsible for keeping the connections up to date
      * The transaction manager just needs a read lock for the given connection
      */
-    public final Semaphore writeLock;
 
     public LockConnectionMetadata(int key,
                                   NodeType nodeType,
                                   ByteBuffer readBuffer,
                                   ByteBuffer writeBuffer,
-                                  AsynchronousSocketChannel channel,
-                                  Semaphore writeLock) {
+                                  IChannel channel) {
         super(key, nodeType, channel);
         this.readBuffer = readBuffer;
         this.writeBuffer = writeBuffer;
-        this.writeLock = writeLock;
     }
 
 }
