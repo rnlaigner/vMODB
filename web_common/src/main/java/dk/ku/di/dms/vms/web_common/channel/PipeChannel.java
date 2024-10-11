@@ -29,12 +29,10 @@ public final class PipeChannel implements IChannel {
     }
 
     @Override
-    public Future<Integer> write(ByteBuffer src){
+    public void write(ByteBuffer src){
         try {
-            return CompletableFuture.completedFuture(this.sinkChannel.write(src));
-        } catch (IOException e) {
-            return CompletableFuture.failedFuture(e);
-        }
+            this.sinkChannel.write(src);
+        } catch (IOException ignored) { }
     }
 
     @Override

@@ -87,7 +87,6 @@ public abstract class ModbHttpServer extends StoppableRunnable {
         public void process(String request){
             try {
                 HttpRequestInternal httpRequest = parseRequest(request);
-                Future<Integer> ft = null;
                 switch (httpRequest.httpMethod()){
                     case "GET" -> {
                         if(!httpRequest.headers.containsKey("Accept")){
@@ -108,11 +107,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
                                         bigBB.put(headerBytes);
                                         bigBB.put(dashJsonBytes);
                                         bigBB.flip();
-                                        int result = 0;
-                                        do {
-                                            result += this.connectionMetadata.channel.write(bigBB).get();
-                                        } while (bigBB.hasRemaining());
-                                        assert result == bigBB.limit();
+                                        this.connectionMetadata.channel.write(bigBB);
                                         bigBB.clear();
                                         MemoryManager.releaseTemporaryDirectBuffer(bigBB);
                                     } else {
@@ -123,7 +118,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
                                         this.writeBuffer.put(headerBytes);
                                         this.writeBuffer.put(dashJsonBytes);
                                         this.writeBuffer.flip();
-                                        ft = this.connectionMetadata.channel.write(this.writeBuffer);
+                                        this.connectionMetadata.channel.write(this.writeBuffer);
                                     }
                                 }
                                 case "application/octet-stream" -> {
@@ -133,7 +128,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
                                     this.writeBuffer.put(headers.getBytes(StandardCharsets.UTF_8));
                                     this.writeBuffer.put(byteArray);
                                     this.writeBuffer.flip();
-                                    ft = this.connectionMetadata.channel.write(this.writeBuffer);
+                                    this.connectionMetadata.channel.write(this.writeBuffer);
                                 }
                                 case "text/event-stream" -> {
                                     this.processSseClient();
@@ -142,7 +137,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
                                 case null, default -> {
                                     this.writeBuffer.put(ERROR_RESPONSE_BYTES);
                                     this.writeBuffer.flip();
-                                    ft = this.connectionMetadata.channel.write(this.writeBuffer);
+                                    this.connectionMetadata.channel.write(this.writeBuffer);
                                 }
                             }
                         }
@@ -151,7 +146,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
                         httpHandler.post(httpRequest.uri(), httpRequest.body());
                         this.writeBuffer.put(OK_RESPONSE_BYTES);
                         this.writeBuffer.flip();
-                        ft = this.connectionMetadata.channel.write(this.writeBuffer);
+                        this.connectionMetadata.channel.write(this.writeBuffer);
                     }
                     case "PATCH" -> {
                         if(httpRequest.uri().contains("reset")) {
@@ -160,24 +155,17 @@ public abstract class ModbHttpServer extends StoppableRunnable {
                         httpHandler.patch(httpRequest.uri(), httpRequest.body());
                         this.writeBuffer.put(OK_RESPONSE_BYTES);
                         this.writeBuffer.flip();
-                        ft = this.connectionMetadata.channel.write(this.writeBuffer);
+                        this.connectionMetadata.channel.write(this.writeBuffer);
                     }
                     case "PUT" -> {
                         httpHandler.put(httpRequest.uri(), httpRequest.body());
                         this.writeBuffer.put(OK_RESPONSE_BYTES);
                         this.writeBuffer.flip();
-                        ft = this.connectionMetadata.channel.write(this.writeBuffer);
+                        this.connectionMetadata.channel.write(this.writeBuffer);
                     }
                 }
-                if(ft != null){
-                    int result = ft.get();
-                    // send remaining to avoid http client to hang
-                    while (this.writeBuffer.hasRemaining()){
-                        result += this.connectionMetadata.channel.write(this.writeBuffer).get();
-                    }
-                    assert result == this.writeBuffer.limit();
-                    this.writeBuffer.clear();
-                }
+                assert this.writeBuffer.position() == this.writeBuffer.limit();
+                this.writeBuffer.clear();
                 this.readBuffer.clear();
                 this.connectionMetadata.channel.read(this.readBuffer, 0, this);
             } catch (Exception e){
@@ -195,7 +183,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
                 this.writeBuffer.put(errorBytes);
                 this.writeBuffer.flip();
                 try {
-                    this.connectionMetadata.channel.write(this.writeBuffer).get();
+                    this.connectionMetadata.channel.write(this.writeBuffer);
                 } catch (Exception ignored) {}
                 this.writeBuffer.clear();
                 this.readBuffer.clear();
@@ -203,12 +191,12 @@ public abstract class ModbHttpServer extends StoppableRunnable {
             }
         }
 
-        private void processSseClient() throws InterruptedException, ExecutionException {
+        private void processSseClient() throws Exception {
             // Write HTTP response headers for SSE
             String headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n";
             this.writeBuffer.put(headers.getBytes(StandardCharsets.UTF_8));
             this.writeBuffer.flip();
-            this.connectionMetadata.channel.write(this.writeBuffer).get();
+            this.connectionMetadata.channel.write(this.writeBuffer);
             // need to set up read before adding this connection to sse client
             this.writeBuffer.clear();
             this.readBuffer.clear();
@@ -221,10 +209,8 @@ public abstract class ModbHttpServer extends StoppableRunnable {
             this.writeBuffer.put(eventData.getBytes(StandardCharsets.UTF_8));
             this.writeBuffer.flip();
             try {
-                do {
-                    this.connectionMetadata.channel.write(this.writeBuffer).get();
-                } while (this.writeBuffer.hasRemaining());
-            } catch (InterruptedException | ExecutionException e) {
+                this.connectionMetadata.channel.write(this.writeBuffer);
+            } catch (Exception e) {
                 System.out.println("Error caught: "+e.getMessage());
                 SSE_CLIENTS.remove(this);
                 // e.printStackTrace(System.out);
@@ -262,8 +248,8 @@ public abstract class ModbHttpServer extends StoppableRunnable {
     }
 
     protected static boolean isHttpClient(String request) {
-        String substr = request.substring(0, Math.max(request.indexOf(' '), 0));
-        switch (substr){
+        String subStr = request.substring(0, Math.max(request.indexOf(' '), 0));
+        switch (subStr){
             case "GET", "PATCH", "POST", "PUT" -> {
                 return true;
             }

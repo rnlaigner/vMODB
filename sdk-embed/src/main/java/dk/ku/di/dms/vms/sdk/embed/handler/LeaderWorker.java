@@ -1,17 +1,19 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
-import dk.ku.di.dms.vms.modb.common.runnable.StoppableRunnable;
+import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
+import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitAck;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchComplete;
+import dk.ku.di.dms.vms.modb.common.schema.network.node.IdentifiableNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
+import dk.ku.di.dms.vms.web_common.ProducerWorker;
 import dk.ku.di.dms.vms.web_common.channel.IChannel;
 
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
+import java.nio.channels.CompletionHandler;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -24,29 +26,13 @@ import static java.lang.Thread.sleep;
  * still not sure how leader is logging state after a crash
  * If so, may need to reinsert to continue the protocol from the same point
  */
-final class LeaderWorker extends StoppableRunnable {
+final class LeaderWorker extends ProducerWorker {
 
     private static final System.Logger LOGGER = System.getLogger(LeaderWorker.class.getName());
-
-    private static final VarHandle WRITE_SYNCHRONIZER;
-
-    static {
-        try {
-            MethodHandles.Lookup l = MethodHandles.lookup();
-            WRITE_SYNCHRONIZER = l.findVarHandle(LeaderWorker.class, "writeSynchronizer", int.class);
-        } catch (Exception e) {
-            throw new InternalError(e);
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private volatile int writeSynchronizer;
 
     private final ServerNode leader;
 
     private final IChannel channel;
-    
-    private final ByteBuffer writeBuffer;
 
     private final Queue<Object> leaderWorkerQueue;
 
@@ -54,12 +40,11 @@ final class LeaderWorker extends StoppableRunnable {
 
     public LeaderWorker(VmsNode vmsNode,
                         ServerNode leader,
-                        IChannel channel,
-                        ByteBuffer writeBuffer){
+                        IChannel channel){
+        super("nnn", new IdentifiableNode(), null, false);
         this.vmsNode = vmsNode;
         this.leader = leader;
         this.channel = channel;
-        this.writeBuffer = writeBuffer;
         this.leaderWorkerQueue = new ConcurrentLinkedQueue<>();
     }
 
@@ -84,14 +69,14 @@ final class LeaderWorker extends StoppableRunnable {
                 this.sendMessage(message);
             } catch (Exception e) {
                 LOGGER.log(ERROR, this.vmsNode.identifier+": Error on taking message from worker queue: "+e.getCause().getMessage());
-                if(message != null){
-                    this.queueMessage(message);
-                }
+//                if(message != null){
+//                    this.queueMessage(message);
+//                }
             }
         }
     }
 
-    private void sendMessage(Object message) {
+    void sendMessage(Object message) {
         switch (message) {
             case BatchComplete.Payload o -> this.sendBatchComplete(o);
             case BatchCommitAck.Payload o -> this.sendBatchCommitAck(o);
@@ -102,29 +87,18 @@ final class LeaderWorker extends StoppableRunnable {
         }
     }
 
-    public void queueMessage(Object message) {
-        this.sendMessage(message);
-    }
-
-    private void write(Object message) {
+    private void write(ByteBuffer writeBuffer) {
         try {
-            this.writeBuffer.flip();
-            do {
-               // var initTs = System.currentTimeMillis();
-               this.channel.write(this.writeBuffer).get();
-               // LOGGER.log(WARNING, this.vmsNode.identifier+". Latency to send leader a message: "+(System.currentTimeMillis()-initTs));
-            } while (this.writeBuffer.hasRemaining());
+            writeBuffer.flip();
+            this.channel.write(writeBuffer, writeBuffer, this.writeCompletionHandler);
         } catch (Exception e){
-            // queue to try insert again
             LOGGER.log(ERROR, this.vmsNode.identifier+": Error on writing message to Leader\n"+e.getCause().getMessage(), e);
             e.printStackTrace(System.out);
-            this.queueMessage(message);
+            // this.queueMessage(message);
             if(!this.channel.isOpen()) {
                 this.leader.off();
                 this.stop();
             }
-        } finally {
-            this.writeBuffer.clear();
         }
     }
 
@@ -136,34 +110,52 @@ final class LeaderWorker extends StoppableRunnable {
      * the acknowledgment arrives
      */
     private void sendEvent(TransactionEvent.PayloadRaw payload) {
-        TransactionEvent.write( this.writeBuffer, payload );
-        this.write(payload);
+        this.acquireLock();
+        int size = MemoryUtils.nextPowerOfTwo(payload.totalSize());
+        ByteBuffer writeBuffer = MemoryManager.getTemporaryDirectBuffer(size);
+        TransactionEvent.write( writeBuffer, payload );
+        this.write(writeBuffer);
     }
 
     private void sendBatchComplete(BatchComplete.Payload payload) {
         this.acquireLock();
-        BatchComplete.write( this.writeBuffer, payload );
-        this.write(payload);
-        this.releaseLock();
+        ByteBuffer writeBuffer = MemoryManager.getTemporaryDirectBuffer(1024);
+        BatchComplete.write( writeBuffer, payload );
+        this.write(writeBuffer);
     }
 
     private void sendBatchCommitAck(BatchCommitAck.Payload payload) {
-        BatchCommitAck.write( this.writeBuffer, payload );
-        this.write(payload);
+        this.acquireLock();
+        ByteBuffer writeBuffer = MemoryManager.getTemporaryDirectBuffer(1024);
+        BatchCommitAck.write( writeBuffer, payload );
+        this.write(writeBuffer);
     }
 
     private void sendTransactionAbort(TransactionAbort.Payload payload) {
-        TransactionAbort.write( this.writeBuffer, payload );
-        this.write(payload);
+        this.acquireLock();
+        ByteBuffer writeBuffer = MemoryManager.getTemporaryDirectBuffer(1024);
+        TransactionAbort.write( writeBuffer, payload );
+        this.write(writeBuffer);
     }
 
-    @SuppressWarnings("StatementWithEmptyBody")
-    public void acquireLock(){
-        while(! WRITE_SYNCHRONIZER.compareAndSet(this, 0, 1) );
-    }
+    private final WriteCompletionHandler writeCompletionHandler = new WriteCompletionHandler();
 
-    public void releaseLock(){
-        WRITE_SYNCHRONIZER.setVolatile(this, 0);
+    private final class WriteCompletionHandler implements CompletionHandler<Integer, ByteBuffer> {
+        @Override
+        public void completed(Integer result, ByteBuffer byteBuffer) {
+            if(byteBuffer.hasRemaining()){
+                channel.write(byteBuffer, byteBuffer, this);
+            } else {
+                releaseLock();
+                returnByteBuffer(byteBuffer);
+            }
+        }
+
+        @Override
+        public void failed(Throwable exc, ByteBuffer byteBuffer) {
+            releaseLock();
+            returnByteBuffer(byteBuffer);
+        }
     }
 
 }

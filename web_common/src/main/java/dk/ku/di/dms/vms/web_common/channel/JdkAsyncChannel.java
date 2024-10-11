@@ -6,6 +6,8 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.nio.channels.NetworkChannel;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
@@ -33,8 +35,10 @@ public final class JdkAsyncChannel implements IChannel {
     }
 
     @Override
-    public Future<Integer> write(ByteBuffer src){
-        return this.channel.write(src);
+    public void write(ByteBuffer src) throws ExecutionException, InterruptedException {
+        do {
+            this.channel.write(src).get();
+        } while(src.hasRemaining());
     }
 
     @Override
@@ -43,10 +47,8 @@ public final class JdkAsyncChannel implements IChannel {
     }
 
     @Override
-    public <A> void write(ByteBuffer[] srcs,
-                           A attachment,
-                           CompletionHandler<Long,? super A> handler) {
-        this.channel.write(srcs, 0, srcs.length, 0L, TimeUnit.MILLISECONDS, attachment, handler);
+    public <A> void write(ByteBuffer[] srcs, int offset, A attachment, CompletionHandler<Long,? super A> handler) {
+        this.channel.write(srcs, offset, srcs.length - offset, 0L, TimeUnit.MILLISECONDS, attachment, handler);
     }
 
     @Override
@@ -71,6 +73,11 @@ public final class JdkAsyncChannel implements IChannel {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public NetworkChannel getNetworkChannel() {
+        return this.channel;
     }
 
     @Override

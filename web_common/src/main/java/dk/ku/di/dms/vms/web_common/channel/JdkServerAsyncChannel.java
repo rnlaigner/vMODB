@@ -1,11 +1,10 @@
 package dk.ku.di.dms.vms.web_common.channel;
 
+import dk.ku.di.dms.vms.web_common.NetworkUtils;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.channels.AsynchronousChannelGroup;
-import java.nio.channels.AsynchronousServerSocketChannel;
-import java.nio.channels.AsynchronousSocketChannel;
-import java.nio.channels.CompletionHandler;
+import java.nio.channels.*;
 
 public final class JdkServerAsyncChannel implements IServerChannel {
 
@@ -19,11 +18,12 @@ public final class JdkServerAsyncChannel implements IServerChannel {
         this.group = group;
     }
 
+    @Deprecated
     public static IServerChannel build(InetSocketAddress address, int networkThreadPoolSize) {
-        return build(address, networkThreadPoolSize, "default");
+        return build(address, networkThreadPoolSize, "default", 0);
     }
 
-    public static IServerChannel build(InetSocketAddress address, int networkThreadPoolSize, String networkThreadPoolType) {
+    public static IServerChannel build(InetSocketAddress address, int networkThreadPoolSize, String networkThreadPoolType, int networkBufferSize) {
         AsynchronousChannelGroup group;
         AsynchronousServerSocketChannel serverSocket;
         try {
@@ -40,6 +40,7 @@ public final class JdkServerAsyncChannel implements IServerChannel {
                 case null, default -> group = null;
             }
             serverSocket = AsynchronousServerSocketChannel.open(group);
+            NetworkUtils.configure(serverSocket, networkBufferSize);
             serverSocket.bind(address);
             return new JdkServerAsyncChannel(serverSocket, group);
         } catch (IOException e) {
@@ -63,6 +64,11 @@ public final class JdkServerAsyncChannel implements IServerChannel {
 
     public AsynchronousChannelGroup getGroup() {
         return this.group;
+    }
+
+    @Override
+    public NetworkChannel getNetworkChannel() {
+        return this.channel;
     }
 
     @Override

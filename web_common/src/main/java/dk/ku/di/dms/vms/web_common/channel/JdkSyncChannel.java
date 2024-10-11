@@ -5,6 +5,7 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.CompletionHandler;
+import java.nio.channels.NetworkChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -36,14 +37,10 @@ public final class JdkSyncChannel implements IChannel {
     }
 
     @Override
-    public Future<Integer> write(ByteBuffer src){
-        return this.readWriteExecutor.submit(()->
-        {
-            do {
-                this.channel.write(src);
-            } while (src.hasRemaining());
-            return src.limit();
-        });
+    public void write(ByteBuffer src) throws IOException {
+        do {
+            this.channel.write(src);
+        } while (src.hasRemaining());
     }
 
     @Override
@@ -99,6 +96,11 @@ public final class JdkSyncChannel implements IChannel {
     @Override
     public boolean isOpen() {
         return this.channel.isOpen();
+    }
+
+    @Override
+    public NetworkChannel getNetworkChannel() {
+        return this.channel;
     }
 
 }

@@ -8,6 +8,4 @@ public interface IVmsWorker {
 
     default void queueMessage(Object message) { }
 
-    default long getTid() { return 0; }
-
 }

@@ -100,9 +100,9 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
                 this.drained.add(this.transactionEventQueue.take());
                 this.transactionEventQueue.drain(this.drained::add);
                 if(this.drained.size() == 1){
-                    this.sendEventBlocking(this.drained.removeFirst());
+                    this.sendEventNonBlocking(this.drained.removeFirst());
                 } else {
-                    this.sendBatchOfEventsBlocking();
+                     this.sendBatchOfEventsNonBlocking();
                 }
             } catch (Exception e) {
                 LOGGER.log(ERROR, this.me.identifier+ ": Error captured in event loop (no logging) \n"+e);
@@ -120,7 +120,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
                 if(this.drained.isEmpty()){
                     this.processPendingLogging();
                 } else {
-                    this.sendBatchOfEventsNonBlocking();
+                    this.sendBatchOfEventsNonBlockingWithLogging();
                 }
             } catch (Exception e) {
                 LOGGER.log(ERROR, this.me.identifier+ ": Error captured in event loop (logging) \n"+e);
@@ -137,7 +137,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
                     if(this.drained.size() == 1){
                         this.sendEventNonBlocking(this.drained.removeFirst());
                     } else if(this.drained.size() < 10){
-                        this.sendBatchOfEventsNonBlocking();
+                        this.sendBatchOfEventsNonBlockingWithLogging();
                     } else {
                         this.sendCompressedBatchOfEvents();
                     }
@@ -164,7 +164,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
     private boolean connect() {
         ByteBuffer buffer = MemoryManager.getTemporaryDirectBuffer(this.options.networkBufferSize());
         try{
-            NetworkUtils.configure(this.channel, this.options.osBufferSize());
+            NetworkUtils.configure(this.channel.getNetworkChannel(), this.options.osBufferSize());
             this.channel.connect(this.consumerVms.asInetSocketAddress()).get();
             this.state = CONNECTED;
             LOGGER.log(DEBUG,this.me.identifier+ ": The node "+ this.consumerVms.host+" "+ this.consumerVms.port+" status = "+this.state);
@@ -174,7 +174,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
             buffer.clear();
             Presentation.writeVms( buffer, this.me, this.me.identifier, this.me.batch, 0, this.me.previousBatch, dataSchema, inputEventSchema, outputEventSchema );
             buffer.flip();
-            this.channel.write(buffer).get();
+            this.channel.write(buffer);
             this.state = PRESENTATION_SENT;
             LOGGER.log(DEBUG,me.identifier+ ": The node "+ this.consumerVms.host+" "+ this.consumerVms.port+" status = "+this.state);
             returnByteBuffer(buffer);
@@ -233,7 +233,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
         }
     }
 
-    private void sendBatchOfEventsNonBlocking() {
+    private void sendBatchOfEventsNonBlockingWithLogging() {
         int remaining = this.drained.size();
         int count = remaining;
         ByteBuffer writeBuffer = null;
@@ -265,18 +265,88 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
     private void sendEventBlocking(TransactionEvent.PayloadRaw payload) {
         ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
         try {
-            TransactionEvent.write( writeBuffer, payload );
+            TransactionEvent.write(writeBuffer, payload);
             writeBuffer.flip();
-            do {
-                this.channel.write(writeBuffer).get();
-            } while (writeBuffer.hasRemaining());
+            this.channel.write(writeBuffer);
         } catch (Exception e){
             LOGGER.log(ERROR, "Error caught on sending single event: "+e);
             this.transactionEventQueue.offer(payload);
-        }
-        finally {
+        } finally {
             returnByteBuffer(writeBuffer);
         }
+    }
+
+    public final class MultiBufferCompletionHandler implements CompletionHandler<Long, ByteBuffer[]> {
+        @Override
+        public void completed(Long result, ByteBuffer[] srcs) {
+            int offset = -1;
+            for (int i = 0; i < srcs.length; i++) {
+                if(srcs[i].hasRemaining()){
+                    offset = i;
+                    break;
+                }
+            }
+            if (offset != -1) {
+                channel.write(srcs, offset, srcs,this);
+            } else {
+                releaseLock();
+                for (ByteBuffer src : srcs){
+                    returnByteBuffer(src);
+                }
+            }
+        }
+        @Override
+        public void failed(Throwable exc, ByteBuffer[] srcs) {
+            LOGGER.log(ERROR, "Error caught on sending multiple buffers: "+exc);
+            releaseLock();
+            for (ByteBuffer src : srcs) {
+                if(src.hasRemaining()){
+                    pendingWritesBuffer.add(src);
+                } else {
+                    returnByteBuffer(src);
+                }
+            }
+        }
+    }
+
+    private final MultiBufferCompletionHandler multiBufferWriteCompletionHandler = new MultiBufferCompletionHandler();
+
+    private void sendBatchOfEventsNonBlocking() {
+        int remaining = this.drained.size();
+        int count = remaining;
+        ByteBuffer writeBuffer = null;
+        while(remaining > 0){
+            try {
+                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+                remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer);
+                writeBuffer.flip();
+                LOGGER.log(DEBUG, this.me.identifier+ ": Submitting ["+(count - remaining)+"] event(s) to "+this.consumerVms.identifier);
+                count = remaining;
+                if(this.tryAcquireLock()){
+                    if(this.pendingWritesBuffer.isEmpty()) {
+                        this.channel.write(writeBuffer, writeBuffer, this.writeCompletionHandler);
+                    } else {
+                        ByteBuffer bb;
+                        ByteBuffer[] srcs = new ByteBuffer[this.pendingWritesBuffer.size() + 1];
+                        srcs[0] = writeBuffer;
+                        int idx = 1;
+                        while ((bb = this.pendingWritesBuffer.poll()) != null) {
+                            srcs[idx] = bb;
+                            idx++;
+                            if(idx == srcs.length) break;
+                        }
+                        this.channel.write(srcs, 0, srcs, this.multiBufferWriteCompletionHandler);
+                    }
+                } else {
+                    this.pendingWritesBuffer.addLast(writeBuffer);
+                }
+            } catch (Exception e) {
+                this.failSafe(e, writeBuffer);
+                // force loop exit
+                remaining = 0;
+            }
+        }
+        this.drained.clear();
     }
 
     private void sendBatchOfEventsBlocking() {
@@ -290,9 +360,7 @@ public final class ConsumerVmsWorker extends ProducerWorker implements IVmsConta
                 writeBuffer.flip();
                 LOGGER.log(DEBUG, this.me.identifier+ ": Submitting ["+(count - remaining)+"] event(s) to "+this.consumerVms.identifier);
                 count = remaining;
-                do {
-                    this.channel.write(writeBuffer).get();
-                } while(writeBuffer.hasRemaining());
+                this.channel.write(writeBuffer);
                 returnByteBuffer(writeBuffer);
             } catch (Exception e) {
                 this.failSafe(e, writeBuffer);

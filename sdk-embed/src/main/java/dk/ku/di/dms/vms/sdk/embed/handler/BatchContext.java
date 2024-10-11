@@ -15,7 +15,7 @@ public final class BatchContext {
 
     // if an external thread (i.e., scheduler) modifies
     // this attribute, it needs to change to volatile
-    private AtomicInteger status = new AtomicInteger(OPEN);
+    private final AtomicInteger status = new AtomicInteger(OPEN);
 
     // whether this vms is a terminal for this batch
     public final boolean terminal;

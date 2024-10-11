@@ -87,7 +87,7 @@ public final class CartService {
     }
 
     /**
-     * id being the [seller_id,product_id] is object causality
+     * id being the [seller_id, product_id] is object causality
      * id being seller_id is seller causality
      */
     @Inbound(values = {PRODUCT_UPDATED})

@@ -67,7 +67,7 @@ public final class Main {
                     .internal("c", "order", STOCK_CONFIRMED, "b")
                     .internal("d", "payment", INVOICE_ISSUED, "c")
                     // treated as internal to minimize number of votes
-                    .internal("e", "seller", INVOICE_ISSUED, "c")
+                    .internal("e", "seller", INVOICE_ISSUED, "c") //
                     //.terminal("any", "customer", "b")
                     .terminal("f", "shipment", "d")
                     .build();

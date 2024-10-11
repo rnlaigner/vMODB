@@ -1,6 +1,5 @@
 package dk.ku.di.dms.vms.coordinator.vms;
 
-import dk.ku.di.dms.vms.coordinator.options.VmsWorkerOptions;
 import dk.ku.di.dms.vms.modb.common.compressing.CompressingUtils;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitAck;
@@ -20,6 +19,7 @@ import dk.ku.di.dms.vms.web_common.NetworkUtils;
 import dk.ku.di.dms.vms.web_common.ProducerWorker;
 import dk.ku.di.dms.vms.web_common.channel.IChannel;
 import org.jctools.queues.MpscArrayQueue;
+import org.jctools.queues.MpscBlockingConsumerArrayQueue;
 
 import java.io.IOException;
 import java.nio.BufferOverflowException;
@@ -33,7 +33,6 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static dk.ku.di.dms.vms.coordinator.vms.VmsWorker.State.*;
@@ -57,6 +56,15 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         CONSUMER_SET_SENDING_FAILED,
         CONSUMER_EXECUTING
     }
+
+    public record VmsWorkerOptions(boolean active,
+                                   boolean compressing,
+                                   boolean logging,
+                                   int maxSleep,
+                                   int networkBufferSize,
+                                   int networkSendTimeout,
+                                   int numQueuesVmsWorker,
+                                   boolean initHandshake) {}
 
     private final ServerNode me;
     
@@ -82,8 +90,6 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
     private final WriteCompletionHandler writeCompletionHandler = new WriteCompletionHandler();
 
     private final BatchWriteCompletionHandler batchWriteCompletionHandler = new BatchWriteCompletionHandler();
-
-    private final Consumer<Object> queueMessage_;
 
     private interface IVmsQueue {
         void drain(List<TransactionEvent.PayloadRaw> list);
@@ -136,6 +142,24 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
             this.queue.drain(list::add);
         }
     }
+
+    private static final class BlockingSingleQueue implements IVmsQueue {
+        private final MpscBlockingConsumerArrayQueue<TransactionEvent.PayloadRaw> queue = new MpscBlockingConsumerArrayQueue<>(1024*100);
+        @Override
+        public void queue(TransactionEvent.PayloadRaw payloadRaw) {
+            this.queue.offer(payloadRaw);
+        }
+        @Override
+        public void drain(List<TransactionEvent.PayloadRaw> list){
+            if(this.queue.isEmpty()) {
+                try {
+                    var obj = this.queue.take();
+                    list.add(obj);
+                } catch (InterruptedException ignored) { }
+            }
+            this.queue.drain(list::add);
+        }
+    }
     
     public static VmsWorker build(// coordinator reference
                                     ServerNode me,
@@ -171,22 +195,17 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         if(options.numQueuesVmsWorker() > 1) {
             this.transactionEventQueue = new MultiQueue(options.numQueuesVmsWorker());
         } else {
-            this.transactionEventQueue = new SingleQueue();
-        }
-
-        if(this.options.active()){
-            this.queueMessage_ = this.messageQueue::offerLast;
-        } else {
-            this.queueMessage_ = this::sendMessage;
+            this.transactionEventQueue = //new BlockingSingleQueue();
+                                        new SingleQueue();
         }
 
         // out - shared by many vms workers
         this.coordinatorQueue = coordinatorQueue;
     }
 
-    private void connect() throws IOException, InterruptedException, ExecutionException {
+    private void connect() throws InterruptedException, ExecutionException {
         this.channel = this.channelFactory.get();
-        NetworkUtils.configure(this.channel, this.options.networkBufferSize());
+        NetworkUtils.configure(this.channel.getNetworkChannel(), this.options.networkBufferSize);
         // if not active, maybe set tcp_nodelay to true?
         this.channel.connect(this.consumerVms.asInetSocketAddress()).get();
     }
@@ -200,7 +219,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
                 this.connect();
                 LOGGER.log(INFO, "Leader: Connection established to "+this.consumerVms.identifier);
                 break;
-            } catch (IOException | InterruptedException | ExecutionException e) {
+            } catch (InterruptedException | ExecutionException e) {
                 LOGGER.log(ERROR, "Leader: Connection attempt to " + this.consumerVms.identifier + " failed. Retrying in "+waitTime/1000+" second(s)...");
                 try {
                     Thread.sleep(waitTime);
@@ -212,7 +231,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         try {
             LOGGER.log(INFO, "Leader: Sending presentation to "+this.consumerVms.identifier);
             this.state = CONNECTION_ESTABLISHED;
-            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
             this.sendLeaderPresentationToVms(writeBuffer);
             this.state = State.LEADER_PRESENTATION_SENT;
 
@@ -248,7 +267,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         Presentation.writeServer(writeBuffer, this.me, true);
         writeBuffer.flip();
         this.acquireLock();
-        this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+        this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
     }
 
     @Override
@@ -259,9 +278,11 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         } else {
             if (this.initSimpleConnection()) return;
         }
-        if(this.options.active()) {
-            if(this.options.compressing()){
+        if(this.options.active) {
+            if(this.options.compressing){
                 this.eventLoopCompressing();
+            } else if(this.options.logging) {
+                this.eventLoopLogging();
             } else {
                 this.eventLoop();
             }
@@ -274,7 +295,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         LOGGER.log(DEBUG, Thread.currentThread().getName()+": Attempting additional connection to to VMS: " + this.consumerVms.identifier);
         try {
             this.connect();
-            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
             this.sendLeaderPresentationToVms(writeBuffer);
         } catch(Exception ignored){
             LOGGER.log(ERROR, Thread.currentThread().getName()+": Cannot connect to VMS: " + this.consumerVms.identifier);
@@ -290,7 +311,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
             try {
                 this.transactionEventQueue.drain(this.drained);
                 if(this.drained.isEmpty()){
-                    pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep());
+                    pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep);
                     this.processPendingNetworkTasks();
                     this.processPendingLogging();
                     this.giveUpCpu(pollTimeout);
@@ -300,12 +321,32 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
                 if(this.drained.size() == 1){
                     this.sendEvent(this.drained.removeFirst());
                 } else if(this.drained.size() < 10){
-                    this.sendBatchOfEvents();
+                    this.sendBatchOfEventsNonBlockingAndLogging();
                 } else {
                     this.sendCompressedBatchOfEvents();
                 }
                 this.processPendingNetworkTasks();
                 this.processPendingLogging();
+            } catch (Exception e) {
+                LOGGER.log(ERROR, "Leader: VMS worker for "+this.consumerVms.identifier+" has caught an exception: \n"+e);
+            }
+        }
+    }
+
+    private void eventLoop() {
+        int pollTimeout = 1;
+        while (this.isRunning()){
+            try {
+                this.transactionEventQueue.drain(this.drained);
+                if(this.drained.isEmpty()){
+                    pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep);
+                    this.processPendingNetworkTasks();
+                    this.giveUpCpu(pollTimeout);
+                    continue;
+                }
+                pollTimeout = pollTimeout > 0 ? pollTimeout / 2 : 0;
+                this.processPendingNetworkTasks();
+                this.sendBatchOfEventsNonBlocking();
             } catch (Exception e) {
                 LOGGER.log(ERROR, "Leader: VMS worker for "+this.consumerVms.identifier+" has caught an exception: \n"+e);
             }
@@ -318,20 +359,20 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
      * (b) Process transaction input events
      * (c) Logging
      */
-    private void eventLoop() {
+    private void eventLoopLogging() {
         int pollTimeout = 1;
         while (this.isRunning()){
             try {
                 this.transactionEventQueue.drain(this.drained);
                 if(this.drained.isEmpty()){
-                    pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep());
+                    pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep);
                     this.processPendingNetworkTasks();
                     this.processPendingLogging();
                     this.giveUpCpu(pollTimeout);
                     continue;
                 }
                 pollTimeout = pollTimeout > 0 ? pollTimeout / 2 : 0;
-                this.sendBatchOfEvents();
+                this.sendBatchOfEventsNonBlockingAndLogging();
                 this.processPendingNetworkTasks();
                 this.processPendingLogging();
             } catch (Exception e) {
@@ -360,25 +401,41 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         while((pendingMessage = this.messageQueue.pollFirst()) != null){
             this.sendMessage(pendingMessage);
         }
-
         if(!this.pendingWritesBuffer.isEmpty() && this.tryAcquireLock()){
-            ByteBuffer bb = this.pendingWritesBuffer.pollFirst();
-            LOGGER.log(DEBUG, "Leader: Sending pending buffer");
-            try {
-                this.channel.write(bb, this.options.networkSendTimeout(), TimeUnit.MILLISECONDS, bb, this.batchWriteCompletionHandler);
-            } catch (Exception e){
-                LOGGER.log(ERROR, "Leader: ERROR on sending pending buffer: \n"+e);
-                if(e instanceof IllegalStateException){
-                    // probably comes from the class {@AsynchronousSocketChannelImpl}:
-                    // "Writing not allowed due to timeout or cancellation"
-                    // stop thread since there is no way to write to this channel anymore
-                    this.stop();
-                }
-                this.releaseLock();
-                if(bb != null) {
-                    bb.position(0);
-                    this.pendingWritesBuffer.offerFirst(bb);
-                }
+            if(this.pendingWritesBuffer.size() == 1) {
+                this.sendSinglePendingBuffer();
+            } else {
+                this.sendMultiplePendingBuffers();
+            }
+        }
+    }
+
+    private void sendMultiplePendingBuffers() {
+        ByteBuffer bb;
+        ByteBuffer[] srcs = new ByteBuffer[this.pendingWritesBuffer.size()];
+        int idx = 0;
+        while ((bb = this.pendingWritesBuffer.poll()) != null) {
+            srcs[idx] = bb;
+            idx++;
+            if(idx == srcs.length) break;
+        }
+        this.channel.write(srcs, 0, srcs, this.multiBufferWriteCompletionHandler);
+    }
+
+    private void sendSinglePendingBuffer() {
+        ByteBuffer bb = this.pendingWritesBuffer.pollFirst();
+        LOGGER.log(DEBUG, "Leader: Sending pending buffer");
+        try {
+            this.channel.write(bb, this.options.networkSendTimeout(), TimeUnit.MILLISECONDS, bb, this.batchWriteCompletionHandler);
+        } catch (Exception e){
+            LOGGER.log(ERROR, "Leader: ERROR on sending pending buffer: \n"+e);
+            if(e instanceof IllegalStateException){
+                this.stop();
+            }
+            this.releaseLock();
+            if(bb != null) {
+                bb.position(0);
+                this.pendingWritesBuffer.offerFirst(bb);
             }
         }
     }
@@ -393,12 +450,12 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         TransactionEvent.write(writeBuffer, payload);
         writeBuffer.flip();
         this.acquireLock();
-        this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+        this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
     }
 
     @Override
     public void queueMessage(Object message) {
-        this.queueMessage_.accept(message);
+        this.sendMessage(message);
     }
 
     private void sendMessage(Object message) {
@@ -418,22 +475,29 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
     }
 
     private void sendTransactionAbort(TransactionAbort.Payload tidToAbort) {
-        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
         TransactionAbort.write(writeBuffer, tidToAbort);
         writeBuffer.flip();
         this.acquireLock();
-        this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+        this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
         LOGGER.log(WARNING,"Leader: Transaction abort sent to: " + this.consumerVms.identifier);
     }
 
     private void sendBatchCommitCommand(BatchCommitCommand.Payload batchCommitCommand) {
         try {
-            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
             BatchCommitCommand.write(writeBuffer, batchCommitCommand);
             writeBuffer.flip();
-            this.acquireLock();
-            this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
-            LOGGER.log(DEBUG, "Leader: Batch ("+batchCommitCommand.batch()+") commit command sent to: " + this.consumerVms.identifier);
+            if(this.tryAcquireLock()){
+                this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+            } else {
+                if(options.active){
+                    messageQueue.offerFirst(batchCommitCommand);
+                } else {
+                    this.acquireLock();
+                    this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+                }
+            }
         } catch (Exception e){
             LOGGER.log(ERROR,"Leader: Batch ("+batchCommitCommand.batch()+") commit command write has failed:\n"+e.getMessage());
             if(!this.channel.isOpen()){
@@ -442,6 +506,30 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
             }
             this.releaseLock();
             this.messageQueue.offerFirst(batchCommitCommand);
+        }
+    }
+
+    private void sendBatchCommitInfo(BatchCommitInfo.Payload batchCommitInfo){
+        // then send only the batch commit info
+        LOGGER.log(DEBUG, "Leader: Batch ("+batchCommitInfo.batch()+") commit info will be sent to " + this.consumerVms.identifier);
+        try {
+            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
+            BatchCommitInfo.write(writeBuffer, batchCommitInfo);
+            writeBuffer.flip();
+            if(this.tryAcquireLock()){
+                this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+            } else {
+                if(options.active){
+                    messageQueue.offerFirst(batchCommitInfo);
+                } else {
+                    this.acquireLock();
+                    this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(ERROR, "Leader: Error on sending a batch commit info to VMS: " + e.getMessage());
+            this.releaseLock();
+            this.messageQueue.offerFirst(batchCommitInfo);
         }
     }
 
@@ -456,12 +544,12 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
             LOGGER.log(INFO, "Leader: Consumer set, another attempt to write to: "+this.consumerVms.identifier);
         } // else, nothing...
 
-        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+        ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
         try {
             ConsumerSet.write(writeBuffer, vmsConsumerSet);
             writeBuffer.flip();
             this.acquireLock();
-            this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
+            this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
             if (this.state == CONSUMER_SET_READY_FOR_SENDING) {// or != CONSUMER_EXECUTING
                 this.state = CONSUMER_EXECUTING;
             }
@@ -585,52 +673,102 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         }
     }
 
-    private void sendBatchCommitInfo(BatchCommitInfo.Payload batchCommitInfo){
-        // then send only the batch commit info
-        LOGGER.log(DEBUG, "Leader: Batch ("+batchCommitInfo.batch()+") commit info will be sent to " + this.consumerVms.identifier);
-        try {
-            ByteBuffer writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
-            BatchCommitInfo.write(writeBuffer, batchCommitInfo);
-            writeBuffer.flip();
-            this.acquireLock();
-            this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.writeCompletionHandler);
-            LOGGER.log(DEBUG, "Leader: Batch ("+batchCommitInfo.batch()+") commit info sent to " + this.consumerVms.identifier+"\n"+batchCommitInfo);
-        } catch (Exception e) {
-            LOGGER.log(ERROR, "Leader: Error on sending a batch commit info to VMS: " + e.getMessage());
-            this.releaseLock();
-            this.messageQueue.offerFirst(batchCommitInfo);
+    public final class MultiBufferCompletionHandler implements CompletionHandler<Long, ByteBuffer[]> {
+        @Override
+        public void completed(Long result, ByteBuffer[] srcs) {
+            int offset = -1;
+            for (int i = 0; i < srcs.length; i++) {
+                if(srcs[i].hasRemaining()){
+                    offset = i;
+                    break;
+                }
+            }
+            if (offset != -1) {
+                channel.write(srcs, offset, srcs,this);
+            } else {
+                releaseLock();
+                for (ByteBuffer src : srcs){
+                    returnByteBuffer(src);
+                }
+            }
         }
+        @Override
+        public void failed(Throwable exc, ByteBuffer[] srcs) {
+            LOGGER.log(ERROR, "Error caught on sending multiple buffers: "+exc);
+            releaseLock();
+            for (ByteBuffer src : srcs) {
+                if(src.hasRemaining()){
+                    pendingWritesBuffer.add(src);
+                } else {
+                    returnByteBuffer(src);
+                }
+            }
+        }
+    }
+
+    private final MultiBufferCompletionHandler multiBufferWriteCompletionHandler = new MultiBufferCompletionHandler();
+
+    private void sendBatchOfEventsNonBlocking(){
+        int remaining = this.drained.size();
+        int count = remaining;
+        ByteBuffer writeBuffer = null;
+        while(remaining > 0) {
+            try {
+                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
+                remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer);
+                writeBuffer.flip();
+                LOGGER.log(DEBUG, "Leader: Submitting ["+(count - remaining)+"] events to "+consumerVms.identifier);
+                count = remaining;
+                if(this.tryAcquireLock()){
+                    if(this.pendingWritesBuffer.isEmpty()) {
+                        this.channel.write(writeBuffer, writeBuffer, this.writeCompletionHandler);
+                    } else {
+                        ByteBuffer bb;
+                        ByteBuffer[] srcs = new ByteBuffer[this.pendingWritesBuffer.size() + 1];
+                        srcs[0] = writeBuffer;
+                        int idx = 1;
+                        while ((bb = this.pendingWritesBuffer.poll()) != null) {
+                            srcs[idx] = bb;
+                            idx++;
+                            if(idx == srcs.length) break;
+                        }
+                        this.channel.write(srcs, 0, srcs, this.multiBufferWriteCompletionHandler);
+                    }
+                } else {
+                    this.pendingWritesBuffer.addLast(writeBuffer);
+                }
+            } catch (Exception e) {
+                this.failSafe(e, writeBuffer);
+                // force exit loop
+                remaining = 0;
+            }
+        }
+        this.drained.clear();
     }
 
     /**
      * While a write operation is in progress, it must wait for completion and then submit the next write.
      */
-    private void sendBatchOfEvents(){
+    private void sendBatchOfEventsNonBlockingAndLogging(){
         int remaining = this.drained.size();
         int count = remaining;
         ByteBuffer writeBuffer = null;
         boolean lockAcquired = false;
         while(remaining > 0) {
             try {
-                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
                 remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer);
 
                 LOGGER.log(DEBUG, "Leader: Submitting ["+(count - remaining)+"] events to "+consumerVms.identifier);
                 count = remaining;
                 writeBuffer.flip();
 
-                // blocking way
-//                do {
-//                    this.channel.write(writeBuffer).get();
-//                } while(writeBuffer.hasRemaining());
-//                this.returnByteBuffer(writeBuffer);
-
                 // maximize useful work
                 while(!this.tryAcquireLock()){
                     this.processPendingLogging();
                 }
                 lockAcquired = true;
-                this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.batchWriteCompletionHandler);
+                this.channel.write(writeBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, writeBuffer, this.batchWriteCompletionHandler);
             } catch (Exception e) {
                 this.failSafe(e, writeBuffer);
                 // force exit loop
@@ -651,7 +789,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         public void completed(Integer result, ByteBuffer byteBuffer) {
             if(byteBuffer.hasRemaining()) {
                 LOGGER.log(WARNING, "Leader: Found not all bytes of message (type: "+byteBuffer.get(0)+") were sent to "+consumerVms.identifier+" Trying to send the remaining now...");
-                channel.write(byteBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, byteBuffer, this);
+                channel.write(byteBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, byteBuffer, this);
                 return;
             }
             releaseLock();
@@ -661,8 +799,8 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         @Override
         public void failed(Throwable exc, ByteBuffer byteBuffer) {
             releaseLock();
-            LOGGER.log(ERROR, "Leader: ERROR on writing batch of events to "+consumerVms.identifier+": "+exc);
             returnByteBuffer(byteBuffer);
+            LOGGER.log(ERROR, "Leader: ERROR on writing batch of events to "+consumerVms.identifier+": "+exc);
         }
     }
 
@@ -672,7 +810,7 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
             LOGGER.log(DEBUG, "Leader: Message with size " + result + " has been sent to: " + consumerVms.identifier);
             if(byteBuffer.hasRemaining()) {
                 // keep the lock and send the remaining
-                channel.write(byteBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, byteBuffer, this);
+                channel.write(byteBuffer, options.networkSendTimeout, TimeUnit.MILLISECONDS, byteBuffer, this);
             } else {
                 releaseLock();
                 if(options.logging()){
@@ -712,13 +850,13 @@ public final class VmsWorker extends ProducerWorker implements IVmsWorker {
         boolean lockAcquired = false;
         while(remaining > 0){
             try {
-                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+                writeBuffer = retrieveByteBuffer(this.options.networkBufferSize);
                 remaining = BatchUtils.assembleBatchOfEvents(remaining, this.drained, writeBuffer, CUSTOM_HEADER);
                 writeBuffer.flip();
                 int maxLength = writeBuffer.limit() - CUSTOM_HEADER;
                 writeBuffer.position(CUSTOM_HEADER);
 
-                ByteBuffer compressedBuffer = retrieveByteBuffer(this.options.networkBufferSize());
+                ByteBuffer compressedBuffer = retrieveByteBuffer(this.options.networkBufferSize);
                 compressedBuffer.position(CUSTOM_HEADER);
                 CompressingUtils.compress(writeBuffer, compressedBuffer);
                 compressedBuffer.flip();

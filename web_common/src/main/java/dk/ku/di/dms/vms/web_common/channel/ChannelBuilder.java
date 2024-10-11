@@ -15,13 +15,15 @@ public final class ChannelBuilder {
         sync = networkMode != null && networkMode.equalsIgnoreCase("sync");
     }
 
-    public static IServerChannel buildServer(InetSocketAddress address, int networkThreadPoolSize, String networkThreadPoolType){
-        if(sync) return JdkServerSyncChannel.build(address, networkThreadPoolSize);
-        return JdkServerAsyncChannel.build(address, networkThreadPoolSize, networkThreadPoolType);
+    public static IServerChannel buildServer(InetSocketAddress address, int networkThreadPoolSize, String networkThreadPoolType, int networkBufferSize){
+        if(sync) return JdkServerSyncChannel.build(address, networkThreadPoolSize, networkBufferSize);
+        return JdkServerAsyncChannel.build(address, networkThreadPoolSize, networkThreadPoolType, networkBufferSize);
     }
 
     public static IChannel build(IServerChannel serverAsyncChannel){
-        if(serverAsyncChannel instanceof JdkServerAsyncChannel jdkServerAsyncChannel) return JdkAsyncChannel.build(jdkServerAsyncChannel);
+        if(serverAsyncChannel instanceof JdkServerAsyncChannel jdkServerAsyncChannel) {
+            return JdkAsyncChannel.build(jdkServerAsyncChannel);
+        }
         return JdkSyncChannel.build(((JdkServerSyncChannel) serverAsyncChannel).readWriteExecutor());
     }
 

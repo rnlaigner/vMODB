@@ -1,8 +1,12 @@
 package dk.ku.di.dms.vms.web_common.channel;
 
+import dk.ku.di.dms.vms.web_common.NetworkUtils;
+
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.channels.CompletionHandler;
+import java.nio.channels.NetworkChannel;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.ExecutorService;
@@ -19,15 +23,17 @@ public final class JdkServerSyncChannel implements IServerChannel {
 
     private final ExecutorService readWriteExecutor;
 
-    public static JdkServerSyncChannel build(InetSocketAddress address, int networkThreadPoolSize){
+    public static JdkServerSyncChannel build(InetSocketAddress address, int networkThreadPoolSize, int networkBufferSize){
         try {
-            var serverSocket = ServerSocketChannel.open();
+            ServerSocketChannel serverSocket = ServerSocketChannel.open();
             serverSocket.configureBlocking(true);
+            NetworkUtils.configure(serverSocket, 0);
             serverSocket.bind(address, networkThreadPoolSize);
             return new JdkServerSyncChannel(serverSocket,
                     Executors.newThreadPerTaskExecutor(Thread.ofVirtual()
                                     .inheritInheritableThreadLocals(false)
-                                    .factory()));
+                                    .factory())
+            );
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -48,7 +54,6 @@ public final class JdkServerSyncChannel implements IServerChannel {
                 //socket.setReuseAddress(true); why?
                 socketChannel.configureBlocking(true);
 
-                /*
                 Class<?> socketChannelClass = socketChannel.getClass();
                 Field readLockField = socketChannelClass.getDeclaredField("readLock");
                 readLockField.setAccessible(true);
@@ -57,7 +62,7 @@ public final class JdkServerSyncChannel implements IServerChannel {
                 Field writeLockField = socketChannelClass.getDeclaredField("writeLock");
                 writeLockField.setAccessible(true);
                 writeLockField.set(socketChannel, NO_LOCK);
-*/
+
                 this.readWriteExecutor.execute(()-> handler.completed(
                         JdkSyncChannel.build(socketChannel, this.readWriteExecutor), null)
                 );
@@ -78,6 +83,11 @@ public final class JdkServerSyncChannel implements IServerChannel {
     @Override
     public boolean isOpen() {
         return this.channel.isOpen();
+    }
+
+    @Override
+    public NetworkChannel getNetworkChannel() {
+        return this.channel;
     }
 
 }

@@ -10,10 +10,11 @@ import dk.ku.di.dms.vms.modb.common.schema.network.node.ServerNode;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
 import dk.ku.di.dms.vms.web_common.ProducerWorker;
-import dk.ku.di.dms.vms.web_common.channel.*;
+import dk.ku.di.dms.vms.web_common.channel.ChannelBuilder;
+import dk.ku.di.dms.vms.web_common.channel.IChannel;
+import dk.ku.di.dms.vms.web_common.channel.IServerChannel;
 import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.CompletionHandler;
@@ -220,16 +221,11 @@ public final class ElectionWorker extends ProducerWorker {
     }
 
     private LockConnectionMetadata connectToServer(ServerNode server){
-
         LockConnectionMetadata connectionMetadata = null;
-
         try {
-
             InetSocketAddress address = new InetSocketAddress(server.host, server.port);
             IChannel channel = ChannelBuilder.build(this.serverSocket);
-
-            NetworkUtils.configure(channel, 4096);
-
+            NetworkUtils.configure(channel.getNetworkChannel(), 4096);
             connectionMetadata = new LockConnectionMetadata(
                     server.hashCode(),
                     LockConnectionMetadata.NodeType.SERVER,
@@ -237,44 +233,28 @@ public final class ElectionWorker extends ProducerWorker {
                     MemoryManager.getTemporaryDirectBuffer(128),
                     channel
                     );
-
             channel.connect(address).get();
-
             logger.log(INFO,"Connected to node "+
                     server.host+":"+server.port);
-
             connectionMetadata.writeBuffer.clear();
             connectionMetadata.readBuffer.clear();
-
             connectionMetadataMap.put(server.hashCode(), connectionMetadata);
-
             // setup read handler
             channel.read( connectionMetadata.readBuffer, connectionMetadata, new ReadCompletionHandler());
-
             return connectionMetadata;
-
-        } catch(InterruptedException | IOException | ExecutionException ignored){
-
+        } catch(InterruptedException | ExecutionException ignored){
             logger.log(WARNING, "It was not possible to connect to node "+
                     server.host+":"+server.port);
-
-            if(connectionMetadata != null) {
-                MemoryManager.releaseTemporaryDirectBuffer(connectionMetadata.readBuffer);
-                MemoryManager.releaseTemporaryDirectBuffer(connectionMetadata.writeBuffer);
-
-                if(connectionMetadata.channel.isOpen()){
-                    connectionMetadata.channel.close();
-                    if(connectionMetadataMap.get(connectionMetadata.key) != null ){
-                        connectionMetadataMap.remove( connectionMetadata.key );
-                    }
+            MemoryManager.releaseTemporaryDirectBuffer(connectionMetadata.readBuffer);
+            MemoryManager.releaseTemporaryDirectBuffer(connectionMetadata.writeBuffer);
+            if(connectionMetadata.channel.isOpen()){
+                connectionMetadata.channel.close();
+                if(connectionMetadataMap.get(connectionMetadata.key) != null ){
+                    connectionMetadataMap.remove( connectionMetadata.key );
                 }
-
             }
-
         }
-
         return null;
-
     }
 
     private void resetVoteResponses(){

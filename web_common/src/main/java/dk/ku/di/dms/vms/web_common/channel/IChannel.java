@@ -4,12 +4,13 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.CompletionHandler;
+import java.nio.channels.NetworkChannel;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 public interface IChannel {
 
-    default Future<Integer> write(ByteBuffer src) {
+    default void write(ByteBuffer src) throws Exception {
         throw new RuntimeException("Not supported");
     }
 
@@ -28,8 +29,9 @@ public interface IChannel {
     }
 
     default <A> void write(ByteBuffer[] srcs,
-                                   A attachment,
-                                   CompletionHandler<Long,? super A> handler) {
+                           int offset,
+                           A attachment,
+                           CompletionHandler<Long, ? super A> handler) {
         throw new RuntimeException("Not supported");
     }
 
@@ -54,6 +56,10 @@ public interface IChannel {
     }
 
     default SocketAddress getRemoteAddress(){
+        throw new RuntimeException("Not supported");
+    }
+
+    default NetworkChannel getNetworkChannel() {
         throw new RuntimeException("Not supported");
     }
 

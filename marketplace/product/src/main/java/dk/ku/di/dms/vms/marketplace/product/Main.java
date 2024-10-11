@@ -18,7 +18,7 @@ public final class Main {
 
     public static void main(String[] ignoredArgs) throws Exception {
         Properties properties = ConfigUtils.loadProperties();
-        VmsApplication vms = initVms(properties);
+        initVms(properties);
     }
 
     public static VmsApplication initVms(Properties properties) throws Exception {
@@ -39,7 +39,6 @@ public final class Main {
 
         private final ITransactionManager transactionManager;
         private final IProductRepository repository;
-        private static final IVmsSerdesProxy SERDES = VmsSerdesProxyBuilder.build();
 
         public ProductHttpHandlerJdk2(ITransactionManager transactionManager,
                                         IProductRepository repository){
@@ -50,7 +49,7 @@ public final class Main {
         @Override
         public void post(String uri, String payload) {
             Product product = ProductDbUtils.deserializeProduct(payload);
-            var txCtx = this.transactionManager.beginTransaction(0, 0, 0, false);
+            this.transactionManager.beginTransaction(0, 0, 0, false);
             this.repository.upsert(product);
         }
 
@@ -63,7 +62,7 @@ public final class Main {
                 this.transactionManager.reset();
                 return;
             }
-            var txCtx = this.transactionManager.beginTransaction(0, 0, 0,false);
+            this.transactionManager.beginTransaction(0, 0, 0,false);
             var products = this.repository.getAll();
             for(Product product : products){
                 product.version = "0";
@@ -76,7 +75,7 @@ public final class Main {
             String[] split = uri.split("/");
             int sellerId = Integer.parseInt(split[split.length - 2]);
             int productId = Integer.parseInt(split[split.length - 1]);
-            var txCtx = this.transactionManager.beginTransaction(0, 0, 0,true);
+            this.transactionManager.beginTransaction(0, 0, 0,true);
             Product product = this.repository.lookupByKey(new Product.ProductId(sellerId, productId));
             return product.toString();
         }

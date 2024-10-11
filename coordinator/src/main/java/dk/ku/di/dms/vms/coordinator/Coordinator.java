@@ -4,7 +4,6 @@ import dk.ku.di.dms.vms.coordinator.batch.BatchAlgo;
 import dk.ku.di.dms.vms.coordinator.batch.BatchContext;
 import dk.ku.di.dms.vms.coordinator.election.schema.LeaderRequest;
 import dk.ku.di.dms.vms.coordinator.options.CoordinatorOptions;
-import dk.ku.di.dms.vms.coordinator.options.VmsWorkerOptions;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionInput;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionWorker;
@@ -149,7 +148,9 @@ public final class Coordinator extends ModbHttpServer {
         // coordinator options
         this.options = options;
 
-        this.serverSocket = ChannelBuilder.buildServer(me.asInetSocketAddress(), this.options.getNetworkThreadPoolSize(), "default");
+        this.serverSocket = ChannelBuilder.buildServer(me.asInetSocketAddress(),
+                this.options.getNetworkThreadPoolSize(), "default",
+                this.options.getNetworkBufferSize());
 
         this.starterVMSs = startersVMSs;
         this.vmsMetadataMap = new ConcurrentHashMap<>();
@@ -315,7 +316,7 @@ public final class Coordinator extends ModbHttpServer {
                         try {
                             VmsWorker newWorker = VmsWorker.build(this.me, vmsNode, this.coordinatorQueue,
                                     () -> ChannelBuilder.build(this.serverSocket),
-                                    new VmsWorkerOptions(
+                                    new VmsWorker.VmsWorkerOptions(
                                             true,
                                             this.options.isCompressing(),
                                             this.options.logging(),
@@ -405,7 +406,7 @@ public final class Coordinator extends ModbHttpServer {
                 // the connection with the VMS is fully established
                 VmsWorker vmsWorker = VmsWorker.build(this.me, vmsNode, this.coordinatorQueue,
                         () -> ChannelBuilder.build(this.serverSocket),
-                        new VmsWorkerOptions(
+                        new VmsWorker.VmsWorkerOptions(
                                 active,
                                 this.options.isCompressing(),
                                 this.options.logging(),
@@ -460,7 +461,7 @@ public final class Coordinator extends ModbHttpServer {
         public void completed(IChannel channel, Void void_) {
             ByteBuffer buffer = null;
             try {
-                NetworkUtils.configure(channel, options.getOsBufferSize());
+                NetworkUtils.configure(channel.getNetworkChannel(), options.getOsBufferSize());
 
                 // right now I cannot discern whether it is a VMS or follower. perhaps I can keep alive channels from leader election?
                 buffer = MemoryManager.getTemporaryDirectBuffer(options.getNetworkBufferSize());
@@ -471,7 +472,11 @@ public final class Coordinator extends ModbHttpServer {
                     @Override
                     public void completed(Integer result, ByteBuffer buffer) {
                         // set this thread free. release the thread that belongs to the channel group
-                        processReadAfterAcceptConnection(channel, buffer);
+                        try {
+                            processReadAfterAcceptConnection(channel, buffer);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
                     }
                     @Override
                     public void failed(Throwable exc, ByteBuffer buffer) {
@@ -504,7 +509,7 @@ public final class Coordinator extends ModbHttpServer {
          * We would no longer need to establish connection in case the {@link dk.ku.di.dms.vms.coordinator.election.ElectionWorker}
          * maintains the connections.
          */
-        private void processReadAfterAcceptConnection(IChannel channel, ByteBuffer buffer){
+        private void processReadAfterAcceptConnection(IChannel channel, ByteBuffer buffer) throws Exception {
 
             // message identifier
             byte messageIdentifier = buffer.get(0);
@@ -546,7 +551,7 @@ public final class Coordinator extends ModbHttpServer {
                             MemoryManager.getTemporaryDirectBuffer(options.getNetworkBufferSize()),
                             httpHandler
                     );
-                    try { NetworkUtils.configure(channel, options.getOsBufferSize()); } catch (IOException ignored) { }
+                    NetworkUtils.configure(channel.getNetworkChannel(), options.getOsBufferSize());
                     readCompletionHandler.process(request);
                 } else {
                     LOGGER.log(WARNING,"Leader: A node is trying to connect without a presentation message. \n" + request);

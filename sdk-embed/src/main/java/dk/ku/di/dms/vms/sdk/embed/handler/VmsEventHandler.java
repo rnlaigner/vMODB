@@ -21,7 +21,9 @@ import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.web_common.IHttpHandler;
 import dk.ku.di.dms.vms.web_common.ModbHttpServer;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
-import dk.ku.di.dms.vms.web_common.channel.*;
+import dk.ku.di.dms.vms.web_common.channel.ChannelBuilder;
+import dk.ku.di.dms.vms.web_common.channel.IChannel;
+import dk.ku.di.dms.vms.web_common.channel.IServerChannel;
 import dk.ku.di.dms.vms.web_common.meta.ConnectionMetadata;
 
 import java.io.IOException;
@@ -168,7 +170,11 @@ public final class VmsEventHandler extends ModbHttpServer {
                             IVmsSerdesProxy serdesProxy) throws IOException {
         super();
 
-        this.serverSocket = ChannelBuilder.buildServer(me.asInetSocketAddress(), options.networkThreadPoolSize(), options.networkThreadPoolType());
+        this.serverSocket = ChannelBuilder.buildServer(
+                me.asInetSocketAddress(),
+                options.networkThreadPoolSize,
+                options.networkThreadPoolType,
+                options.networkBufferSize);
 
         this.vmsInternalChannels = vmsInternalChannels;
         this.me = me;
@@ -245,9 +251,9 @@ public final class VmsEventHandler extends ModbHttpServer {
         }
         // if terminal, must send batch complete
         if (thisBatch.terminal) {
-            LOGGER.log(INFO, this.me.identifier + ": Requesting leader worker to send batch " + thisBatch.batch + " complete");
+            LOGGER.log(WARNING, this.me.identifier + ": Requesting leader worker to send batch " + thisBatch.batch + " complete");
             // must be queued in case leader is off and comes back online
-            this.leaderWorker.queueMessage(BatchComplete.of(thisBatch.batch, this.me.identifier));
+            this.leaderWorker.sendMessage(BatchComplete.of(thisBatch.batch, this.me.identifier));
         }
     }
 
@@ -295,7 +301,7 @@ public final class VmsEventHandler extends ModbHttpServer {
         this.batchContextMap.get(batch).setStatus(BatchContext.BATCH_COMMITTED);
         // it may not be necessary. the leader has already moved on at this point
         if(INFORM_BATCH_ACK) {
-            this.leaderWorker.queueMessage(BatchCommitAck.of(batch, this.me.identifier));
+            this.leaderWorker.sendMessage(BatchCommitAck.of(batch, this.me.identifier));
         }
     }
 
@@ -530,7 +536,7 @@ public final class VmsEventHandler extends ModbHttpServer {
     private ByteBuffer decompressBatchOfEvents(ByteBuffer readBuffer, int startPos, int bufferSize) {
         int maxLength = readBuffer.getInt();
 
-        ByteBuffer decompressedBuffer = MemoryManager.getTemporaryDirectBuffer(this.options.networkBufferSize());
+        ByteBuffer decompressedBuffer = MemoryManager.getTemporaryDirectBuffer(this.options.networkBufferSize);
         decompressedBuffer.limit(maxLength);
         decompressedBuffer.position(0);
 
@@ -581,7 +587,7 @@ public final class VmsEventHandler extends ModbHttpServer {
                             this.buffer,
                             MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize),
                             httpHandler);
-                    try { NetworkUtils.configure(this.channel, options.osBufferSize()); } catch (IOException ignored) { }
+                    NetworkUtils.configure(this.channel.getNetworkChannel(), options.osBufferSize());
                     readCompletionHandler.process(request);
                 } else {
                     LOGGER.log(WARNING, me.identifier + ": A node is trying to connect without a presentation message.\n"+request);
@@ -677,8 +683,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             LOGGER.log(DEBUG,me.identifier+": An unknown host has started a connection attempt.");
             final ByteBuffer buffer = MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize);
             try {
-                NetworkUtils.configure(channel, options.osBufferSize);
-                // read presentation message. if vms, receive metadata, if follower, nothing necessary
+                NetworkUtils.configure(channel.getNetworkChannel(), options.osBufferSize);
                 channel.read(buffer, null, new UnknownNodeReadCompletionHandler(channel, buffer));
             } catch(Exception e){
                 LOGGER.log(ERROR,me.identifier+": Accept handler caught an exception:\n"+e);
@@ -744,9 +749,7 @@ public final class VmsEventHandler extends ModbHttpServer {
                 state = State.PRESENTATION_SENT;
                 LOGGER.log(INFO,me.identifier+": Message sent to Leader successfully = "+state);
                 // set up leader worker
-                leaderWorker = new LeaderWorker(me, leader,
-                        leaderConnectionMetadata.channel,
-                        MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize));
+                leaderWorker = new LeaderWorker(me, leader, leaderConnectionMetadata.channel);
                 LOGGER.log(INFO,me.identifier+": Leader worker set up");
                 buffer.clear();
                 channel.read(buffer, 0, new LeaderReadCompletionHandler(leaderConnectionMetadata, buffer) );
@@ -757,7 +760,6 @@ public final class VmsEventHandler extends ModbHttpServer {
                 LOGGER.log(INFO,me.identifier+": Failed to send presentation to Leader");
                 buffer.clear();
                 if(!channel.isOpen()) {
-                    leaderWorker.stop();
                     leader.off();
                 }
                 // else what to do try again? no, let the new leader connect
@@ -800,7 +802,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             }
             this.buffer.flip();
             this.state = State.PRESENTATION_PROCESSED;
-            LOGGER.log(INFO,me.identifier+": Message successfully received from the Leader  = "+state);
+            LOGGER.log(INFO,me.identifier+": Message successfully received from the Leader = "+state);
             this.channel.write( this.buffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, null, this.writeCompletionHandler );
         }
     }
@@ -1039,7 +1041,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             if(trackingBatchMap.containsKey(batchCommitInfo.batch())
                     && trackingBatchMap.get(batchCommitInfo.batch()).numberTIDsExecuted == batchCommitInfo.numberOfTIDsBatch()){
                 LOGGER.log(INFO,me.identifier+": Requesting leader worker to send batch ("+batchCommitInfo.batch()+") complete (LATE)");
-                leaderWorker.queueMessage(BatchComplete.of(batchCommitInfo.batch(), me.identifier));
+                leaderWorker.sendMessage(BatchComplete.of(batchCommitInfo.batch(), me.identifier));
             }
         }
 
