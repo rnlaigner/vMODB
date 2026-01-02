@@ -90,7 +90,6 @@ public final class DataLoadUtils {
 
         private static final BiFunction<String, String, MinimalHttpClient> HTTP_CLIENT_SUPPLIER = (table, host) -> {
             String vms = TPCcConstants.TABLE_TO_VMS_MAP.get(table);
-
             if(vms != null){
                 var clientPool = CONNECTION_POOL.computeIfAbsent(vms, (ignored)-> new ConcurrentLinkedDeque<>());
                 if (!clientPool.isEmpty()) {
@@ -100,7 +99,6 @@ public final class DataLoadUtils {
             } else {
                 LOGGER.log(ERROR, table+" not found! Set it correctly in TPCcConstants.TABLE_TO_VMS_MAP");
             }
-
             try {
                 int port = TPCcConstants.VMS_TO_PORT_MAP.get(vms);
                 return new MinimalHttpClient(host, port);
@@ -126,7 +124,7 @@ public final class DataLoadUtils {
         @Override
         public void run() {
             try {
-                for(var table : this.tableInputMap.entrySet()) {
+                for(Map.Entry<String, QueueTableIterator> table : this.tableInputMap.entrySet()) {
                     String actualTable = table.getKey().contains("stock") ? "stock" : table.getKey();
                     actualTable = table.getKey().contains("customer") ? "customer" : actualTable;
                     MinimalHttpClient client = HTTP_CLIENT_SUPPLIER.apply(

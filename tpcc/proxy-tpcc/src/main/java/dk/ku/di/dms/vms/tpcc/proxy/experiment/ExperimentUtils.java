@@ -54,8 +54,8 @@ public final class ExperimentUtils {
         WorkloadUtils.WorkloadStats workloadStats = WorkloadUtils.submitWorkload(txRatio, input, func, newRuntime);
 
         // avoid submitting after experiment termination
-        coordinator.clearTransactionInputs();
-        LOGGER.log(INFO,"Transaction input queue(s) cleared.");
+        // coordinator.clearTransactionInputs();
+        // LOGGER.log(INFO,"Transaction input queue(s) cleared.");
 
         if(BATCH_TO_FINISHED_TS_MAP.isEmpty()) {
             LOGGER.log(WARNING, "No batch of transactions completed!");

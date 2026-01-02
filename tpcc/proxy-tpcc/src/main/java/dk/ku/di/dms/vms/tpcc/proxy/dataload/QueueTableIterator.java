@@ -1,5 +1,6 @@
 package dk.ku.di.dms.vms.tpcc.proxy.dataload;
 
+import dk.ku.di.dms.vms.modb.api.interfaces.IEntity;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
@@ -23,7 +24,7 @@ public final class QueueTableIterator {
         this.lock.lock();
         if(this.iterator.hasNext()){
             Object[] record = this.index.record(this.iterator);
-            var entity = this.entityHandler.parseObjectIntoEntity(record);
+            IEntity entity = this.entityHandler.parseObjectIntoEntity(record);
             this.iterator.next();
             this.lock.unlock();
             return entity.toString();

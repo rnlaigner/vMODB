@@ -126,7 +126,6 @@ public final class MinimalHttpClient implements Closeable {
             this.readBuffer.flip();
             byte[] bytes = new byte[this.readBuffer.remaining()];
             this.readBuffer.get(bytes);
-            //bodyBuilder.append(new String(bytes, StandardCharsets.UTF_8));
             remaining -= bytes.length;
             this.readBuffer.clear();
         }

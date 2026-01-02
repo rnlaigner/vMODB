@@ -1,7 +1,6 @@
 package dk.ku.di.dms.vms.sdk.embed.client;
 
 import dk.ku.di.dms.vms.modb.api.annotations.Microservice;
-import dk.ku.di.dms.vms.modb.common.runnable.StoppableRunnable;
 import dk.ku.di.dms.vms.modb.common.schema.VmsDataModel;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
@@ -42,7 +41,7 @@ public final class VmsApplication {
 
     private final ITransactionManager transactionManager;
 
-    private final StoppableRunnable transactionScheduler;
+    private final VmsTransactionScheduler transactionScheduler;
 
     private final IVmsInternalChannels internalChannels;
 
@@ -51,7 +50,7 @@ public final class VmsApplication {
                            Map<String, Table> catalog,
                            VmsEventHandler eventHandler,
                            ITransactionManager transactionManager,
-                           StoppableRunnable transactionScheduler,
+                           VmsTransactionScheduler transactionScheduler,
                            IVmsInternalChannels internalChannels) {
         this.name = name;
         this.vmsRuntimeMetadata = vmsRuntimeMetadata;
@@ -71,7 +70,6 @@ public final class VmsApplication {
         String packageName = ConfigUtils.getCallerPackage();
 
         if(packageName == null) throw new IllegalStateException("Cannot identify package.");
-        // else System.out.println( "PACKAGE: "+ packageName );
 
         Reflections reflections = VmsMetadataLoader.configureReflections(options.packages());
 
@@ -134,7 +132,7 @@ public final class VmsApplication {
 
         VmsEventHandler eventHandler = VmsEventHandler.build(vmsIdentifier, transactionManager, vmsInternalPubSubService, vmsMetadata, options, httpHandler, serdes);
 
-        StoppableRunnable transactionScheduler = VmsTransactionScheduler.build(
+        VmsTransactionScheduler transactionScheduler = VmsTransactionScheduler.build(
                 vmsName,
                 vmsInternalPubSubService.transactionInputQueue(),
                 vmsMetadata.queueToVmsTransactionMap(),
@@ -142,7 +140,7 @@ public final class VmsApplication {
                 eventHandler::processOutputEvent,
                 options.vmsThreadPoolSize());
 
-        return new VmsApplication( vmsName, vmsMetadata, catalog, eventHandler, transactionManager, transactionScheduler, vmsInternalPubSubService );
+        return new VmsApplication(vmsName, vmsMetadata, catalog, eventHandler, transactionManager, transactionScheduler, vmsInternalPubSubService);
     }
 
     /**
@@ -173,7 +171,7 @@ public final class VmsApplication {
     }
 
     public long lastTidFinished() {
-        return ((VmsTransactionScheduler)this.transactionScheduler).lastTidFinished();
+        return this.transactionScheduler.lastTidFinished();
     }
 
     @SuppressWarnings("unchecked")

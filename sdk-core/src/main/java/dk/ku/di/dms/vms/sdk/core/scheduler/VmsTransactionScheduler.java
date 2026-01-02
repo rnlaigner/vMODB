@@ -10,10 +10,12 @@ import dk.ku.di.dms.vms.sdk.core.operational.OutboundEventResult;
 import dk.ku.di.dms.vms.sdk.core.operational.VmsTransactionTaskBuilder;
 import dk.ku.di.dms.vms.sdk.core.operational.VmsTransactionTaskBuilder.VmsTransactionTask;
 import dk.ku.di.dms.vms.sdk.core.scheduler.complex.VmsComplexTransactionScheduler;
+import jdk.internal.misc.Unsafe;
+import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
+import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
@@ -32,7 +34,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private final Map<Long, VmsTransactionTask> transactionTaskMap;
 
     // map the last tid
-    private final Map<Long, Long> lastTidToTidMap;
+    private final MutableLongLongMap lastTidToTidMap;
 
     /**
      * Thread pool for partitioned and parallel tasks
@@ -45,11 +47,23 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private volatile boolean singleThreadTaskRunning = false;
 
+    private long nextTidToDelete = 0;
+
     // the callback atomically updates this variable
     // used to track progress in the presence of parallel and partitioned tasks
-    private final AtomicLong lastTidFinished;
+    @SuppressWarnings("unused")
+    private volatile long lastTidFinished;
+    @SuppressWarnings("unused")
+    private volatile long lastTidSafeToDelete;
 
-    private final AtomicLong lastTidSafeToDelete;
+    private static final Unsafe U;
+    private static final long L_TID_F_OFFSET;
+    private static final long L_TID_S_OFFSET;
+    static {
+        U = Unsafe.getUnsafe();
+        L_TID_F_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "lastTidFinished");
+        L_TID_S_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "lastTidSafeToDelete");
+    }
 
     private final Set<Object> partitionKeyTrackingMap = ConcurrentHashMap.newKeySet();
 
@@ -97,14 +111,11 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.transactionInputQueue = transactionInputQueue;
 
         // operational (internal control of transactions and tasks)
-        this.transactionTaskMap = new ConcurrentHashMap<>(1000000);
+        this.transactionTaskMap = new ConcurrentHashMap<>(1024*100);
         SchedulerCallback callback = new SchedulerCallback(eventHandler);
         this.vmsTransactionTaskBuilder = new VmsTransactionTaskBuilder(transactionalHandler, callback);
         this.transactionTaskMap.put( 0L, this.vmsTransactionTaskBuilder.buildFinished(0) );
-        this.lastTidToTidMap = new HashMap<>(1000000);
-
-        this.lastTidFinished = new AtomicLong(0);
-        this.lastTidSafeToDelete = new AtomicLong(-1);
+        this.lastTidToTidMap = new LongLongHashMap(1024*100);
     }
 
     /**
@@ -187,12 +198,18 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
      * This method makes sure that TIDs always increase so the next single thread tasks can be executed
      */
     private void updateLastFinishedTid(final long tid){
-        if(this.lastTidFinished.updateAndGet(currTid -> Math.max(currTid, tid)) == tid) {
+        long v;
+        do {
+            v =  this.lastTidFinished();
+        } while (v < tid && !U.weakCompareAndSetLong(this, L_TID_F_OFFSET, v, tid));
+
+        if(v == tid) {
             return;
         }
         // it is not the highest tid, so it can update
-        // TODO re-enable when cleanup is set up for transaction scheduler
-        // this.lastTidSafeToDelete.updateAndGet(currTid -> Math.max(currTid, tid));
+        do {
+            v =  this.lastTidSafeToDelete();
+        } while (v < tid && !U.weakCompareAndSetLong(this, L_TID_S_OFFSET, v, tid));
     }
 
     /**
@@ -201,14 +218,14 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private boolean mustWaitForInputEvent = false;
 
     private void executeReadyTasks() {
-        Long nextTid = this.lastTidToTidMap.get(this.lastTidFinished.get());
+        long nextTid = this.lastTidToTidMap.get(this.lastTidFinished());
         // if nextTid == null then the scheduler must block until a new event arrive to progress
-        if(nextTid == null) {
+        if(nextTid == 0) {
             // keep scheduler sleeping since next tid is unknown
             this.mustWaitForInputEvent = true;
             return;
         }
-        VmsTransactionTask task = this.transactionTaskMap.get( nextTid );
+        VmsTransactionTask task = this.transactionTaskMap.get(nextTid);
         while(true) {
             if(task.isScheduled()){
                 return;
@@ -300,14 +317,11 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private final List<InboundEvent> drained = new ArrayList<>(1024*10);
 
-    private final List<VmsTransactionTask> pendingDeletion = new ArrayList<>();
-
     private void checkForNewEvents() throws InterruptedException {
         InboundEvent inboundEvent;
         if(this.mustWaitForInputEvent) {
             // before blocking, cleanup tasks from internal maps
-            // FIXME find a way to be called during reset!!!!
-            // this.cleanupTidMappings();
+            this.cleanupTidMappings();
             inboundEvent = this.transactionInputQueue.take();
             // disable block
             this.mustWaitForInputEvent = false;
@@ -324,27 +338,40 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.drained.clear();
     }
 
+    private final List<VmsTransactionTask> pendingDeletion = new ArrayList<>();
+
+    /**
+     * The pending deletion list is needed due to possible "holes" coming from concurrent tasks
+     */
     private void cleanupTidMappings() {
-        // LOGGER.log(INFO, "Deleting deprecated tasks");
-        long tidToDelete = this.lastTidSafeToDelete.get();
-        while(this.transactionTaskMap.containsKey(tidToDelete)){
-            VmsTransactionTask task = this.transactionTaskMap.get(tidToDelete);
+        // LOGGER.log(DEBUG, this.vmsIdentifier+": Scheduler cleanup procedure started.");
+        int count = 0;
+        final long lastTidSafeToDelete = this.lastTidSafeToDelete();
+        VmsTransactionTask task = this.transactionTaskMap.get(this.nextTidToDelete);
+        while(this.transactionInputQueue.isEmpty() && task != null && this.nextTidToDelete < lastTidSafeToDelete){
             if(!task.isFinished()) {
                 this.pendingDeletion.add(task);
                 break; // to avoid null pointer when it finishes
             }
-            this.lastTidToTidMap.remove(task.lastTid());
-            this.transactionTaskMap.remove(tidToDelete);
-            tidToDelete = task.lastTid();
+            this.transactionTaskMap.remove(this.nextTidToDelete);
+            this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
+            count++;
+            task = this.transactionTaskMap.get(this.nextTidToDelete);
         }
-        for (Iterator<VmsTransactionTask> it = this.pendingDeletion.iterator(); it.hasNext();) {
-            VmsTransactionTask task = it.next();
-            if(!task.isFinished()) {
-                break;
+        if(!this.pendingDeletion.isEmpty()) {
+            for (Iterator<VmsTransactionTask> it = this.pendingDeletion.iterator(); it.hasNext(); ) {
+                task = it.next();
+                if (!task.isFinished()) {
+                    break;
+                }
+                this.lastTidToTidMap.remove(task.lastTid());
+                this.transactionTaskMap.remove(task.tid());
+                count++;
+                it.remove();
             }
-            this.lastTidToTidMap.remove(task.lastTid());
-            this.transactionTaskMap.remove(task.tid());
-            it.remove();
+        }
+        if(count > 0) {
+            LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduler cleanup procedure finished with " + count + " task entries removed.");
         }
     }
 
@@ -357,22 +384,23 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 inboundEvent.tid(),
                 inboundEvent.lastTid(),
                 inboundEvent.batch(),
-                this.transactionMetadataMap
-                        .get(inboundEvent.event())
-                        .signatures.getFirst().object(),
+                this.transactionMetadataMap.get(inboundEvent.event()).signatures.getFirst().object(),
                 inboundEvent.input()
         ));
         // mark the last tid, so we can get the next to execute when appropriate
         if(this.lastTidToTidMap.containsKey(inboundEvent.lastTid())){
-            LOGGER.log(ERROR, "Inbound event is attempting to overwrite precedence of TIDs. \nOriginal last TID:" +
-                    this.lastTidToTidMap.get(inboundEvent.lastTid()) + "\n Corrupt event:" + inboundEvent);
+            LOGGER.log(ERROR, this.vmsIdentifier+": Inbound event is attempting to overwrite precedence of TIDs. \nOriginal last TID:" + this.lastTidToTidMap.get(inboundEvent.lastTid()) + "\n Corrupt event:" + inboundEvent);
         } else {
             this.lastTidToTidMap.put(inboundEvent.lastTid(), inboundEvent.tid());
         }
     }
 
     public long lastTidFinished(){
-        return this.lastTidFinished.get();
+        return U.getLongVolatile(this, L_TID_F_OFFSET);
+    }
+
+    private long lastTidSafeToDelete(){
+        return U.getLongVolatile(this, L_TID_S_OFFSET);
     }
 
 }

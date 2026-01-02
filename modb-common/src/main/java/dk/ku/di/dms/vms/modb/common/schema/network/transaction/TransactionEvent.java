@@ -63,8 +63,8 @@ public final class TransactionEvent {
         @Override
         public String toString() {
             return "{"
-                    + "\"tid\":\"" + tid + "\""
-                    + ",\"batch\":\"" + batch + "\""
+                    + "\"tid\":" + tid
+                    + ",\"batch\":" + batch
                     + "}";
         }
     }
@@ -75,11 +75,11 @@ public final class TransactionEvent {
         @Override
         public String toString() {
             return "{"
-                    + "\"batch\":\"" + batch + "\""
-                    + ",\"tid\":\"" + tid + "\""
+                    + "\"batch\":" + batch
+                    + ",\"tid\":" + tid
                     + ",\"event\":\"" + event + "\""
-                    + ",\"payload\":\"" + payload + "\""
-                    + ",\"precedenceMap\":\"" + precedenceMap + "\""
+                    + ",\"payload\":" + payload
+                    + ",\"precedenceMap\":" + precedenceMap
                     + "}";
         }
     }

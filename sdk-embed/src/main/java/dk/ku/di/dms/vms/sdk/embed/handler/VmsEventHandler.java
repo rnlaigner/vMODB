@@ -118,8 +118,7 @@ public final class VmsEventHandler extends ModbHttpServer {
     }
 
     /**
-     * It is necessary a way to store the tid received to a
-     * corresponding dependence map.
+     * It is necessary a way to store the tid received to a corresponding dependence map.
      */
     private final Map<Long, Map<String, Long>> tidToPrecedenceMap;
 
@@ -481,7 +480,7 @@ public final class VmsEventHandler extends ModbHttpServer {
 
         private void processBatchOfEvents(ByteBuffer readBuffer) {
             List<InboundEvent> inboundEvents = LIST_BUFFER.poll();
-            if(inboundEvents == null) inboundEvents = new ArrayList<>(1024);
+            if(inboundEvents == null) inboundEvents = new ArrayList<>(1024*10);
             try {
                 int count = readBuffer.getInt();
                 LOGGER.log(DEBUG,me.identifier + ": Batch of [" + count + "] events received from " + node.identifier);
@@ -799,8 +798,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             throw new IllegalStateException("Precedent tid of "+payload.tid()+" is unknown.");
         }
         this.tidToPrecedenceMap.put(payload.tid(), precedenceMap);
-        return new InboundEvent( payload.tid(), precedenceMap.get(this.me.identifier),
-                payload.batch(), payload.event(), clazz, input );
+        return new InboundEvent( payload.tid(), precedenceMap.get(this.me.identifier), payload.batch(), payload.event(), clazz, input );
     }
 
     private static final ConcurrentLinkedDeque<List<InboundEvent>> LIST_BUFFER = new ConcurrentLinkedDeque<>();

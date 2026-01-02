@@ -159,7 +159,8 @@ public final class WorkloadUtils {
 
                 try {
                     if(!input.get(tx).hasNext()){
-                        LOGGER.log(WARNING,"Not enough transaction inputs for: "+tx+"\nClosing submission loop earlier...");
+                        LOGGER.log(WARNING,"Not enough transaction inputs for: "+tx+". Closing submission loop earlier...");
+                        Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
                         break;
                     }
                     long batchId = func.apply(input.get(tx).next());
@@ -168,6 +169,11 @@ public final class WorkloadUtils {
                     }
                     startTsMap.get(batchId).add(currentTs);
                     histogram.computeIfPresent(tx, (_, v)-> v+1);
+//                    if(histogram.computeIfPresent(tx, (_, v)-> v+1) == 200000) {
+//                        // FIXME the first problem before understanding why performance halt on 200K transactions is why the coordinator does not form 10K in the last batch (i.e.,batch 19)
+//                        Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
+//                        break;
+//                    }
                 } catch (Exception e) {
                     LOGGER.log(ERROR,"Exception in Thread ID: " + (e.getMessage() == null ? "No message" : e.getMessage()));
                     throw new RuntimeException(e);
@@ -177,21 +183,11 @@ public final class WorkloadUtils {
             } while (currentTs - initTs < runTime);
             LOGGER.log(INFO,"Worker run (Thread ID) " + threadId + " finished");
 
-            boolean sent = false;
             StringBuilder output = new StringBuilder("Worker run (Thread ID) " + threadId + " histogram:\n");
             for(var e : histogram.entrySet()){
-                if(e.getValue() > 0) sent = true;
                 output.append(e.getKey()).append(": ").append(e.getValue()).append("\n");
             }
             System.out.println(output);
-
-            // wait for experiment finish
-            if(sent){
-                try {
-                    LOGGER.log(INFO,"Worker run (Thread ID) " + threadId + " will wait for the end of the experiment duration.");
-                    Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
-                } catch (InterruptedException _) { }
-            }
 
             allThreadsAreDone.countDown();
             return startTsMap;

@@ -6,12 +6,12 @@ public record InboundEvent (
     @Override
     public String toString() {
         return "{"
-                + "\"batch\":\"" + batch + "\""
-                + ",\"tid\":\"" + tid + "\""
-                + ",\"lastTid\":\"" + lastTid + "\""
-                + ",\"event\":\"" + event + "\""
-                + ",\"clazz\":" + clazz
-                + ",\"input\":" + input
+                + "\"batch\":" + this.batch
+                + ",\"tid\":" + this.tid
+                + ",\"lastTid\":" + this.lastTid
+                + ",\"event\":\"" + this.event + "\""
+                + ",\"clazz\":" + this.clazz
+                + ",\"input\":" + this.input
                 + "}";
     }
 }

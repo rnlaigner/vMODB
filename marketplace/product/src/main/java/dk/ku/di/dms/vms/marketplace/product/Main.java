@@ -7,6 +7,7 @@ import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 
+import java.util.List;
 import java.util.Properties;
 
 public final class Main {
@@ -56,7 +57,7 @@ public final class Main {
                 return;
             }
             this.transactionManager.beginTransaction(0, 0, 0,false);
-            var products = this.repository.getAll();
+            List<Product> products = this.repository.getAll();
             for(Product product : products){
                 product.version = "0";
                 this.repository.upsert(product);

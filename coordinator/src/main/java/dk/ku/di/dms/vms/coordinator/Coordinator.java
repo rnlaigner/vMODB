@@ -251,7 +251,7 @@ public final class Coordinator extends ModbHttpServer {
         }
 
         if(options.getNumTransactionWorkers() == 1){
-            var inputQueue = this.transactionInputDeques.getFirst();
+            Deque<TransactionInput> inputQueue = this.transactionInputDeques.getFirst();
             this.transactionInputConsumer = inputQueue::offerLast;
         } else {
             transactionInputConsumer = transactionInput -> {
@@ -309,6 +309,9 @@ public final class Coordinator extends ModbHttpServer {
                 while ((message = this.coordinatorQueue.poll(250, TimeUnit.MILLISECONDS)) != null) {
                     this.processVmsMessage(message);
                 }
+                // left for running local tests
+                // message = this.coordinatorQueue.take();
+                // this.processVmsMessage(message);
             } while (this.isRunning());
         } catch (Exception e){
             e.printStackTrace(System.out);
@@ -736,7 +739,7 @@ public final class Coordinator extends ModbHttpServer {
                 // not sure if this is correct since we have to wait for all VMSs to respond...
                 // only when all vms respond with BATCH_COMMIT_ACK we move this ...
                 //        this.batchOffsetPendingCommit = batchContext.batchOffset;
-                    LOGGER.log(INFO, "Leader: Batch (" + msg.batch() + ") commit ACK received from " + msg.vms());
+                    LOGGER.log(DEBUG, "Leader: Batch (" + msg.batch() + ") commit ACK received from " + msg.vms());
             default ->
                     LOGGER.log(WARNING, "Leader: Received an unidentified message type: " + message.getClass().getName());
         }
@@ -770,23 +773,19 @@ public final class Coordinator extends ModbHttpServer {
     }
 
     private void updateBatchOffsetPendingCommit(BatchContext batchContext) {
-        if(batchContext.batchOffset == this.batchOffsetPendingCommit){
+        final long batchOffsetPendingCommit_ = this.batchOffsetPendingCommit;
+        if(batchContext.batchOffset == batchOffsetPendingCommit_){
             this.sendCommitCommandToVMSs(batchContext);
-            this.batchOffsetPendingCommit = batchContext.batchOffset + 1;
+            this.batchOffsetPendingCommit = batchOffsetPendingCommit_ + 1;
             // making this implementation order-independent, so not assuming batch commit are received in order
-            BatchContext nextBatchContext = this.batchContextMap.get( this.batchOffsetPendingCommit );
+            BatchContext nextBatchContext = this.batchContextMap.get(batchOffsetPendingCommit_ + 1);
             if(nextBatchContext != null && nextBatchContext.missingVotes.isEmpty()){
                 this.updateBatchOffsetPendingCommit(nextBatchContext);
             }
             return;
         }
         // probably some batch complete message got lost or received out of order
-        LOGGER.log(WARNING,"Leader: Batch ("+ batchContext.batchOffset +
-                ") is not the pending one.\nStill has to wait for the pending batch ("+
-                this.batchOffsetPendingCommit+") to finish before progressing. Nodes that still need to vote:\n"+
-                (this.batchContextMap.containsKey( this.batchOffsetPendingCommit ) ?
-                        this.batchContextMap.get( this.batchOffsetPendingCommit )
-                                .missingVotes : Set.of()));
+        LOGGER.log(WARNING,"Leader: Batch ("+ batchContext.batchOffset + ") is not the pending one. Still has to wait for the pending batch ("+ batchOffsetPendingCommit_+") to finish before progressing. Nodes that still need to vote:\n"+ (this.batchContextMap.containsKey( batchOffsetPendingCommit_ ) ? this.batchContextMap.get( batchOffsetPendingCommit_ ).missingVotes : Set.of()));
     }
 
     // seal batch and send batch complete to all terminals...

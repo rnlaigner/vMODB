@@ -131,9 +131,8 @@ public final class TransactionWorker extends StoppableRunnable {
             end = System.currentTimeMillis() + this.batchWindow;
             do {
                 // drain transaction inputs
-                while ((data = this.inputQueue.poll()) != null &&
-                        // avoid calling currentTimeMillis for every item
-                        this.tid <= lastTidBatch) {
+                // inner while to avoid calling currentTimeMillis for every item
+                while (this.tid <= lastTidBatch && (data = this.inputQueue.poll()) != null) {
                     // process precedence from previous worker in the ring
                     // we could do it in advance current batch, but can lead to higher wait in vms
                     this.processTransactionInput(data);
