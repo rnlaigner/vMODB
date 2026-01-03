@@ -99,6 +99,12 @@ local.properties
 
 .DS_Store
 
+# Troubleshooting
+
+*.jfr
+
+# Project-generated files
+
 .data
 */.data
 .txt

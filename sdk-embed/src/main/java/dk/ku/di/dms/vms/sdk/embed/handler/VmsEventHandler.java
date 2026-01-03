@@ -232,8 +232,7 @@ public final class VmsEventHandler extends ModbHttpServer {
     }
 
     /**
-     * Many outputs from the same transaction may arrive here concurrently,
-     * but can only send the batch commit once
+     * Many outputs from the same transaction may arrive here concurrently, but can only send the batch commit once
      */
     private void updateBatchStats(OutboundEventResult outputEvent) {
         BatchMetadata batchMetadata = this.updateBatchMetadataAtomically(outputEvent);
@@ -253,7 +252,11 @@ public final class VmsEventHandler extends ModbHttpServer {
         }
         if(this.options.checkpointing()){
             LOGGER.log(INFO, this.me.identifier + ": Requesting checkpoint for batch " + thisBatch.batch);
+            thisBatch.setStatus(BatchContext.CHECKPOINTING);
             submitBackgroundTask(()->checkpoint(thisBatch.batch, batchMetadata.maxTidExecuted));
+        } else {
+            this.batchContextMap.remove(thisBatch.batch);
+            this.trackingBatchMap.remove(thisBatch.batch);
         }
     }
 
@@ -298,7 +301,8 @@ public final class VmsEventHandler extends ModbHttpServer {
         //long initTs = System.currentTimeMillis();
         this.transactionManager.checkpoint(maxTid);
         //LOGGER.log(WARNING, me.identifier+": Checkpointing latency is "+(System.currentTimeMillis()-initTs));
-        this.batchContextMap.get(batch).setStatus(BatchContext.BATCH_COMMITTED);
+        this.batchContextMap.remove(batch);
+        this.trackingBatchMap.remove(batch);
         // it may not be necessary. the leader has already moved on at this point
         if(INFORM_BATCH_ACK) {
             this.leaderWorker.queueMessage(BatchCommitAck.of(batch, this.me.identifier));
@@ -1016,8 +1020,7 @@ public final class VmsEventHandler extends ModbHttpServer {
         }
 
         /**
-         * Context of execution of this method:
-         * This is not a terminal node in this batch
+         * Context of execution of this method: This is not a terminal node in this batch
          */
         private void processNewBatchCommand(BatchCommitCommand.Payload batchCommitCommand){
             BatchContext batchContext = BatchContext.build(batchCommitCommand);
@@ -1035,7 +1038,11 @@ public final class VmsEventHandler extends ModbHttpServer {
             batchContext.setStatus(BatchContext.BATCH_COMPLETED);
             if(options.checkpointing()){
                 LOGGER.log(INFO, me.identifier + ": Requesting checkpoint for batch " + batchCommitCommand.batch());
+                batchContext.setStatus(BatchContext.CHECKPOINTING);
                 submitBackgroundTask(()->checkpoint(batchCommitCommand.batch(), batchMetadata.maxTidExecuted));
+            } else {
+                batchContextMap.remove(batchCommitCommand.batch());
+                trackingBatchMap.remove(batchCommitCommand.batch());
             }
         }
 

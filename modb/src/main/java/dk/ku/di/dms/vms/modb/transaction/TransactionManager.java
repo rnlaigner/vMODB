@@ -493,8 +493,8 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
      * it already tracks individual operations on keys through its own cache.
      */
     @Override
-    public void commit(){
-        TransactionContext txCtx = this.txCtxMap.get(Thread.currentThread().threadId());
+    public void commit() {
+        TransactionContext txCtx = this.txCtxMap.remove(Thread.currentThread().threadId());
         for(IMultiVersionIndex index : txCtx.indexes){
             index.installWrites(txCtx);
         }
