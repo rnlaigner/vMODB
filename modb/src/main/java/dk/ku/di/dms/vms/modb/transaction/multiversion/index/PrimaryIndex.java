@@ -506,7 +506,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             while(this.idx < this.keys.length){
                 OperationSetOfKey operation = updatesPerKeyMap.get(this.keys[this.idx]);
                 if(operation == null) {
-                    var record = underlyingIndex().record(this.keys[this.idx]);
+                    Object[] record = rawIndex.record(this.keys[this.idx]);
                     if(record != null){
                         this.next = record;
                         this.idx++;

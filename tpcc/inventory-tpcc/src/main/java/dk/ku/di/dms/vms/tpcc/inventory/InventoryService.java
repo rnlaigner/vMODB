@@ -26,7 +26,7 @@ public final class InventoryService {
     @Inbound(values = "new-order-ware-out")
     @Outbound("new-order-inv-out")
     @Transactional(type = RW)
-    @PartitionBy(clazz = NewOrderWareOut.class, method = "getId")
+    @PartitionBy(clazz = NewOrderWareOut.class, method = "getIds")
     public NewOrderInvOut processNewOrder(NewOrderWareOut in) {
 
         float[] prices = this.itemRepository.getPricePerItemId(in.itemsIds);

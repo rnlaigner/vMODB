@@ -139,7 +139,7 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
     public final List<T> getAll(){
         List<Object[]> records = this.operationalAPI.getAll(this.table);
         List<T> resultList = new ArrayList<>(records.size());
-        for (var record : records){
+        for (Object[] record : records){
             resultList.add(this.parseObjectIntoEntity(record));
         }
         return resultList;
@@ -294,9 +294,9 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
         try {
             DTO dto = (DTO) constructor.newInstance();
             int i = 0;
-            for (var field : fields) {
+            for (Field field : fields) {
                 // check if field was captured by query
-                if(object[i] != null){
+                if(object[i] != null) {
                     field.set(dto, object[i]);
                 }
                 i++;

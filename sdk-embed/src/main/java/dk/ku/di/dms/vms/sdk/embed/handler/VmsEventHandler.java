@@ -257,6 +257,7 @@ public final class VmsEventHandler extends ModbHttpServer {
         } else {
             this.batchContextMap.remove(thisBatch.batch);
             this.trackingBatchMap.remove(thisBatch.batch);
+            this.tidToPrecedenceMap.remove(thisBatch.batch);
         }
     }
 
@@ -303,6 +304,7 @@ public final class VmsEventHandler extends ModbHttpServer {
         //LOGGER.log(WARNING, me.identifier+": Checkpointing latency is "+(System.currentTimeMillis()-initTs));
         this.batchContextMap.remove(batch);
         this.trackingBatchMap.remove(batch);
+        this.tidToPrecedenceMap.remove(batch);
         // it may not be necessary. the leader has already moved on at this point
         if(INFORM_BATCH_ACK) {
             this.leaderWorker.queueMessage(BatchCommitAck.of(batch, this.me.identifier));
@@ -1043,6 +1045,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             } else {
                 batchContextMap.remove(batchCommitCommand.batch());
                 trackingBatchMap.remove(batchCommitCommand.batch());
+                tidToPrecedenceMap.remove(batchCommitCommand.batch());
             }
         }
 

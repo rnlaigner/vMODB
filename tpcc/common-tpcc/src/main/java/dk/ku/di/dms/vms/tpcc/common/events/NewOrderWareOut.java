@@ -41,18 +41,21 @@ public final class NewOrderWareOut {
     @SuppressWarnings("unused")
     public Set<Integer> getId(){
         if(this.allLocal) return Set.of(this.w_id);
-        Set<Integer> set = new HashSet<>(4);
+        Set<Integer> set = new HashSet<>(this.supWares.length);
         for (int supWare : this.supWares) {
             set.add(supWare);
         }
         return set;
     }
 
+    /**
+     * Allows for finer-grained access to state
+     */
     @SuppressWarnings("unused")
     public Set<WareItemId> getIds(){
-        Set<WareItemId> set = new HashSet<>(4);
-        for (int i = 0; i <= this.supWares.length; i++) {
-            set.add(new WareItemId(supWares[i], itemsIds[i]));
+        Set<WareItemId> set = new HashSet<>(this.itemsIds.length);
+        for (int i = 0; i < this.itemsIds.length; i++) {
+            set.add(new WareItemId(this.supWares[i], this.itemsIds[i]));
         }
         return set;
     }

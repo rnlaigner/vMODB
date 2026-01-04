@@ -71,7 +71,12 @@ public final class VmsTransactionTaskBuilder {
                     if (Set.class.isAssignableFrom(signature.partitionByMethod().getReturnType())) {
                         partitionIdAux = (Set<Object>) signature.partitionByMethod().invoke(inputEvent);
                     } else {
-                        partitionIdAux = Set.of(signature.partitionByMethod().invoke(inputEvent));
+                        Object partId = signature.partitionByMethod().invoke(inputEvent);
+                        if(partId != null) {
+                            partitionIdAux = Set.of(partId);
+                        } else {
+                            partitionIdAux = Set.of();
+                        }
                     }
                 } else {
                     partitionIdAux = Set.of();

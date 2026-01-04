@@ -255,7 +255,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 case PARTITIONED -> {
                     if(task.partitionKeys().isEmpty()){
                         if(this.canSingleThreadTaskRun()){
-                            LOGGER.log(WARNING, this.vmsIdentifier + ": Task will run as single-threaded even though it is marked as partitioned:\n"+task);
+                            LOGGER.log(DEBUG, this.vmsIdentifier + ": Task will run as single-threaded even though it is marked as partitioned:\n"+task);
                             this.submitSingleThreadTaskForExecution(task);
                         }
                         return;

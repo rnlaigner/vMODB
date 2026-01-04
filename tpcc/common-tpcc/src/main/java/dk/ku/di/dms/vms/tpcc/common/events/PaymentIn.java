@@ -3,6 +3,8 @@ package dk.ku.di.dms.vms.tpcc.common.events;
 import dk.ku.di.dms.vms.modb.api.annotations.Event;
 import dk.ku.di.dms.vms.tpcc.common.etc.WareDistId;
 
+import java.util.Set;
+
 @Event
 public final class PaymentIn {
 
@@ -34,8 +36,9 @@ public final class PaymentIn {
     }
 
     @SuppressWarnings("unused")
-    public WareDistId getId(){
-        return new WareDistId(this.w_id, this.d_id);
+    public Set<WareDistId> getId(){
+        if(!this.by_name) return Set.of(new WareDistId(this.w_id, this.d_id));
+        return Set.of(new WareDistId(this.w_id, this.d_id), new WareDistId(this.c_w_id, this.c_d_id));
     }
 
     @Override
