@@ -8,6 +8,7 @@ import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
+import dk.ku.di.dms.vms.modb.index.unique.UniqueHashMapIndex;
 import dk.ku.di.dms.vms.modb.transaction.TransactionContext;
 import dk.ku.di.dms.vms.modb.transaction.internal.Entry;
 import dk.ku.di.dms.vms.modb.transaction.internal.OperationSetOfKey;
@@ -395,7 +396,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     @Override
     public void reset(){
         this.writeSetMap.clear();
-        if(this.rawIndex instanceof UniqueHashBufferIndex){
+        if(this.rawIndex instanceof UniqueHashMapIndex || this.rawIndex instanceof UniqueHashBufferIndex){
             this.rawIndex.reset();
         }
         this.updatesPerKeyMap.clear();

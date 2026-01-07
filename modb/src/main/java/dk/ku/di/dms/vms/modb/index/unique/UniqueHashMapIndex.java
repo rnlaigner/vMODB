@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
-    private final Map<IKey,Object[]> store;
+    private final Map<IKey, Object[]> store;
 
     public UniqueHashMapIndex(Schema schema, int[] columns) {
         super(schema, columns);
@@ -61,6 +61,11 @@ public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
     @Override
     public Iterator<IKey> iterator() {
         return this.store.keySet().iterator();
+    }
+
+    @Override
+    public void reset() {
+        this.store.clear();
     }
 
 }

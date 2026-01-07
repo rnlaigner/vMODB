@@ -64,6 +64,23 @@ java.base/jdk.internal.misc=ALL-UNNAMED
 java.base/jdk.internal.misc=ALL-UNNAMED
 ```
 
+To profile the system, use the following VM parameters:
+```
+-XX:StartFlightRecording=filename=app.jfr,settings=profile,dumponexit=true
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=/tmp/heapdump.hprof
+-XX:+UseParallelGC
+--enable-preview
+--add-exports
+java.base/jdk.internal.misc=ALL-UNNAMED
+--add-opens
+java.base/jdk.internal.util=ALL-UNNAMED
+--add-opens
+java.base/java.nio=ALL-UNNAMED
+--add-opens
+java.base/sun.nio.ch=ALL-UNNAMED
+```
+
 ### <a name="vmodb"></a>vMODB
 
 ## <a name="links"></a>Useful links

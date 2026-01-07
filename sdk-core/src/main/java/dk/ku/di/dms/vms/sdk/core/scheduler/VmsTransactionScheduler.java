@@ -14,6 +14,9 @@ import jdk.internal.misc.Unsafe;
 import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 
+import javax.management.NotificationEmitter;
+import javax.management.NotificationFilter;
+import java.lang.management.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
@@ -116,7 +119,19 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.vmsTransactionTaskBuilder = new VmsTransactionTaskBuilder(transactionalHandler, callback);
         this.transactionTaskMap.put( 0L, this.vmsTransactionTaskBuilder.buildFinished(0) );
         this.lastTidToTidMap = new LongLongHashMap(1024*100);
+
+        for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
+            if (pool.getType() == MemoryType.HEAP && pool.isUsageThresholdSupported()) {
+                pool.setUsageThreshold((long) (pool.getUsage().getMax() * 0.70));
+                NotificationEmitter emitter = (NotificationEmitter) ManagementFactory.getMemoryMXBean();
+                emitter.addNotificationListener((_, _) -> this.oomNotifyHandoff.offer(1), (NotificationFilter) notification -> MemoryNotificationInfo.MEMORY_THRESHOLD_EXCEEDED.equals(notification.getType()), null);
+            }
+        }
+
     }
+
+    // prevent concurrent, consecutive notifications of OOM; listener must still check whether it is indeed necessary to clean up entries
+    private final ArrayBlockingQueue<Object> oomNotifyHandoff = new ArrayBlockingQueue<>(1);
 
     /**
      * Inspired by <a href="https://stackoverflow.com/questions/826212/java-executors-how-to-be-notified-without-blocking-when-a-task-completes">link</a>,
@@ -130,6 +145,14 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             try {
                 this.checkForNewEvents();
                 this.executeReadyTasks();
+
+                // force cleanup to cover cases where input events do not stop coming
+                // confirm whether there is the need to perform another clean up (i.e., source of OOM is not this class)
+                if(this.oomNotifyHandoff.poll() != null && this.lastTidSafeToDelete() - this.nextTidToDelete > 1024){
+                    LOGGER.log(WARNING, "Memory threshold hit!");
+                    this.cleanupTidMappings(false);
+                }
+
             } catch(Exception e){
                 e.printStackTrace(System.out);
                 LOGGER.log(ERROR, this.vmsIdentifier+": Error on scheduler loop: "+(e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
@@ -320,8 +343,8 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private void checkForNewEvents() throws InterruptedException {
         InboundEvent inboundEvent;
         if(this.mustWaitForInputEvent) {
-            // before blocking, cleanup tasks from internal maps
-            this.cleanupTidMappings();
+            // before blocking, cleanup tasks from internal maps as much as possible
+            this.cleanupTidMappings(true);
             inboundEvent = this.transactionInputQueue.take();
             // disable block
             this.mustWaitForInputEvent = false;
@@ -343,23 +366,25 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     /**
      * The pending deletion list is needed due to possible "holes" coming from concurrent tasks
      */
-    private void cleanupTidMappings() {
+    private void cleanupTidMappings(final boolean stopOnNewInput) {
         // LOGGER.log(DEBUG, this.vmsIdentifier+": Scheduler cleanup procedure started.");
-        int count = 0;
-        final long lastTidSafeToDelete = this.lastTidSafeToDelete();
-        VmsTransactionTask task = this.transactionTaskMap.get(this.nextTidToDelete);
-        while(this.transactionInputQueue.isEmpty() && task != null && this.nextTidToDelete < lastTidSafeToDelete){
-            if(!task.isFinished()) {
-                this.pendingDeletion.add(task);
-                break; // to avoid null pointer when it finishes
-            }
-            this.transactionTaskMap.remove(this.nextTidToDelete);
-            this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
-            count++;
-            task = this.transactionTaskMap.get(this.nextTidToDelete);
+        int count;
+        if(stopOnNewInput) {
+            count = this.cleanUpTidMappings_1();
+        } else {
+            count = this.cleanUpTidMappings_0();
         }
+        count += cleanUpPendingTidMappings();
+        if(count > 0) {
+            LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduler cleanup procedure finished with " + count + " task entries removed.");
+        }
+    }
+
+    private int cleanUpPendingTidMappings() {
         if(!this.pendingDeletion.isEmpty()) {
-            for (Iterator<VmsTransactionTask> it = this.pendingDeletion.iterator(); it.hasNext(); ) {
+            int count = 0 ;
+            VmsTransactionTask task;
+            for (Iterator<VmsTransactionTask> it = this.pendingDeletion.iterator(); it.hasNext();) {
                 task = it.next();
                 if (!task.isFinished()) {
                     break;
@@ -369,10 +394,43 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 count++;
                 it.remove();
             }
+            return count;
         }
-        if(count > 0) {
-            LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduler cleanup procedure finished with " + count + " task entries removed.");
+        return 0;
+    }
+
+    private int cleanUpTidMappings_0() {
+        int count = 0;
+        final long lastTidSafeToDelete = this.lastTidSafeToDelete();
+        VmsTransactionTask task = this.transactionTaskMap.get(this.nextTidToDelete);
+        while (task != null && this.nextTidToDelete < lastTidSafeToDelete) {
+            if (!task.isFinished()) {
+                this.pendingDeletion.add(task);
+                break; // to avoid null pointer when it finishes
+            }
+            this.transactionTaskMap.remove(this.nextTidToDelete);
+            this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
+            count++;
+            task = this.transactionTaskMap.get(this.nextTidToDelete);
         }
+        return count;
+    }
+
+    private int cleanUpTidMappings_1(){
+        int count = 0;
+        final long lastTidSafeToDelete = this.lastTidSafeToDelete();
+        VmsTransactionTask task = this.transactionTaskMap.get(this.nextTidToDelete);
+        while (this.transactionInputQueue.isEmpty() && task != null && this.nextTidToDelete < lastTidSafeToDelete) {
+            if (!task.isFinished()) {
+                this.pendingDeletion.add(task);
+                break; // to avoid null pointer when it finishes
+            }
+            this.transactionTaskMap.remove(this.nextTidToDelete);
+            this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
+            count++;
+            task = this.transactionTaskMap.get(this.nextTidToDelete);
+        }
+        return count;
     }
 
     private void processNewEvent(InboundEvent inboundEvent) {
