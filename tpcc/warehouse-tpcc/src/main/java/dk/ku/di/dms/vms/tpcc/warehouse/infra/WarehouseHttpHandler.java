@@ -11,6 +11,8 @@ import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IWarehouseRepository;
 
 import java.util.List;
 
+import static java.lang.System.Logger.Level.INFO;
+
 public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
     private final IWarehouseRepository warehouseRepository;
@@ -39,10 +41,17 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
             return;
         }
         // path: /warehouse/cleanup
+        LOGGER.log(INFO, "Warehouse init cleanup");
+
+        LOGGER.log(INFO, "Warehouse GC triggered.");
+        System.gc();
+        LOGGER.log(INFO, "Warehouse GC finished.");
+
         List<Warehouse> warehouses = this.warehouseRepository.getAll();
         List<District> districts = this.districtRepository.getAll();
         List<Customer> customers = this.customerRepository.getAll();
         this.transactionManager.reset();
+        LOGGER.log(INFO, "Warehouse tables reset");
         this.transactionManager.beginTransaction(0, 0, 0,false);
         for(District district : districts){
             district.d_next_o_id = 3000;
@@ -51,6 +60,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         this.districtRepository.insertAll(districts);
         this.customerRepository.insertAll(customers);
         this.transactionManager.commit();
+        LOGGER.log(INFO, "Warehouse finished cleanup");
     }
 
     @Override

@@ -32,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.*;
 import static java.lang.System.Logger.Level.*;
@@ -253,12 +254,19 @@ public final class VmsEventHandler extends ModbHttpServer {
         if(this.options.checkpointing()){
             LOGGER.log(INFO, this.me.identifier + ": Requesting checkpoint for batch " + thisBatch.batch);
             thisBatch.setStatus(BatchContext.CHECKPOINTING);
-            submitBackgroundTask(()->checkpoint(thisBatch.batch, batchMetadata.maxTidExecuted));
-        } else {
-            this.batchContextMap.remove(thisBatch.batch);
-            this.trackingBatchMap.remove(thisBatch.batch);
-            this.tidToPrecedenceMap.remove(thisBatch.batch);
+            submitBackgroundTask(()->this.checkpoint(thisBatch.batch, batchMetadata.maxTidExecuted));
+        } else if(this.cleanupInProgress.compareAndExchange(false, true)) {
+            // slowly cleans up obsolete record entries
+            this.transactionManager.cleanup(batchMetadata.maxTidExecuted);
+            this.cleanupInProgress.set(false);
         }
+        this.cleanUpBatchInfo(thisBatch.batch);
+    }
+
+    private void cleanUpBatchInfo(long batch) {
+        this.batchContextMap.remove(batch);
+        this.trackingBatchMap.remove(batch);
+        this.tidToPrecedenceMap.remove(batch);
     }
 
     private BatchMetadata updateBatchMetadataAtomically(OutboundEventResult outputEvent) {
@@ -295,16 +303,12 @@ public final class VmsEventHandler extends ModbHttpServer {
     private static final boolean INFORM_BATCH_ACK = false;
 
     private void checkpoint(long batch, long maxTid) {
-        //this.batchContextMap.get(batch).setStatus(BatchContext.CHECKPOINTING);
         // of course, I do not need to stop the scheduler on commit
         // I need to make access to the data versions data race free
         // so new transactions get data versions from the version map or the store
         //long initTs = System.currentTimeMillis();
         this.transactionManager.checkpoint(maxTid);
         //LOGGER.log(WARNING, me.identifier+": Checkpointing latency is "+(System.currentTimeMillis()-initTs));
-        this.batchContextMap.remove(batch);
-        this.trackingBatchMap.remove(batch);
-        this.tidToPrecedenceMap.remove(batch);
         // it may not be necessary. the leader has already moved on at this point
         if(INFORM_BATCH_ACK) {
             this.leaderWorker.queueMessage(BatchCommitAck.of(batch, this.me.identifier));
@@ -1042,11 +1046,11 @@ public final class VmsEventHandler extends ModbHttpServer {
                 LOGGER.log(INFO, me.identifier + ": Requesting checkpoint for batch " + batchCommitCommand.batch());
                 batchContext.setStatus(BatchContext.CHECKPOINTING);
                 submitBackgroundTask(()->checkpoint(batchCommitCommand.batch(), batchMetadata.maxTidExecuted));
-            } else {
-                batchContextMap.remove(batchCommitCommand.batch());
-                trackingBatchMap.remove(batchCommitCommand.batch());
-                tidToPrecedenceMap.remove(batchCommitCommand.batch());
+            } else if(cleanupInProgress.compareAndExchange(false, true)) {
+                transactionManager.cleanup(batchMetadata.maxTidExecuted);
+                cleanupInProgress.set(false);
             }
+            cleanUpBatchInfo(batchCommitCommand.batch());
         }
 
         @Override
@@ -1056,6 +1060,8 @@ public final class VmsEventHandler extends ModbHttpServer {
             this.setUpNewRead();
         }
     }
+
+    private final AtomicBoolean cleanupInProgress = new AtomicBoolean(false);
 
     public void close() {
         this.stop();

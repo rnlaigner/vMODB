@@ -130,7 +130,6 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 emitter.addNotificationListener((_, _) -> this.oomNotifyHandoff.offer(1), (NotificationFilter) notification -> MemoryNotificationInfo.MEMORY_THRESHOLD_EXCEEDED.equals(notification.getType()), null);
             }
         }
-
     }
 
     // prevent concurrent, consecutive notifications of OOM; listener must still check whether it is indeed necessary to clean up entries

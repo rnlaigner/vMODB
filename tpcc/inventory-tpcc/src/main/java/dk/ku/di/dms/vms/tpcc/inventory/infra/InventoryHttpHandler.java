@@ -10,6 +10,8 @@ import dk.ku.di.dms.vms.tpcc.inventory.repositories.IStockRepository;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static java.lang.System.Logger.Level.INFO;
+
 public final class InventoryHttpHandler extends DefaultHttpHandler {
 
     private final IItemRepository itemRepository;
@@ -34,9 +36,17 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
             return;
         }
         // path: /inventory/cleanup
+        LOGGER.log(INFO, "Inventory init cleanup");
+
+        LOGGER.log(INFO, "Warehouse GC triggered.");
+        System.gc();
+        LOGGER.log(INFO, "Warehouse GC finished.");
+
         List<Item> items = this.itemRepository.getAll();
         List<Stock> stockItems = this.stockRepository.getAll();
+        LOGGER.log(INFO, "Inventory init reset");
         this.transactionManager.reset();
+        LOGGER.log(INFO, "Inventory tables reset");
         this.transactionManager.beginTransaction(0, 0, 0,false);
         for(Stock stockItem : stockItems){
             stockItem.s_ytd = 0;
@@ -47,6 +57,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         this.itemRepository.insertAll(items);
         this.stockRepository.insertAll(stockItems);
         this.transactionManager.commit();
+        LOGGER.log(INFO, "Inventory finished cleanup");
     }
 
     @Override

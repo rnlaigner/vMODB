@@ -99,7 +99,7 @@ public final class VmsApplication {
         Map<String, Table> catalog = EmbedMetadataLoader.loadCatalog(vmsName, vmsDataModelMap, entityToTableNameMap, isCheckpointing, isTruncating, options.getMaxRecords());
 
         // operational API and checkpoint API
-        TransactionManager transactionManager = new TransactionManager(catalog, isCheckpointing);
+        TransactionManager transactionManager = new TransactionManager(catalog);
 
         Map<String, Object> tableToRepositoryMap = EmbedMetadataLoader.loadRepositoryClasses( filteredVmsClazz, entityToTableNameMap, catalog,  transactionManager );
         Map<String, List<Object>> vmsToRepositoriesMap = EmbedMetadataLoader.mapRepositoriesToVms(filteredVmsClazz, entityToTableNameMap, tableToRepositoryMap);

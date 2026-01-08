@@ -29,8 +29,7 @@ import dk.ku.di.dms.vms.modb.transaction.multiversion.index.PrimaryIndex;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static java.lang.System.Logger.Level.INFO;
-import static java.lang.System.Logger.Level.WARNING;
+import static java.lang.System.Logger.Level.*;
 
 /**
  * A transaction management facade
@@ -61,14 +60,11 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
 
     private final Map<String, Table> catalog;
 
-    private final boolean checkpointing;
-
-    public TransactionManager(Map<String, Table> catalog, boolean checkpointing){
+    public TransactionManager(Map<String, Table> catalog){
         this.planner = new SimplePlanner();
         this.analyzer = new Analyzer(catalog);
         this.catalog = catalog;
         this.queryPlanCacheMap = new ConcurrentHashMap<>();
-        this.checkpointing = checkpointing;
         this.txCtxMap = new ConcurrentHashMap<>();
     }
 
@@ -468,23 +464,25 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
     @Override
     public void checkpoint(long maxTid){
         LOGGER.log(INFO, "Checkpoint for max TID "+maxTid+" started at "+System.currentTimeMillis());
-        if(this.checkpointing) {
-            for (Table table : this.catalog.values()) {
-                LOGGER.log(INFO, "Checkpointing table "+table.getName());
-                int numRecords = table.primaryKeyIndex().checkpoint(maxTid);
-                if(numRecords > 0) {
-                    LOGGER.log(INFO, "Persisted "+numRecords+" records in table "+table.getName());
-                } else {
-                    LOGGER.log(WARNING, "No records have been flushed to table "+table.getName());
-                }
-            }
-        } else {
-            LOGGER.log(INFO, "Checkpoint disabled. Starting only garbage collection for max TID "+maxTid);
-            for (Table table : this.catalog.values()) {
-                table.primaryKeyIndex().garbageCollection(maxTid);
+        for (Table table : this.catalog.values()) {
+            LOGGER.log(INFO, "Checkpointing table "+table.getName());
+            int numRecords = table.primaryKeyIndex().checkpoint(maxTid);
+            if(numRecords > 0) {
+                LOGGER.log(INFO, "Persisted "+numRecords+" records in table "+table.getName());
+            } else {
+                LOGGER.log(WARNING, "No records have been flushed to table "+table.getName());
             }
         }
         LOGGER.log(INFO, "Checkpoint for max TID "+maxTid+" finished at "+System.currentTimeMillis());
+    }
+
+    @Override
+    public void cleanup(long maxTid){
+        LOGGER.log(DEBUG, "Garbage collection for max TID "+maxTid+" started at "+System.currentTimeMillis());
+        for (Table table : this.catalog.values()) {
+            table.primaryKeyIndex().cleanup(maxTid);
+        }
+        LOGGER.log(DEBUG, "Garbage collection for max TID "+maxTid+" finished at "+System.currentTimeMillis());
     }
 
     /**
@@ -524,9 +522,6 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             }
         }
         LOGGER.log(INFO, "Reset finished at "+System.currentTimeMillis());
-        LOGGER.log(INFO, "GC triggered.");
-        System.gc();
-        LOGGER.log(INFO, "GC finished.");
     }
 
 }

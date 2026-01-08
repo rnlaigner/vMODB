@@ -252,7 +252,7 @@ public final class Main {
         if(reset) param = "reset"; else param = "cleanup";
         for(Map.Entry<String, Integer> vms : TPCcConstants.VMS_TO_PORT_MAP.entrySet()){
             String host = PROPERTIES.getProperty(vms.getKey() + "_host");
-            try(var client = new MinimalHttpClient(host, vms.getValue())){
+            try(MinimalHttpClient client = new MinimalHttpClient(host, vms.getValue())){
                 if(client.sendRequest("PATCH", "", param) != 200){
                     System.out.println("Error on resetting "+vms+" state!");
                 }

@@ -5,6 +5,8 @@ import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
 import dk.ku.di.dms.vms.web_common.IHttpHandler;
 
+import static java.lang.System.Logger.Level.INFO;
+
 public class DefaultHttpHandler implements IHttpHandler {
 
     protected static final System.Logger LOGGER = System.getLogger(DefaultHttpHandler.class.getName());
@@ -20,6 +22,9 @@ public class DefaultHttpHandler implements IHttpHandler {
     @Override
     public void patch(String uri, String body) {
         this.transactionManager.reset();
+        LOGGER.log(INFO, "GC triggered.");
+        System.gc();
+        LOGGER.log(INFO, "GC finished.");
     }
 
 }

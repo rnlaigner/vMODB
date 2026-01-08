@@ -4,7 +4,6 @@ import dk.ku.di.dms.vms.modb.api.annotations.Event;
 import dk.ku.di.dms.vms.tpcc.common.etc.WareDistId;
 
 import java.util.Arrays;
-import java.util.Set;
 
 @Event
 public final class NewOrderWareIn {

@@ -5,11 +5,13 @@ package dk.ku.di.dms.vms.modb.common.transaction;
  */
 public interface ITransactionManager {
 
-    default void checkpoint(long maxTid) { }
+    default ITransactionContext beginTransaction(long tid, int identifier, long lastTid, boolean readOnly) { return null; }
 
     default void commit() { }
 
-    default ITransactionContext beginTransaction(long tid, int identifier, long lastTid, boolean readOnly) { return null; }
+    default void checkpoint(long maxTid) { }
+
+    default void cleanup(long maxTid) { }
 
     default void reset() { }
 

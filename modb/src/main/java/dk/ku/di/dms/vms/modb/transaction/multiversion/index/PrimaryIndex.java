@@ -54,6 +54,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
     private final Optional<IPrimaryKeyGenerator<?>> primaryKeyGenerator;
 
+    // if without checkpointing, keeps track of entries for garbage collection
     private final Set<IKey> keysToFlush;
 
     // write set of transactions
@@ -412,22 +413,6 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         this.keysToFlush.clear();
     }
 
-    public void garbageCollection(long maxTid){
-        for(IKey key : this.keysToFlush){
-            OperationSetOfKey operationSetOfKey = this.updatesPerKeyMap.get(key);
-            if(operationSetOfKey == null){
-                throw new RuntimeException("Error on retrieving operation set for key "+key);
-            }
-            Entry<Long,TransactionWrite> entry = operationSetOfKey.removeUpToEntry(maxTid);
-            if(entry != null){
-                // only remove from keys to flush if max tid meets the entry
-                this.keysToFlush.remove(key);
-            }
-        }
-    }
-
-    private static final boolean GARBAGE_COLLECTION = false;
-
     public int checkpoint(long maxTid){
         if(this.keysToFlush.isEmpty() || this.updatesPerKeyMap.isEmpty()) return 0;
         int numRecords = 0;
@@ -445,9 +430,8 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             // is the head?
             if(operationSetOfKey.peak() == entry) {
                 this.keysToFlush.remove(key);
-            } else if(GARBAGE_COLLECTION) {
-                operationSetOfKey.removeChildren(entry);
             }
+            operationSetOfKey.removeChildren(entry);
             switch (operationSetOfKey.lastWriteType) {
                 case UPDATE -> this.rawIndex.upsert(key, entry.val().record);
                 case INSERT -> this.rawIndex.insert(key, entry.val().record);
@@ -460,6 +444,21 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             this.rawIndex.flush();
         }
         return numRecords;
+    }
+
+    public void cleanup(long maxTid){
+        for(IKey key : this.keysToFlush){
+            OperationSetOfKey operationSetOfKey = this.updatesPerKeyMap.get(key);
+            if(operationSetOfKey == null){
+                throw new RuntimeException("Error on retrieving operation set for key "+key);
+            }
+            Entry<Long, TransactionWrite> entry = operationSetOfKey.floorEntry(maxTid);
+            if (entry == null) continue;
+            if(operationSetOfKey.peak() == entry) {
+                this.keysToFlush.remove(key);
+            }
+            operationSetOfKey.removeChildren(entry);
+        }
     }
 
     public void installWrites(TransactionContext txCtx){

@@ -92,7 +92,7 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
     public final void removeChildren(final Entry<K,V> entry){
         Entry<K,V> currFloorEntry = entry;
         Entry<K,V> auxEntry;
-        while(currFloorEntry != null){
+        while(currFloorEntry.next != null){
             auxEntry = currFloorEntry.next;
             // set next to null to lose reference
             currFloorEntry.next = null;
