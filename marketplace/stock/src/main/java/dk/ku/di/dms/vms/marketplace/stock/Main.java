@@ -15,10 +15,12 @@ public final class Main {
 
     private static final Logger LOGGER = System.getLogger(Main.class.getName());
 
+    private static VmsApplication VMS;
+
     public static void main(String[] ignoredArgs) throws Exception {
         Properties properties = ConfigUtils.loadProperties();
-        VmsApplication vms = buildVms(properties);
-        vms.start();
+        VMS = buildVms(properties);
+        VMS.start();
     }
 
     private static VmsApplication buildVms(Properties properties) throws Exception {
@@ -54,12 +56,16 @@ public final class Main {
         public void patch(String uri, String body) {
             final String[] uriSplit = uri.split("/");
             String op = uriSplit[uriSplit.length - 1];
-            List<StockItem> stockItems = this.repository.getAll();
+            // path: /stock/reset
             if(op.contentEquals("reset")){
-                // path: /stock/reset
                 this.transactionManager.reset();
                 return;
             }
+            // path: /stock/cleanup
+            long lastTid = VMS.lastTidFinished();
+            this.transactionManager.beginTransaction(lastTid, 0, lastTid, false);
+            List<StockItem> stockItems = this.repository.getAll();
+            this.transactionManager.reset();
             this.transactionManager.beginTransaction(0, 0, 0,false);
             for(StockItem item : stockItems){
                 item.qty_available = 10000;
@@ -67,6 +73,7 @@ public final class Main {
                 item.qty_reserved = 0;
                 this.repository.insert(item);
             }
+            this.transactionManager.commit();
         }
 
         @Override

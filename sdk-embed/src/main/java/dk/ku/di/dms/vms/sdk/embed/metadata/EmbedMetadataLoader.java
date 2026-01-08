@@ -148,7 +148,8 @@ public final class EmbedMetadataLoader {
             // value: column, value
             List<PartialIndexMetadata> partialIndexMetadataList){}
 
-    public static Map<String, Table> loadCatalog(Map<String, VmsDataModel> vmsDataModelMap,
+    public static Map<String, Table> loadCatalog(String vmsIdentifier,
+                                                 Map<String, VmsDataModel> vmsDataModelMap,
                                                  Map<Class<?>, String> entityToTableNameMap,
                                                  boolean isCheckpointing,
                                                  boolean isTruncating,
@@ -223,7 +224,7 @@ public final class EmbedMetadataLoader {
                 chaining = Boolean.parseBoolean( properties.getProperty("table."+tableName+".chaining") );
             }
 
-            PrimaryIndex primaryIndex = StorageUtils.createPrimaryIndex(tableName, schema, isCheckpointing, isTruncating, chaining, maxRecords_);
+            PrimaryIndex primaryIndex = StorageUtils.createPrimaryIndex(vmsIdentifier, tableName, schema, isCheckpointing, isTruncating, chaining, maxRecords_);
             tableToPrimaryIndexMap.put(tableName, primaryIndex);
 
             // normal indexes (i.e., non-partial) and foreign key indexes go here?
@@ -237,7 +238,7 @@ public final class EmbedMetadataLoader {
             if(!entry.getValue().secondaryIndexMap().isEmpty()) {
                 // now create the secondary index (a - based on foreign keys and b - based on non-foreign keys)
                 for (var secIdx : entry.getValue().secondaryIndexMap().entrySet()) {
-                    ReadWriteIndex<IKey> nuhi = StorageUtils.createNonUniqueIndex(schema, secIdx.getValue().t1(), "FK_"+secIdx.getKey() );
+                    ReadWriteIndex<IKey> nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, secIdx.getValue().t1(), "FK_"+secIdx.getKey() );
                     listSecondaryIndexes.add(nuhi);
                 }
             }
@@ -248,10 +249,10 @@ public final class EmbedMetadataLoader {
                 for (var idxEntry : indexMetadataByName.entrySet()) {
                     ReadWriteIndex<IKey> nuhi;
                     if(idxEntry.getValue().size() == 1) {
-                        nuhi = StorageUtils.createNonUniqueIndex(schema, new int[]{idxEntry.getValue().getFirst().columnPos()}, idxEntry.getKey());
+                        nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, new int[]{idxEntry.getValue().getFirst().columnPos()}, idxEntry.getKey());
                     } else {
                         int[] columnList = idxEntry.getValue().stream().mapToInt(c-> c.columnPos).toArray();
-                        nuhi = StorageUtils.createNonUniqueIndex(schema, columnList, idxEntry.getKey() );
+                        nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, columnList, idxEntry.getKey() );
                     }
                     listSecondaryIndexes.add(nuhi);
                 }
@@ -261,7 +262,7 @@ public final class EmbedMetadataLoader {
             if(!entry.getValue().partialIndexMetadataList().isEmpty()) {
                 for (PartialIndexMetadata partialIdx : entry.getValue().partialIndexMetadataList()) {
                     // not all partial indexes are unique.... how is it working?
-                    ReadWriteIndex<IKey> uniquePartialIndex = StorageUtils.createUniqueIndex(schema, new int[]{ partialIdx.columnPos() }, partialIdx.indexName() );
+                    ReadWriteIndex<IKey> uniquePartialIndex = StorageUtils.createUniqueIndex(vmsIdentifier, schema, new int[]{ partialIdx.columnPos() }, partialIdx.indexName() );
                     partialIndexMetaMap.put( uniquePartialIndex.key(), new Tuple<>(partialIdx.columnPos(), partialIdx.value() ) );
                     listPartialIndexes.add(uniquePartialIndex);
                 }

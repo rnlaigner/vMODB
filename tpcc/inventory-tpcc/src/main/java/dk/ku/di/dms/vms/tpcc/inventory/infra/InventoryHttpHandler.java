@@ -7,6 +7,9 @@ import dk.ku.di.dms.vms.tpcc.inventory.entities.Stock;
 import dk.ku.di.dms.vms.tpcc.inventory.repositories.IItemRepository;
 import dk.ku.di.dms.vms.tpcc.inventory.repositories.IStockRepository;
 
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+
 public final class InventoryHttpHandler extends DefaultHttpHandler {
 
     private final IItemRepository itemRepository;
@@ -19,6 +22,31 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         super(transactionManager);
         this.itemRepository = itemRepository;
         this.stockRepository = stockRepository;
+    }
+
+    @Override
+    public void patch(String uri, String body) {
+        final String[] uriSplit = uri.split("/");
+        String op = uriSplit[uriSplit.length - 1];
+        if(op.contentEquals("reset")){
+            // path: /inventory/reset
+            this.transactionManager.reset();
+            return;
+        }
+        // path: /inventory/cleanup
+        List<Item> items = this.itemRepository.getAll();
+        List<Stock> stockItems = this.stockRepository.getAll();
+        this.transactionManager.reset();
+        this.transactionManager.beginTransaction(0, 0, 0,false);
+        for(Stock stockItem : stockItems){
+            stockItem.s_ytd = 0;
+            stockItem.s_order_cnt = 0;
+            stockItem.s_remote_cnt = 0;
+            stockItem.s_quantity = ThreadLocalRandom.current().nextInt(10, 100);
+        }
+        this.itemRepository.insertAll(items);
+        this.stockRepository.insertAll(stockItems);
+        this.transactionManager.commit();
     }
 
     @Override

@@ -40,7 +40,7 @@ public final class StorageUtils {
     }
 
     public static int getNumRecordsFromInDiskTable(Schema schema, String fileName){
-        File file = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile(fileName);
+        File file = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("proxy", fileName);
         return (int) file.length() / schema.getRecordSize();
     }
 
@@ -225,7 +225,7 @@ public final class StorageUtils {
     }
 
     public static UniqueHashBufferIndex buildHashIndex(String tableName, Schema schema, int maxRecords, boolean truncate) {
-        RecordBufferContext recordBufferContext = dk.ku.di.dms.vms.modb.utils.StorageUtils.loadRecordBuffer(maxRecords, schema.getRecordSizeWithHeader(), tableName, truncate);
+        RecordBufferContext recordBufferContext = dk.ku.di.dms.vms.modb.utils.StorageUtils.loadRecordBuffer("proxy", maxRecords, schema.getRecordSizeWithHeader(), tableName, truncate);
         return new UniqueHashBufferIndex(recordBufferContext, schema, schema.getPrimaryKeyColumns(), maxRecords);
     }
 

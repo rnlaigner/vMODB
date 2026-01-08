@@ -37,8 +37,8 @@ public final class PaymentIn {
 
     @SuppressWarnings("unused")
     public Set<WareDistId> getId(){
-        if(!this.by_name) return Set.of(new WareDistId(this.w_id, this.d_id));
-        return Set.of(new WareDistId(this.w_id, this.d_id), new WareDistId(this.c_w_id, this.c_d_id));
+        if(this.w_id == this.c_w_id && this.d_id == this.c_d_id) return Set.of(new WareDistId(this.w_id, 0), new WareDistId(this.w_id, this.d_id));
+        return Set.of(new WareDistId(this.w_id, 0), new WareDistId(this.w_id, this.d_id), new WareDistId(this.c_w_id, this.c_d_id));
     }
 
     @Override

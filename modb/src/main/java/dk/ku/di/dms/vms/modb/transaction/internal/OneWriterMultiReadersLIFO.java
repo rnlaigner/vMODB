@@ -28,7 +28,7 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
     @SuppressWarnings("UnnecessaryLocalVariable")
     public final void poll(){
         assert this.head != null;
-        var next = this.head.next;
+        Entry<K, V> next = this.head.next;
         this.head = next;
     }
 
@@ -113,7 +113,7 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
 
     @Override
     public final String toString(){
-        var current = this.head;
+        Entry<K, V> current = this.head;
         if(current == null) return "";
         String lineSeparator = System.lineSeparator();
         StringBuilder sb = new StringBuilder();

@@ -45,9 +45,9 @@ public final class Main {
         PROPERTIES.setProperty("vms_thread_pool_size", "0");
         PROPERTIES.setProperty("network_thread_pool_size", "0");
 
-        // if persistence is required, uncomment below lines
-        // PROPERTIES.setProperty("logging", "true");
-        // PROPERTIES.setProperty("checkpointing", "true");
+        // if persistence is required, uncomment lines below
+//        PROPERTIES.setProperty("logging", "true");
+//        PROPERTIES.setProperty("checkpointing", "true");
 
         dk.ku.di.dms.vms.tpcc.warehouse.Main.main(null);
         dk.ku.di.dms.vms.tpcc.inventory.Main.main(null);
@@ -78,7 +78,6 @@ public final class Main {
             printMenu(menuType);
             System.out.print("Enter your choice: ");
             String choice = scanner.nextLine();
-            System.out.println("You chose option: " + choice);
             switch (choice) {
                 case "1":
                     System.out.println("Option 1: \"Create tables in disk\" selected.");
@@ -104,7 +103,7 @@ public final class Main {
                         }
                     }
 
-                    if(tables == null) {
+                    if(tables == null){
                         System.out.println("Loading tables from disk...");
                         // the number of warehouses must be exactly the same otherwise lead to errors in reading from files
                         numWare = StorageUtils.getNumRecordsFromInDiskTable(metadata.entityToSchemaMap().get("warehouse"), "warehouse");
@@ -120,7 +119,7 @@ public final class Main {
                     if(numWare == 0){
                         numWare = StorageUtils.getNumRecordsFromInDiskTable(metadata.entityToSchemaMap().get("warehouse"), "warehouse");
                     }
-                    if(numWare == 0) {
+                    if(numWare == 0){
                         System.out.println("Enter number of warehouses: ");
                         numWare = Integer.parseInt(scanner.nextLine());
                     }
@@ -187,7 +186,7 @@ public final class Main {
                     }
 
                     // reload iterators
-                    input = WorkloadUtils.mapWorkloadInputFiles(numWare);
+                    input = WorkloadUtils.mapWorkloadInputFiles(numWare, numTxInputPerType);
 
                     // load coordinator
                     if(coordinator == null){
@@ -207,32 +206,18 @@ public final class Main {
                             coordinator.getOptions().getNumTransactionWorkers(), coordinator.getOptions().getBatchWindow(), coordinator.getOptions().getMaxTransactionsPerBatch(), txRatio);
                     break;
                 case "5":
+                    System.out.println("Option 5: \"Cleanup VMS states\" selected.");
+                    // has to wait for all submitted transactions to commit in order to send the reset
+                    if (checkCompleteness(coordinator, scanner)) break;
+                    // cleanup VMS states
+                    cleanup(false);
+                    System.out.println("VMS states cleaned.");
+                    break;
+                case "6":
                     System.out.println("Option 5: \"Reset VMS states\" selected.");
                     // has to wait for all submitted transactions to commit in order to send the reset
-                    if(coordinator != null){
-                        long numTIDsCommitted = coordinator.getNumTIDsCommitted();
-                        long numTIDsSubmitted = coordinator.getNumTIDsSubmitted();
-                        if(numTIDsCommitted != numTIDsSubmitted){
-                            System.out.println("There are ongoing batches executing! Cannot reset states now. \n Number of TIDs committed: "+numTIDsCommitted+"\n Number of TIDs submitted: "+numTIDsSubmitted);
-                            System.out.println("Do you want to proceed? [y/n]");
-                            String resp = scanner.nextLine();
-                            if(resp.equalsIgnoreCase("n")){
-                                break;
-                            }
-                            break;
-                        }
-                    }
-                    // cleanup VMS states
-                    for(var vms : TPCcConstants.VMS_TO_PORT_MAP.entrySet()){
-                        String host = PROPERTIES.getProperty(vms.getKey() + "_host");
-                        try(var client = new MinimalHttpClient(host, vms.getValue())){
-                            if(client.sendRequest("PATCH", "", "reset") != 200){
-                                System.out.println("Error on resetting "+vms+" state!");
-                            }
-                        } catch (IOException e) {
-                            System.out.println("Exception on resetting "+vms+" state: \n"+e);
-                        }
-                    }
+                    if (checkCompleteness(coordinator, scanner)) break;
+                    cleanup(true);
                     System.out.println("VMS states reset.");
                     dataLoaded = false;
                     break;
@@ -246,6 +231,35 @@ public final class Main {
         }
         scanner.close();
         System.exit(0);
+    }
+
+    private static boolean checkCompleteness(Coordinator coordinator, Scanner scanner) {
+        if(coordinator != null){
+            long numTIDsCommitted = coordinator.getNumTIDsCommitted();
+            long numTIDsSubmitted = coordinator.getNumTIDsSubmitted();
+            if(numTIDsCommitted != numTIDsSubmitted){
+                System.out.println("There are ongoing batches executing! Cannot reset states now. \n Number of TIDs committed: "+numTIDsCommitted+"\n Number of TIDs submitted: "+numTIDsSubmitted);
+                System.out.println("Do you want to proceed? [y/n]");
+                String resp = scanner.nextLine();
+                return resp.equalsIgnoreCase("n");
+            }
+        }
+        return false;
+    }
+
+    private static void cleanup(boolean reset) {
+        String param;
+        if(reset) param = "reset"; else param = "cleanup";
+        for(Map.Entry<String, Integer> vms : TPCcConstants.VMS_TO_PORT_MAP.entrySet()){
+            String host = PROPERTIES.getProperty(vms.getKey() + "_host");
+            try(var client = new MinimalHttpClient(host, vms.getValue())){
+                if(client.sendRequest("PATCH", "", param) != 200){
+                    System.out.println("Error on resetting "+vms+" state!");
+                }
+            } catch (IOException e) {
+                System.out.println("Exception on resetting "+vms+" state: \n"+e);
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -279,7 +293,8 @@ public final class Main {
         System.out.println("2. Load VMSes with tables in disk");
         System.out.println("3. Create workload");
         System.out.println("4. Submit workload");
-        System.out.println("5. Reset VMS states");
+        System.out.println("5. Cleanup VMS states");
+        System.out.println("6. Reset VMS states");
         System.out.println("q. Quit program");
     }
 

@@ -9,6 +9,8 @@ import dk.ku.di.dms.vms.tpcc.warehouse.repositories.ICustomerRepository;
 import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IDistrictRepository;
 import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IWarehouseRepository;
 
+import java.util.List;
+
 public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
     private final IWarehouseRepository warehouseRepository;
@@ -25,6 +27,30 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         this.warehouseRepository = warehouseRepository;
         this.districtRepository = districtRepository;
         this.customerRepository = customerRepository;
+    }
+
+    @Override
+    public void patch(String uri, String body) {
+        final String[] uriSplit = uri.split("/");
+        String op = uriSplit[uriSplit.length - 1];
+        if(op.contentEquals("reset")){
+            // path: /warehouse/reset
+            this.transactionManager.reset();
+            return;
+        }
+        // path: /warehouse/cleanup
+        List<Warehouse> warehouses = this.warehouseRepository.getAll();
+        List<District> districts = this.districtRepository.getAll();
+        List<Customer> customers = this.customerRepository.getAll();
+        this.transactionManager.reset();
+        this.transactionManager.beginTransaction(0, 0, 0,false);
+        for(District district : districts){
+            district.d_next_o_id = 3000;
+        }
+        this.warehouseRepository.insertAll(warehouses);
+        this.districtRepository.insertAll(districts);
+        this.customerRepository.insertAll(customers);
+        this.transactionManager.commit();
     }
 
     @Override

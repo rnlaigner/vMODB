@@ -14,10 +14,12 @@ public final class Main {
 
     private static final System.Logger LOGGER = System.getLogger(Main.class.getName());
 
+    private static VmsApplication VMS;
+
     public static void main(String[] ignoredArgs) throws Exception {
         Properties properties = ConfigUtils.loadProperties();
-        VmsApplication vms = buildVms(properties);
-        vms.start();
+        VMS = buildVms(properties);
+        VMS.start();
     }
 
     public static VmsApplication buildVms(Properties properties) throws Exception {
@@ -51,17 +53,22 @@ public final class Main {
         public void patch(String uri, String body) {
             String[] uriSplit = uri.split("/");
             String op = uriSplit[uriSplit.length - 1];
-            List<Product> products = this.repository.getAll();
             if(op.contentEquals("reset")){
                 // path: /product/reset
                 this.transactionManager.reset();
                 return;
             }
+            // path: /product/cleanup
+            long lastTid = VMS.lastTidFinished();
+            this.transactionManager.beginTransaction(lastTid, 0, lastTid, false);
+            List<Product> products = this.repository.getAll();
+            this.transactionManager.reset();
             this.transactionManager.beginTransaction(0, 0, 0,false);
             for(Product product : products){
                 product.version = "0";
                 this.repository.insert(product);
             }
+            this.transactionManager.commit();
         }
 
         @Override

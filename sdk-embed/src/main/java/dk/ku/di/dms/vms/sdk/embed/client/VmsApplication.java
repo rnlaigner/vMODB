@@ -22,7 +22,6 @@ import org.reflections.Reflections;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -93,8 +92,11 @@ public final class VmsApplication {
             }
         }
 
+        // just pick the first as vms identifier (to store data in disk folder)
+        String vmsName = filteredVmsClazz.stream().findFirst().get().getAnnotation(Microservice.class).value();
+
         // load catalog so we can pass the table instance to proxy repository
-        Map<String, Table> catalog = EmbedMetadataLoader.loadCatalog(vmsDataModelMap, entityToTableNameMap, isCheckpointing, isTruncating, options.getMaxRecords());
+        Map<String, Table> catalog = EmbedMetadataLoader.loadCatalog(vmsName, vmsDataModelMap, entityToTableNameMap, isCheckpointing, isTruncating, options.getMaxRecords());
 
         // operational API and checkpoint API
         TransactionManager transactionManager = new TransactionManager(catalog, isCheckpointing);
@@ -110,11 +112,6 @@ public final class VmsApplication {
                 vmsToRepositoriesMap,
                 tableToRepositoryMap
         );
-
-        // for now only giving support to one vms
-        Optional<Map.Entry<String, String>> entryOptional = vmsMetadata.clazzNameToVmsName().entrySet().stream().findFirst();
-        if(entryOptional.isEmpty()) throw new IllegalStateException("Cannot find a single instance of VMS");
-        String vmsName = entryOptional.get().getValue();
 
         IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
 

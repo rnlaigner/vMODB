@@ -96,7 +96,6 @@ public final class WarehouseService {
     @Inbound(values = "order-status-in")
     @Outbound("order-status-out")
     @Transactional(type = R)
-    @PartitionBy(clazz = OrderStatusIn.class, method = "getId")
     public OrderStatusOut processOrderStatus(OrderStatusIn in) {
         if(in.by_name){
             List<CustomerInfoDTO> customers = this.issueOrderStatusQuery(in);

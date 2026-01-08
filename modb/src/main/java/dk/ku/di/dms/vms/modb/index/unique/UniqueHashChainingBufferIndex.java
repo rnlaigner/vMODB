@@ -17,8 +17,11 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     public final Map<Long, AppendOnlyBoundedBuffer> chainingMap;
 
-    public UniqueHashChainingBufferIndex(RecordBufferContext recordBufferContext, Schema schema, int[] columnsIndex, int capacity) {
+    public final String vmsIdentifier;
+
+    public UniqueHashChainingBufferIndex(String vmsIdentifier, RecordBufferContext recordBufferContext, Schema schema, int[] columnsIndex, int capacity) {
         super(recordBufferContext, schema, columnsIndex, capacity);
+        this.vmsIdentifier = vmsIdentifier;
         this.chainingMap = new ConcurrentHashMap<>();
     }
 
@@ -32,7 +35,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
                 aob = this.chainingMap.get(headPos);
             } else {
                 LOGGER.log(INFO, "Cannot find an empty entry for record object. Creating a new chaining.... \nKey: " + key+ " Hash: " + key.hashCode());
-                aob = StorageUtils.loadAppendOnlyBoundedBuffer(OPEN_ADDRESSING_ATTEMPTS, (int) this.recordSize, STR."\{this.recordBufferCtx.fileName}_\{headPos}", true);
+                aob = StorageUtils.loadAppendOnlyBoundedBuffer(this.vmsIdentifier, OPEN_ADDRESSING_ATTEMPTS, (int) this.recordSize, STR."\{this.recordBufferCtx.fileName}_\{headPos}", true);
                 this.chainingMap.put(headPos, aob);
             }
             pos = aob.address;

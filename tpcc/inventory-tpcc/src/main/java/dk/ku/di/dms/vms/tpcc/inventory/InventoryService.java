@@ -30,9 +30,7 @@ public final class InventoryService {
     public NewOrderInvOut processNewOrder(NewOrderWareOut in) {
 
         float[] prices = this.itemRepository.getPricePerItemId(in.itemsIds);
-
         String[] ol_dist_info = new String[in.itemsIds.length];
-
         List<Stock> stockItemsToUpdate = new ArrayList<>(prices.length);
 
         for(int i = 0; i < in.itemsIds.length; i++){

@@ -65,9 +65,9 @@ public final class VmsTransactionTaskBuilder {
 
         @SuppressWarnings("unchecked")
         private static Set<Object> getPartitionKeys(VmsTransactionSignature signature, Object inputEvent) {
-            Set<Object> partitionIdAux;
-            try {
-                if (signature.executionMode() == ExecutionModeEnum.PARTITIONED) {
+            if (signature.executionMode() == ExecutionModeEnum.PARTITIONED) {
+                Set<Object> partitionIdAux;
+                try {
                     if (Set.class.isAssignableFrom(signature.partitionByMethod().getReturnType())) {
                         partitionIdAux = (Set<Object>) signature.partitionByMethod().invoke(inputEvent);
                     } else {
@@ -78,14 +78,13 @@ public final class VmsTransactionTaskBuilder {
                             partitionIdAux = Set.of();
                         }
                     }
-                } else {
+                } catch (InvocationTargetException | IllegalAccessException e){
+                    LOGGER.log(ERROR, "Failed to obtain partition key(s) from clazz "+signature.method().getDeclaringClass().getSimpleName()+" method "+ signature.method().getName() +" event "+inputEvent.getClass().getSimpleName());
                     partitionIdAux = Set.of();
                 }
-            } catch (InvocationTargetException | IllegalAccessException e){
-                LOGGER.log(ERROR, "Failed to obtain partition key(s) from method "+ signature.partitionByMethod().getName());
-                partitionIdAux = Set.of();
+                return partitionIdAux;
             }
-            return partitionIdAux;
+            return Set.of();
         }
 
         private void handleGenericError(Exception e, Object input) {

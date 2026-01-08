@@ -2,7 +2,6 @@ package dk.ku.di.dms.vms.modb.query.execution.operators.scan;
 
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.IMultiVersionIndex;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public abstract class AbstractScanWithOrder extends AbstractScan {

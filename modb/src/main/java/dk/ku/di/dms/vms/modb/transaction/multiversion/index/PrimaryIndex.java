@@ -206,8 +206,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
                 case NEGATIVE_OR_ZERO, MAX -> {
                     return comparator.compare(v1, v2) <= 0;
                 }
-                default ->
-                        throw new IllegalStateException("Cannot compare the constraint "+constraint+" for number type.");
+                default -> throw new IllegalStateException("Cannot compare the constraint "+constraint+" for number type.");
             }
         }
     }
@@ -222,9 +221,14 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             Entry<Long, TransactionWrite> entry = operationSet.floorEntry(txCtx.lastTid);
             return entry != null ? (entry.val().type != WriteType.DELETE ? entry.val().record : null) : null;
         }
+        if(operationSet.peak().key > txCtx.tid){
+            throw new RuntimeException("An attempt to read an entry with higher TID in a read-write transaction. Perhaps a misconfigured function annotation?");
+        }
         if(operationSet.lastWriteType == WriteType.DELETE) return null;
         Entry<Long, TransactionWrite> entry = operationSet.floorEntry(txCtx.tid);
-        if(entry != null) return entry.val().record;
+        if(entry != null) {
+            return entry.val().record;
+        }
         return null;
     }
 
@@ -249,11 +253,10 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         (c) some hash buffer operation is buggy (although the record returned below indeed has the same key)
          */
         else if(this.rawIndex.exists(key)){
-            var existingRecord = this.rawIndex.lookupByKey(key);
+            Object[] existingRecord = this.rawIndex.lookupByKey(key);
             LOGGER.log(WARNING, "Primary key violation found in underlying primary key index: "+key+" Existing record:\n"+Arrays.stream(existingRecord).toList());
-            // return false;
+            return false;
         }
-
         if(this.nonPkConstraintViolation(record)) {
             LOGGER.log(WARNING, "Non PK violation found in underlying primary key index: "+key);
             return false;
@@ -282,6 +285,9 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         boolean exists;
         if (operationSet != null){
             exists = operationSet.lastWriteType != WriteType.DELETE;
+            if(operationSet.peak().key > txCtx.tid) {
+                throw new RuntimeException("An attempt to update with a lower TID than the original record. Perhaps a misconfigured function annotation?");
+            }
         } else {
             exists = this.rawIndex.exists(key);
         }
@@ -347,6 +353,9 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     public Optional<Object[]> removeOpt(TransactionContext txCtx, IKey key) {
         OperationSetOfKey operationSet = this.updatesPerKeyMap.get( key );
         if (operationSet != null && operationSet.lastWriteType != WriteType.DELETE){
+            if(operationSet.peak().key > txCtx.tid) {
+                throw new RuntimeException("An attempt to delete with a lower TID than the original record. Perhaps a misconfigured function annotation?");
+            }
             Object[] lastRecord = operationSet.peak().val().record;
             TransactionWrite entry = TransactionWrite.delete(WriteType.DELETE);
             operationSet.put(txCtx.tid, entry);

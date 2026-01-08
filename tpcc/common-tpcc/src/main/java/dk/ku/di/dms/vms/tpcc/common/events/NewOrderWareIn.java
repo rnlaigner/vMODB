@@ -4,6 +4,7 @@ import dk.ku.di.dms.vms.modb.api.annotations.Event;
 import dk.ku.di.dms.vms.tpcc.common.etc.WareDistId;
 
 import java.util.Arrays;
+import java.util.Set;
 
 @Event
 public final class NewOrderWareIn {
@@ -29,9 +30,13 @@ public final class NewOrderWareIn {
             this.allLocal = allLocal;
     }
 
+    /**
+     * In principle, it could be solely w_id. However, it is required that partition IDs from different transactions "match" in schema
+     * If this partition ID is only composed by w_id, processPayment would not be able to identify a conflict with a concurrent new order
+     */
     @SuppressWarnings("unused")
     public WareDistId getId(){
-        return new WareDistId(this.w_id, this.d_id);
+        return new WareDistId(this.w_id, 0);
     }
 
     @Override

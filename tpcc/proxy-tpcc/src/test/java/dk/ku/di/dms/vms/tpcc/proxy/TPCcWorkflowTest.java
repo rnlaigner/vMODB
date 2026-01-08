@@ -54,15 +54,15 @@ public final class TPCcWorkflowTest {
     @BeforeClass
     public static void startTPCcServices(){
          // clean up
-        File orderLineFile = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("order_line");
-        File ordersFile = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("orders");
-        File newOrdersFile = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("new_orders");
+        File orderLineFile = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("order", "order_line");
+        File ordersFile = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("order", "orders");
+        File newOrdersFile = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("order", "new_orders");
 
         if(orderLineFile.delete() && ordersFile.delete() && newOrdersFile.delete()){
             System.out.println("Order VMS records deleted.");
         }
 
-        String basePathStr = dk.ku.di.dms.vms.modb.utils.StorageUtils.getBasePath();
+        String basePathStr = dk.ku.di.dms.vms.modb.utils.StorageUtils.getBasePath("");
         Path basePath = Paths.get(basePathStr);
         try(var paths = Files
                 // retrieve all files in the folder

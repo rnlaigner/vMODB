@@ -150,9 +150,9 @@ public final class WorkloadUtils {
             do {
 
                 ratio = random.nextInt(1,101);
-                for(int i = 0; i < txRatio.length; i++){
-                    if(ratio <= txRatio[i].t1){
-                        tx = txRatio[i].t2;
+                for (Tuple<Integer, String> txEntry : txRatio) {
+                    if (ratio <= txEntry.t1) {
+                        tx = txEntry.t2;
                         break;
                     }
                 }
@@ -169,8 +169,9 @@ public final class WorkloadUtils {
                     }
                     startTsMap.get(batchId).add(currentTs);
                     histogram.computeIfPresent(tx, (_, v)-> v+1);
-//                    if(histogram.computeIfPresent(tx, (_, v)-> v+1) == 200000) {
-//                        // FIXME the first problem before understanding why performance halt on 200K transactions is why the coordinator does not form 10K in the last batch (i.e.,batch 19)
+                    // only for local tests
+//                    if(histogram.get(tx) == 200_000) {
+//                        LOGGER.log(WARNING,"200K transaction inputs for: "+tx+" hit. Closing submission loop earlier...");
 //                        Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
 //                        break;
 //                    }
@@ -194,29 +195,36 @@ public final class WorkloadUtils {
         }
     }
 
-    public static List<Map<String,Iterator<Object>>> mapWorkloadInputFiles(int numWare){
+    public static List<Map<String,Iterator<Object>>> mapWorkloadInputFiles(int numWare, Map<String, Integer> numTxInputPerType){
         LOGGER.log(INFO, "Mapping "+numWare+" warehouse input files from disk...");
         long initTs = System.currentTimeMillis();
         List<Map<String, Iterator<Object>>> input = new ArrayList<>(numWare);
+        int numTransactions;
         for(int i = 0; i < numWare; i++){
 
             Map<String, Iterator<Object>> wareInput = new HashMap<>(3);
 
             // new order
-            AppendOnlyBoundedBuffer newOrderBuffer = StorageUtils.loadAppendOnlyBuffer(NEW_ORDER_INPUT_BASE_FILE_NAME +(i+1));
-            // calculate number of entries (i.e., transaction requests)
-            int numTransactions = (int) newOrderBuffer.size() / NEW_ORDER_SCHEMA.getRecordSize();
-            wareInput.put("new_order", createNewOrderInputIterator(newOrderBuffer, numTransactions) );
+            if(numTxInputPerType.containsKey("new_order") && numTxInputPerType.get("new_order") > 0) {
+                AppendOnlyBoundedBuffer newOrderBuffer = StorageUtils.loadAppendOnlyBuffer("proxy", NEW_ORDER_INPUT_BASE_FILE_NAME + (i + 1));
+                // calculate number of entries (i.e., transaction requests)
+                numTransactions = (int) newOrderBuffer.size() / NEW_ORDER_SCHEMA.getRecordSize();
+                wareInput.put("new_order", createNewOrderInputIterator(newOrderBuffer, numTransactions));
+            }
 
             // payment
-            AppendOnlyBoundedBuffer paymentBuffer = StorageUtils.loadAppendOnlyBuffer(PAYMENT_INPUT_BASE_FILE_NAME +(i+1));
-            numTransactions = (int) paymentBuffer.size() / PAYMENT_SCHEMA.getRecordSize();
-            wareInput.put("payment", createPaymentInputIterator(paymentBuffer, numTransactions) );
+            if(numTxInputPerType.containsKey("payment") && numTxInputPerType.get("payment") > 0) {
+                AppendOnlyBoundedBuffer paymentBuffer = StorageUtils.loadAppendOnlyBuffer("proxy", PAYMENT_INPUT_BASE_FILE_NAME + (i + 1));
+                numTransactions = (int) paymentBuffer.size() / PAYMENT_SCHEMA.getRecordSize();
+                wareInput.put("payment", createPaymentInputIterator(paymentBuffer, numTransactions));
+            }
 
             // order status
-            AppendOnlyBoundedBuffer orderStatusBuffer = StorageUtils.loadAppendOnlyBuffer(ORDER_STATUS_INPUT_BASE_FILE_NAME +(i+1));
-            numTransactions = (int) orderStatusBuffer.size() / ORDER_STATUS_SCHEMA.getRecordSize();
-            wareInput.put("order_status", createOrderStatusInputIterator(orderStatusBuffer, numTransactions) );
+            if(numTxInputPerType.containsKey("order_status") && numTxInputPerType.get("order_status") > 0) {
+                AppendOnlyBoundedBuffer orderStatusBuffer = StorageUtils.loadAppendOnlyBuffer("proxy", ORDER_STATUS_INPUT_BASE_FILE_NAME + (i + 1));
+                numTransactions = (int) orderStatusBuffer.size() / ORDER_STATUS_SCHEMA.getRecordSize();
+                wareInput.put("order_status", createOrderStatusInputIterator(orderStatusBuffer, numTransactions));
+            }
 
             input.add(wareInput);
         }
@@ -291,21 +299,13 @@ public final class WorkloadUtils {
         long orderStatusBufferAddress = MemoryUtils.getByteBufferAddress(orderStatusNativeBuffer);
 
         for (int ware = 1; ware <= numWare; ware++) {
-
             LOGGER.log(INFO, "Warehouse "+ware+" started");
-
-            String newOrderInputFileName = NEW_ORDER_INPUT_BASE_FILE_NAME + ware;
-            AppendOnlyUnboundedBuffer newOrderBuffer = StorageUtils.loadAppendOnlyUnboundedBuffer(newOrderInputFileName);
-
-            String paymentInputFileName = PAYMENT_INPUT_BASE_FILE_NAME + ware;
-            AppendOnlyUnboundedBuffer paymentBuffer = StorageUtils.loadAppendOnlyUnboundedBuffer(paymentInputFileName);
-
-            String orderStatusInputFileName = ORDER_STATUS_INPUT_BASE_FILE_NAME + ware;
-            AppendOnlyUnboundedBuffer orderStatusBuffer = StorageUtils.loadAppendOnlyUnboundedBuffer(orderStatusInputFileName);
-
             for(var entry : numTxPerType.entrySet()) {
+                if(entry.getValue() <= 0) continue;
                 switch (entry.getKey()){
                     case "new_order" -> {
+                        String newOrderInputFileName = NEW_ORDER_INPUT_BASE_FILE_NAME + ware;
+                        AppendOnlyUnboundedBuffer newOrderBuffer = StorageUtils.loadAppendOnlyUnboundedBuffer("proxy", newOrderInputFileName);
                         for (int i = 1; i <= entry.getValue(); i++) {
                             Object[] newOrderInput = generateNewOrder(ware, numWare, allowMultiWarehouses);
                             writeRecordInMemoryPos(newOrderBufferAddress, newOrderInput, NEW_ORDER_SCHEMA);
@@ -316,6 +316,8 @@ public final class WorkloadUtils {
                         LOGGER.log(INFO, "Generated "+entry.getValue()+" new order inputs");
                     }
                     case "payment" -> {
+                        String paymentInputFileName = PAYMENT_INPUT_BASE_FILE_NAME + ware;
+                        AppendOnlyUnboundedBuffer paymentBuffer = StorageUtils.loadAppendOnlyUnboundedBuffer("proxy", paymentInputFileName);
                         for (int i = 1; i <= entry.getValue(); i++) {
                             Object[] paymentInput = generatePayment(ware, numWare);
                             writeRecordInMemoryPos(paymentBufferAddress, paymentInput, PAYMENT_SCHEMA);
@@ -326,6 +328,8 @@ public final class WorkloadUtils {
                         LOGGER.log(INFO, "Generated "+entry.getValue()+" payment inputs");
                     }
                     case "order_status" -> {
+                        String orderStatusInputFileName = ORDER_STATUS_INPUT_BASE_FILE_NAME + ware;
+                        AppendOnlyUnboundedBuffer orderStatusBuffer = StorageUtils.loadAppendOnlyUnboundedBuffer("proxy", orderStatusInputFileName);
                         for (int i = 1; i <= entry.getValue(); i++) {
                             Object[] orderStatusInput = generateOrderStatus(ware);
                             writeRecordInMemoryPos(orderStatusBufferAddress, orderStatusInput, ORDER_STATUS_SCHEMA);
@@ -344,7 +348,7 @@ public final class WorkloadUtils {
     }
     
     public static void deleteWorkloadInputFiles(){
-        String basePathStr = StorageUtils.getBasePath();
+        String basePathStr = StorageUtils.getBasePath("proxy");
         Path basePath = Paths.get(basePathStr);
         try(var paths = Files.walk(basePath)){
             var newOrderInputFiles = paths.filter(path -> path.toString().contains(NEW_ORDER_INPUT_BASE_FILE_NAME) || path.toString().contains(ORDER_STATUS_INPUT_BASE_FILE_NAME)).toList();
@@ -359,10 +363,10 @@ public final class WorkloadUtils {
     }
 
     public static int getNumWorkloadInputFiles(){
-        String basePathStr = StorageUtils.getBasePath();
+        String basePathStr = StorageUtils.getBasePath("proxy");
         Path basePath = Paths.get(basePathStr);
         try(var paths = Files.walk(basePath)){
-            var workloadInputFiles = paths.filter(path -> path.toString().contains(NEW_ORDER_INPUT_BASE_FILE_NAME)).toList();
+            List<Path> workloadInputFiles = paths.filter(path -> path.toString().contains(NEW_ORDER_INPUT_BASE_FILE_NAME)).toList();
             return workloadInputFiles.size();
         } catch (IOException e){
             LOGGER.log(ERROR, "Error captured while trying to access base path: \n"+e);

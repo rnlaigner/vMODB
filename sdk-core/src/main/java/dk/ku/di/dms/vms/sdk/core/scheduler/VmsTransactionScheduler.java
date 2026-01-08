@@ -16,7 +16,10 @@ import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 
 import javax.management.NotificationEmitter;
 import javax.management.NotificationFilter;
-import java.lang.management.*;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryNotificationInfo;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Consumer;

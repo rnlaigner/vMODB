@@ -85,7 +85,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
     public List<Object[]> fetch(final Table table, final SelectStatement selectStatement){
         String sqlAsKey = selectStatement.SQL.toString();
         AbstractSimpleOperator scanOperator = this.queryPlanCacheMap.computeIfAbsent(sqlAsKey,
-                (ignored) -> {
+                (_) -> {
                     QueryTree queryTree = this.analyzer.analyze(selectStatement);
                     return this.planner.plan(queryTree);
                 });
@@ -503,8 +503,8 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
     @Override
     public ITransactionContext beginTransaction(long tid, int identifier, long lastTid, boolean readOnly) {
         return this.txCtxMap.compute(Thread.currentThread().threadId(),
-                (ignored,v) -> {
-                    if (v != null && tid == 0 && v.tid == 0)
+                (_,v) -> {
+                    if (v != null && v.tid == 0 && tid == 0)
                         return v;
                     return new TransactionContext(tid, lastTid, readOnly);
                 });
