@@ -21,12 +21,16 @@ public final class Main {
 
     private static int NUM_INGESTION_WORKERS;
 
-    public static void main(String[] ignoredArgs) throws Exception {
-        System.out.println("Select your deployment scheme: \n1 - Distributed \n2 - Local \nq - Quit");
-        String choice = new Scanner(System.in).nextLine();
-        switch (choice){
+    public static void main(String[] args) throws Exception {
+        String option;
+        if(args.length == 0) {
+            System.out.println("Select your deployment scheme: \n1 - Distributed \n2 - Local \nq - Quit\n\nYou can also set this automatically by passing 1 or 2 as an argument to the CLI.");
+            option = new Scanner(System.in).nextLine();
+        } else {
+            option = args[0];
+        }
+        switch (option){
             case "1" -> {
-                // TODO find a way to ignore the 'app.properties' files outside the proxy project
 //                PROPERTIES.setProperty("logging", "true");
                 NUM_INGESTION_WORKERS = Runtime.getRuntime().availableProcessors();
                 loadMenu("Distributed Deployment Menu");
@@ -46,8 +50,8 @@ public final class Main {
         PROPERTIES.setProperty("network_thread_pool_size", "0");
 
         // if persistence is required, uncomment lines below
-//        PROPERTIES.setProperty("logging", "true");
-//        PROPERTIES.setProperty("checkpointing", "true");
+        // PROPERTIES.setProperty("logging", "true");
+        // PROPERTIES.setProperty("checkpointing", "true");
 
         dk.ku.di.dms.vms.tpcc.warehouse.Main.main(null);
         dk.ku.di.dms.vms.tpcc.inventory.Main.main(null);

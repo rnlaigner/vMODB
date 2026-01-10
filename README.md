@@ -6,7 +6,7 @@ MODB offers event-driven functionalities by design, which makes it easy for deve
 
 MODB runs application logic in seamlessly within the application tier, not requiring developers to implement complex and error-prone stored procedures in the database.
 
-Developers can plug and play any microservice at any time, the MODB then adapt the event streams seamlessly as requested by the application. In the end, developers still experience the flexibility and dinamicity offered by microservice architectures, but with built-in system-level database support to alleviate several challenges usually found in the practice.
+Developers can plug and play any microservice at any time, the MODB then adapt the event streams seamlessly as requested by the application. In the end, developers still experience the flexibility and dynamicity offered by microservice architectures, but with built-in system-level database support to alleviate several challenges usually found in the practice.
 
 Differently from traditional server-based database systems, where users interact via a well-defined network protocol, in MODB, users solely write code and all the data management complexity is abstracted by the runtime.
 
@@ -55,13 +55,29 @@ Then you can just run the following command:
 mvn clean package -DskipTests=true
 ```
 
-To run the microservices in the submodule `marketplace` in an IDE like IntelliJ, use the following VM parameters:
+To run, test, and debug applications in an IDE like IntelliJ:
+
+To run the Online Marketplace benchmark, for each submodule under `marketplace` , use the following VM parameters:
 ```
 --enable-preview
 --add-exports
 java.base/jdk.internal.misc=ALL-UNNAMED
 --add-opens
 java.base/jdk.internal.misc=ALL-UNNAMED
+```
+
+To run TPC-C, for each submodule under `tpcc` , use the following VM parameters:
+```
+-XX:+UseParallelGC
+--enable-preview
+--add-exports
+java.base/jdk.internal.misc=ALL-UNNAMED
+--add-opens
+java.base/jdk.internal.util=ALL-UNNAMED
+--add-opens
+java.base/java.nio=ALL-UNNAMED
+--add-opens
+java.base/sun.nio.ch=ALL-UNNAMED
 ```
 
 To profile the system, use the following VM parameters:

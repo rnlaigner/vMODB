@@ -124,7 +124,7 @@ public final class TPCcWorkflowTest {
         for(int w_id = 1; w_id <= NUM_WARE; w_id++){
             for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                 for(int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
-                    var key = TripleCompositeKey.of(c_id, d_id, w_id);
+                    TripleCompositeKey key = TripleCompositeKey.of(c_id, d_id, w_id);
                     map.computeIfAbsent(key.hashCode(), ignored -> new ArrayList<>()).add(key);
                     Assert.assertFalse(map.get(key.hashCode()).size() > 1);
                 }
@@ -176,7 +176,7 @@ public final class TPCcWorkflowTest {
         try(MinimalHttpClient httpClient = new MinimalHttpClient(host, port)){
             for(int i = 1; i <= TPCcConstants.NUM_DIST_PER_WARE; i++) {
                 String resp2 = httpClient.sendGetRequest("district/"+i+"/1");
-                var parsedResp = HttpUtils.parseRequest(resp2);
+                HttpUtils.HttpRequestInternal parsedResp = HttpUtils.parseRequest(resp2);
                 District district = serdesProxy.deserialize(parsedResp.body(), District.class);
                 // not all districts are updated
                 if(district.d_next_o_id > 3001){
@@ -193,13 +193,13 @@ public final class TPCcWorkflowTest {
         var serdesProxy = VmsSerdesProxyBuilder.build();
         try(MinimalHttpClient httpClient = new MinimalHttpClient(host, port)){
             String resp1 = httpClient.sendGetRequest("warehouse/1");
-            var parsedResp1 = HttpUtils.parseRequest(resp1);
-            var ware = serdesProxy.deserialize(parsedResp1.body(), Warehouse.class);
+            HttpUtils.HttpRequestInternal parsedResp1 = HttpUtils.parseRequest(resp1);
+            Warehouse ware = serdesProxy.deserialize(parsedResp1.body(), Warehouse.class);
             Assert.assertEquals(1, ware.w_id);
             for(int i = 1 ; i <= TPCcConstants.NUM_DIST_PER_WARE; i++) {
                 String resp2 = httpClient.sendGetRequest("district/"+i+"/1");
-                var parsedResp2 = HttpUtils.parseRequest(resp2);
-                var district = serdesProxy.deserialize(parsedResp2.body(), District.class);
+                HttpUtils.HttpRequestInternal parsedResp2 = HttpUtils.parseRequest(resp2);
+                District district = serdesProxy.deserialize(parsedResp2.body(), District.class);
                 Assert.assertEquals(3001, district.d_next_o_id);
             }
         }

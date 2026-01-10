@@ -1,5 +1,6 @@
 package dk.ku.di.dms.vms.tpcc.proxy;
 
+import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.tpcc.proxy.dataload.DataLoadUtils;
 import dk.ku.di.dms.vms.tpcc.proxy.storage.StorageUtils;
 import dk.ku.di.dms.vms.tpcc.proxy.workload.WorkloadUtils;
@@ -24,7 +25,7 @@ public final class AppTest {
         int numWare = StorageUtils.getNumRecordsFromInDiskTable(metadata.entityToSchemaMap().get("warehouse"), "warehouse");
         Assert.assertEquals(NUM_WARE, numWare);
         // init stub warehouse service
-        var vms = new TestService().buildAndStart();
+        VmsApplication vms = new TestService().buildAndStart();
         // submit data to warehouse stub
         Assert.assertNotNull(DataLoadUtils.mapTablesFromDisk(tableToIndexMap, metadata.entityHandlerMap()));
         vms.close();
@@ -45,7 +46,7 @@ public final class AppTest {
     public void testPaymentWorkload() throws IOException {
         Map<String, Integer> numTxPerType = new HashMap<>(3);
         numTxPerType.put("payment", 10);
-         WorkloadUtils.createWorkload(1, false, numTxPerType);
+        WorkloadUtils.createWorkload(1, false, numTxPerType);
         List<Map<String, Iterator<Object>>> loaded = WorkloadUtils.mapWorkloadInputFiles(1, numTxPerType);
         Iterator<Object> paymentIt = loaded.getFirst().get("payment");
         while(paymentIt.hasNext()){

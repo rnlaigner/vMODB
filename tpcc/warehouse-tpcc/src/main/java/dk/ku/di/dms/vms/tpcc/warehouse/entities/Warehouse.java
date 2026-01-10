@@ -40,8 +40,7 @@ public final class Warehouse implements IEntity<Integer> {
 
     public Warehouse(){}
 
-    public Warehouse(int w_id, String w_name, String w_street_1, String w_street_2, String w_city,
-                     String w_state, String w_zip, float w_tax, double w_ytd) {
+    public Warehouse(int w_id, String w_name, String w_street_1, String w_street_2, String w_city, String w_state, String w_zip, float w_tax, double w_ytd) {
         this.w_id = w_id;
         this.w_name = w_name;
         this.w_street_1 = w_street_1;
@@ -56,15 +55,15 @@ public final class Warehouse implements IEntity<Integer> {
     @Override
     public String toString() {
         return "{"
-                + "\"w_id\":\"" + w_id + "\""
-                + ",\"w_name\":\"" + w_name + "\""
-                + ",\"w_street_1\":\"" + w_street_1 + "\""
-                + ",\"w_street_2\":\"" + w_street_2 + "\""
-                + ",\"w_city\":\"" + w_city + "\""
-                + ",\"w_state\":\"" + w_state + "\""
-                + ",\"w_zip\":\"" + w_zip + "\""
-                + ",\"w_tax\":\"" + w_tax + "\""
-                + ",\"w_ytd\":\"" + w_ytd + "\""
+                + "\"w_id\":" +           this.w_id
+                + ",\"w_name\":\"" +        this.w_name + "\""
+                + ",\"w_street_1\":\"" +    this.w_street_1 + "\""
+                + ",\"w_street_2\":\"" +    this.w_street_2 + "\""
+                + ",\"w_city\":\"" +        this.w_city + "\""
+                + ",\"w_state\":\"" +       this.w_state + "\""
+                + ",\"w_zip\":\"" +         this.w_zip + "\""
+                + ",\"w_tax\":" +         this.w_tax
+                + ",\"w_ytd\":" +         this.w_ytd
                 + "}";
     }
 }

@@ -34,7 +34,7 @@
   </modules>
 
   <name>vms-runtime-java</name>
-  <url>https://rnlaigner.github.io/vms</url>
+  <url>https://rnlaigner.github.io/vmodb</url>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -62,7 +62,7 @@
       <scope>test</scope>
     </dependency>
 
-    <!-- Logging. Required by junit. could change to a custom-built one -->
+    <!-- Logging, as required by junit. Could change to a custom-built one -->
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
