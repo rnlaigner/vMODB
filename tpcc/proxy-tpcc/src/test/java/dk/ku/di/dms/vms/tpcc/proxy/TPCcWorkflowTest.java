@@ -106,14 +106,10 @@ public final class TPCcWorkflowTest {
 
     @Test
     public void test_B_create_workload() throws IOException {
-
-        Map<String, Integer> numTxPerType = new HashMap<>(3);
+        Map<String, Integer> numTxPerType = new HashMap<>(1);
         numTxPerType.put("new_order", 10);
-//        numTxPerType.put("payment", (int) PROPERTIES.get("payment_size"));
-//        numTxPerType.put("order_status", (int) PROPERTIES.get("order_status_size"));
-
         WorkloadUtils.createWorkload(NUM_WARE, true, numTxPerType);
-        List<Map<String,Iterator<Object>>> iteratorMap = WorkloadUtils.mapWorkloadInputFiles(NUM_WARE);
+        List<Map<String,Iterator<Object>>> iteratorMap = WorkloadUtils.mapWorkloadInputFiles(NUM_WARE, numTxPerType);
         Assert.assertFalse(iteratorMap.isEmpty());
         var iterator = iteratorMap.getFirst().get("new_order");
         while (iterator.hasNext()) {
@@ -148,10 +144,12 @@ public final class TPCcWorkflowTest {
     @SuppressWarnings("unchecked")
     @Test
     public void test_E_submit_workload() throws IOException {
+        Map<String, Integer> numTxPerType = new HashMap<>(1);
+        numTxPerType.put("new_order", 10);
         // mapping all the workload data is not a good idea, it overloads the Java heap
         //  perhaps it is better to iteratively load from memory. instead of list, pass an iterator to the worker
         //  link a file/worker to a warehouse, so there is no need to partition the file among workers
-        var input = WorkloadUtils.mapWorkloadInputFiles(NUM_WARE);
+        var input = WorkloadUtils.mapWorkloadInputFiles(NUM_WARE, numTxPerType);
         Assert.assertFalse(input.isEmpty());
 
         Coordinator coordinator = ExperimentUtils.loadCoordinator(PROPERTIES);

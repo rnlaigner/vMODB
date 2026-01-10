@@ -37,7 +37,7 @@ public final class AppTest {
         // create
         WorkloadUtils.createWorkload(NUM_WARE, false, numTxPerType);
         // load
-        List<Map<String, Iterator<Object>>> loaded = WorkloadUtils.mapWorkloadInputFiles(NUM_WARE);
+        List<Map<String, Iterator<Object>>> loaded = WorkloadUtils.mapWorkloadInputFiles(NUM_WARE, numTxPerType);
         Assert.assertEquals(NUM_WARE, loaded.size());
     }
 
@@ -46,8 +46,8 @@ public final class AppTest {
         Map<String, Integer> numTxPerType = new HashMap<>(3);
         numTxPerType.put("payment", 10);
          WorkloadUtils.createWorkload(1, false, numTxPerType);
-        List<Map<String, Iterator<Object>>> loaded = WorkloadUtils.mapWorkloadInputFiles(1);
-        Iterator<Object> paymentIt = loaded.get(0).get("payment");
+        List<Map<String, Iterator<Object>>> loaded = WorkloadUtils.mapWorkloadInputFiles(1, numTxPerType);
+        Iterator<Object> paymentIt = loaded.getFirst().get("payment");
         while(paymentIt.hasNext()){
             System.out.println(paymentIt.next());
         }
