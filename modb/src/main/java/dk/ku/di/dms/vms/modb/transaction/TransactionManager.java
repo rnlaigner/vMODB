@@ -326,7 +326,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         IKey pk = KeyUtils.buildRecordKey(primaryIndex.underlyingIndex().schema().getPrimaryKeyColumns(), values);
         TransactionContext txCtx = this.txCtxMap.get(Thread.currentThread().threadId());
         if(primaryIndex.upsert(txCtx, pk, values)) {
-            // FIXME must check if it is insert to insert in the secondary indexes
+            // FIXME must check if it is insert in order to insert in the secondary indexes
             //  update may also lead to changes in the secondary index (e.g., a column that requires readdressing)
             trackIndexes(txCtx, table, values, primaryIndex, pk);
             return;
@@ -463,17 +463,17 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
      */
     @Override
     public void checkpoint(long maxTid){
-        LOGGER.log(INFO, "Checkpoint for max TID "+maxTid+" started at "+System.currentTimeMillis());
+        LOGGER.log(DEBUG, "Checkpoint for max TID "+maxTid+" started at "+System.currentTimeMillis());
         for (Table table : this.catalog.values()) {
-            LOGGER.log(INFO, "Checkpointing table "+table.getName());
+            // LOGGER.log(DEBUG, "Checkpointing table "+table.getName());
             int numRecords = table.primaryKeyIndex().checkpoint(maxTid);
             if(numRecords > 0) {
-                LOGGER.log(INFO, "Persisted "+numRecords+" records in table "+table.getName());
+                LOGGER.log(DEBUG, numRecords+" record(s) persisted to table "+table.getName());
             } else {
-                LOGGER.log(WARNING, "No records have been flushed to table "+table.getName());
+                LOGGER.log(DEBUG, "No records have been flushed to table "+table.getName());
             }
         }
-        LOGGER.log(INFO, "Checkpoint for max TID "+maxTid+" finished at "+System.currentTimeMillis());
+        LOGGER.log(DEBUG, "Checkpoint for max TID "+maxTid+" finished at "+System.currentTimeMillis());
     }
 
     @Override

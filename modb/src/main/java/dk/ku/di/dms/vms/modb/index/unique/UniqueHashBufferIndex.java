@@ -52,7 +52,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         this.recordSize = schema.getRecordSize();
         this.size = 0;
         this.capacity = capacity;
-        this.limit = recordBufferCtx.address + (this.recordSize * (this.capacity - 1));
+        this.limit = recordBufferCtx.address + (this.recordSize * (this.capacity == 1 ? 1 : this.capacity - 1));
     }
 
     @Override
@@ -161,6 +161,9 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         }
     }
 
+    /**
+     * Overriding to write right away and avoid calling findRecordAddress() again
+     */
     @Override
     public void upsert(IKey key, Object[] record){
         long pos = this.findRecordAddress(key);

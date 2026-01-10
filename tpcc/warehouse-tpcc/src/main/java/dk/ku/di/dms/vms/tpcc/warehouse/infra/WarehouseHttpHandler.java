@@ -47,6 +47,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         System.gc();
         LOGGER.log(INFO, "Warehouse GC finished.");
 
+        this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
         List<Warehouse> warehouses = this.warehouseRepository.getAll();
         List<District> districts = this.districtRepository.getAll();
         List<Customer> customers = this.customerRepository.getAll();

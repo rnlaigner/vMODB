@@ -18,3 +18,8 @@ If you are inside the vms-runtime-java folder, run:
 ```
 java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar tpcc/order-tpcc/target/order-tpcc-1.0-SNAPSHOT-jar-with-dependencies.jar
 ```
+
+To collect GC diagnostics:
+```
+java '-Xlog:gc*,safepoint,classhisto=trace:file=gc+classhisto*' -XX:+UnlockDiagnosticVMOptions --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar tpcc/proxy-tpcc/target/proxy-tpcc-1.0-SNAPSHOT.jar 2
+```

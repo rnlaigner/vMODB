@@ -5,6 +5,7 @@ import dk.ku.di.dms.vms.sdk.embed.entity.EntityHandler;
 import dk.ku.di.dms.vms.tpcc.proxy.infra.MinimalHttpClient;
 import dk.ku.di.dms.vms.tpcc.proxy.infra.TPCcConstants;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiFunction;
@@ -68,10 +69,22 @@ public final class DataLoadUtils {
         CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
         LOGGER.log(INFO, "Table ingestion starting...");
         long init = System.currentTimeMillis();
-        for (int i = 1; i <= numCpus; i++) {
-            service.submit(new IngestionWorker(tableInputMap, vmsToHostMap), null);
-        }
+
+        Map<String, QueueTableIterator> tableInputMapPriority = new LinkedHashMap<>();
+        tableInputMapPriority.put("warehouse", tableInputMap.remove("warehouse"));
+        tableInputMapPriority.put("item", tableInputMap.remove("item"));
+        tableInputMapPriority.put("district", tableInputMap.remove("district"));
+
         try {
+            for (int i = 1; i <= numCpus; i++) {
+                service.submit(new IngestionWorker(tableInputMapPriority, vmsToHostMap), null);
+            }
+            for (int i = 1; i <= numCpus; i++) {
+                completionQueue.take();
+            }
+            for (int i = 1; i <= numCpus; i++) {
+                service.submit(new IngestionWorker(tableInputMap, vmsToHostMap), null);
+            }
             for (int i = 1; i <= numCpus; i++) {
                 completionQueue.take();
             }
@@ -121,38 +134,59 @@ public final class DataLoadUtils {
             this.vmsToHostMap = vmsToHostMap;
         }
 
+        /**
+         * Must ensure data dependencies are fulfilled to avoid errors
+         * Warehouse -> District -> Customer
+         * Item -> Stock
+         */
         @Override
         public void run() {
             try {
                 for(Map.Entry<String, QueueTableIterator> table : this.tableInputMap.entrySet()) {
-                    String actualTable = table.getKey().contains("stock") ? "stock" : table.getKey();
-                    actualTable = table.getKey().contains("customer") ? "customer" : actualTable;
-                    MinimalHttpClient client = HTTP_CLIENT_SUPPLIER.apply(
-                            actualTable,
-                            this.vmsToHostMap.get(TPCcConstants.TABLE_TO_VMS_MAP.get(actualTable) + "_host" ));
-                    QueueTableIterator queue = table.getValue();
-                    String entity;
-                    int count = 0;
-                    LOGGER.log(INFO, "Thread "+Thread.currentThread().threadId()+" start loading data to table "+table.getKey());
-                    List<String> errors = new ArrayList<>();
-                    while ((entity = queue.poll()) != null) {
-                        if(client.sendRequest("POST", entity, actualTable) != 200){
-                            errors.add(entity);
-                            continue;
-                        }
-                        count++;
-                    }
-
-                    if(!errors.isEmpty()){
-                        LOGGER.log(WARNING, "Thread "+Thread.currentThread().threadId()+" finished with table "+table.getKey()+": "+count+" records sent and "+errors.size()+ " errors.");
-                    } else {
-                        LOGGER.log(INFO, "Thread "+Thread.currentThread().threadId()+" finished with table "+table.getKey()+": "+count+" records sent.");
-                    }
-                    returnConnection(actualTable, client);
+                    run_(table.getKey(), table.getValue());
                 }
             } catch (Exception e){
                 e.printStackTrace(System.err);
             }
+        }
+
+        private void run_(String table, QueueTableIterator iterator) throws IOException {
+            String actualTable = table.contains("stock") ? "stock" : table;
+            actualTable = table.contains("customer") ? "customer" : actualTable;
+            MinimalHttpClient client = HTTP_CLIENT_SUPPLIER.apply(
+                    actualTable,
+                    this.vmsToHostMap.get(TPCcConstants.TABLE_TO_VMS_MAP.get(actualTable) + "_host" ));
+            String entity;
+            int count = 0;
+            LOGGER.log(INFO, "Thread "+Thread.currentThread().threadId()+" start loading data to table "+ table);
+            List<String> errors = new ArrayList<>();
+            while ((entity = iterator.poll()) != null) {
+                if(client.sendRequest("POST", entity, actualTable) != 200){
+                    errors.add(entity);
+                    continue;
+                }
+                count++;
+            }
+
+            if(!errors.isEmpty()) {
+                LOGGER.log(WARNING, "Thread " + Thread.currentThread().threadId() + " trying to resend " + errors.size() + " failed entities...");
+                int numEntities = errors.size();
+                while (numEntities > 0) {
+                    numEntities--;
+                    entity = errors.removeFirst();
+                    if (client.sendRequest("POST", entity, actualTable) != 200) {
+                        continue;
+                    }
+                    count++;
+                }
+            }
+
+            if(!errors.isEmpty()){
+                LOGGER.log(WARNING, "Thread "+Thread.currentThread().threadId()+" finished with table "+ table+": "+count+" records sent and "+errors.size()+ " errors.");
+            } else {
+                LOGGER.log(INFO, "Thread "+Thread.currentThread().threadId()+" finished with table "+ table+": "+count+" records sent.");
+            }
+            returnConnection(actualTable, client);
         }
     }
 

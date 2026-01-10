@@ -171,9 +171,9 @@ public final class VmsTransactionTaskBuilder {
         @Override
         public String toString() {
             return "{"
-                    + "\"batch\":\"" + this.batch + "\""
-                    + ",\"lastTid\":\"" + this.lastTid + "\""
-                    + ",\"tid\":\"" + tid + "\""
+                    + "\"batch\":" + this.batch
+                    + ",\"lastTid\":" + this.lastTid
+                    + ",\"tid\":" + tid
                     + "}";
         }
 
@@ -186,8 +186,8 @@ public final class VmsTransactionTaskBuilder {
     }
 
     public VmsTransactionTask buildFinished(long tid){
-        var sig = new VmsTransactionSignature(null, null, null, ExecutionModeEnum.SINGLE_THREADED, null, null);
-        var deadTask = new VmsTransactionTask(tid, 0, 0, sig, null);
+        VmsTransactionSignature sig = new VmsTransactionSignature(null, null, null, ExecutionModeEnum.SINGLE_THREADED, null, null);
+        VmsTransactionTask deadTask = new VmsTransactionTask(tid, 0, 0, sig, null);
         deadTask.status = FINISHED;
         return deadTask;
     }

@@ -2,13 +2,11 @@ package dk.ku.di.dms.vms.modb.transaction.multiversion.index;
 
 import dk.ku.di.dms.vms.modb.common.constraint.ConstraintEnum;
 import dk.ku.di.dms.vms.modb.common.constraint.ConstraintReference;
-import dk.ku.di.dms.vms.modb.common.data_structure.Set0;
 import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
-import dk.ku.di.dms.vms.modb.index.unique.UniqueHashMapIndex;
 import dk.ku.di.dms.vms.modb.transaction.TransactionContext;
 import dk.ku.di.dms.vms.modb.transaction.internal.Entry;
 import dk.ku.di.dms.vms.modb.transaction.internal.OperationSetOfKey;
@@ -72,12 +70,8 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         this.rawIndex = rawIndex;
         this.updatesPerKeyMap = new ConcurrentHashMap<>(1024*1000);
         this.primaryKeyGenerator = Optional.ofNullable(primaryKeyGenerator);
-        this.writeSetMap = new ConcurrentHashMap<>();
-        if(this.rawIndex instanceof UniqueHashBufferIndex){
-            this.keysToFlush = ConcurrentHashMap.newKeySet();
-        } else {
-            this.keysToFlush = new Set0<>();
-        }
+        this.writeSetMap = new ConcurrentHashMap<>(1024*50);
+        this.keysToFlush = ConcurrentHashMap.newKeySet();
     }
 
     @Override
@@ -406,7 +400,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     @Override
     public void reset(){
         this.writeSetMap.clear();
-        if(this.rawIndex instanceof UniqueHashMapIndex || this.rawIndex instanceof UniqueHashBufferIndex){
+        if(this.rawIndex instanceof UniqueHashBufferIndex){
             this.rawIndex.reset();
         }
         this.updatesPerKeyMap.clear();
@@ -416,19 +410,17 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     public int checkpoint(long maxTid){
         if(this.keysToFlush.isEmpty() || this.updatesPerKeyMap.isEmpty()) return 0;
         int numRecords = 0;
-        Iterator<IKey> it = this.keysToFlush.iterator();
         this.rawIndex.lock();
-        while(it.hasNext()){
-            IKey key = it.next();
+        for (IKey key : this.keysToFlush) {
             OperationSetOfKey operationSetOfKey = this.updatesPerKeyMap.get(key);
-            if(operationSetOfKey == null){
+            if (operationSetOfKey == null) {
                 this.rawIndex.unlock();
-                throw new RuntimeException("Error on retrieving operation set for key "+key);
+                throw new RuntimeException("Error on retrieving operation set for key " + key);
             }
             Entry<Long, TransactionWrite> entry = operationSetOfKey.floorEntry(maxTid);
             if (entry == null) continue;
             // is the head?
-            if(operationSetOfKey.peak() == entry) {
+            if (operationSetOfKey.peak() == entry) {
                 this.keysToFlush.remove(key);
             }
             operationSetOfKey.removeChildren(entry);
@@ -473,8 +465,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     }
 
     public void appendWrite(TransactionContext txCtx, IKey key){
-        this.writeSetMap.computeIfAbsent(txCtx.tid, ignored ->
-                Objects.requireNonNullElseGet(WRITE_SET_BUFFER.poll(), HashSet::new)).add(key);
+        this.writeSetMap.computeIfAbsent(txCtx.tid, _ -> Objects.requireNonNullElseGet(WRITE_SET_BUFFER.poll(), HashSet::new)).add(key);
     }
 
     public Set<IKey> removeWriteSet(TransactionContext txCtx){

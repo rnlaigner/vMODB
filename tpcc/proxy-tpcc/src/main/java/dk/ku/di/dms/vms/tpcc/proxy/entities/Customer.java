@@ -54,7 +54,7 @@ public class Customer implements IEntity<Customer.CustomerId> {
     public String c_credit;
 
     @Column
-    public int c_credit_lim;
+    public float c_credit_lim;
 
     @Column
     public float c_discount;
@@ -89,18 +89,18 @@ public class Customer implements IEntity<Customer.CustomerId> {
     @Override
     public String toString() {
         return "{"
-                + "\"c_id\":\"" + c_id + "\""
-                + ",\"c_w_id\":\"" + c_w_id + "\""
-                + ",\"c_d_id\":\"" + c_d_id + "\""
+                + "\"c_id\":" + c_id
+                + ",\"c_w_id\":" + c_w_id
+                + ",\"c_d_id\":" + c_d_id
                 + ",\"c_first\":\"" + c_first + "\""
                 + ",\"c_middle\":\"" + c_middle + "\""
                 + ",\"c_last\":\"" + c_last + "\""
                 + ",\"c_since\":\"" + c_since.getTime() + "\""
                 + ",\"c_credit\":\"" + c_credit + "\""
-                + ",\"c_credit_lim\":\"" + c_credit_lim + "\""
-                + ",\"c_discount\":\"" + c_discount + "\""
-                + ",\"c_balance\":\"" + c_balance + "\""
-                + ",\"c_ytd_payment\":\"" + c_ytd_payment + "\""
+                + ",\"c_credit_lim\":" + c_credit_lim
+                + ",\"c_discount\":" + c_discount
+                + ",\"c_balance\":" + c_balance
+                + ",\"c_ytd_payment\":" + c_ytd_payment
                 + "}";
     }
 }

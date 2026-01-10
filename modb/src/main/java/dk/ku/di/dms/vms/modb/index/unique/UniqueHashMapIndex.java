@@ -5,17 +5,20 @@ import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * This class is just a placeholder for obtaining schema information in main memory execution
+ */
 public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
     private final Map<IKey, Object[]> store;
 
     public UniqueHashMapIndex(Schema schema, int[] columns) {
         super(schema, columns);
-        this.store = new ConcurrentHashMap<>();
+        this.store = Collections.emptyMap();
     }
 
     @Override
@@ -25,47 +28,47 @@ public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
     @Override
     public int size() {
-        return this.store.size();
+        return 0;
     }
 
     @Override
     public boolean exists(IKey key) {
-        return this.store.containsKey(key);
+        return false;
     }
 
     @Override
     public void insert(IKey key, Object[] record) {
-        this.store.put(key, record);
+        throw new RuntimeException("Not supported");
     }
 
     @Override
     public void update(IKey key, Object[] record) {
-        this.store.put(key, record);
+        throw new RuntimeException("Not supported");
+    }
+
+    @Override
+    public void upsert(IKey key, Object[] record) {
+        throw new RuntimeException("Not supported");
     }
 
     @Override
     public void delete(IKey key) {
-        this.store.remove(key);
+        throw new RuntimeException("Not supported");
     }
 
     @Override
     public Object[] lookupByKey(IKey key) {
-        return this.store.getOrDefault(key, null);
+        return null;
     }
 
     @Override
     public Object[] record(IKey key) {
-        return this.store.get(key);
+        throw new RuntimeException("Not supported");
     }
 
     @Override
     public Iterator<IKey> iterator() {
         return this.store.keySet().iterator();
-    }
-
-    @Override
-    public void reset() {
-        this.store.clear();
     }
 
 }

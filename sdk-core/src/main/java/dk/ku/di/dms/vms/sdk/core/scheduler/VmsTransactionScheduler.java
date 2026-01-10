@@ -117,11 +117,11 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.transactionInputQueue = transactionInputQueue;
 
         // operational (internal control of transactions and tasks)
-        this.transactionTaskMap = new ConcurrentHashMap<>(1024*100);
+        this.transactionTaskMap = new ConcurrentHashMap<>(1024*1000);
         SchedulerCallback callback = new SchedulerCallback(eventHandler);
         this.vmsTransactionTaskBuilder = new VmsTransactionTaskBuilder(transactionalHandler, callback);
         this.transactionTaskMap.put( 0L, this.vmsTransactionTaskBuilder.buildFinished(0) );
-        this.lastTidToTidMap = new LongLongHashMap(1024*100);
+        this.lastTidToTidMap = new LongLongHashMap(1024*1000);
 
         for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
             if (pool.getType() == MemoryType.HEAP && pool.isUsageThresholdSupported()) {

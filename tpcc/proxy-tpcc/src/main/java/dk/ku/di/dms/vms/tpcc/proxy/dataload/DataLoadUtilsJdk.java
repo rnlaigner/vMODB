@@ -1,8 +1,6 @@
 package dk.ku.di.dms.vms.tpcc.proxy.dataload;
 
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
-import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
-import dk.ku.di.dms.vms.sdk.embed.entity.EntityHandler;
 import dk.ku.di.dms.vms.tpcc.proxy.infra.TPCcConstants;
 
 import java.net.URI;
@@ -10,7 +8,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.*;
 
 import static java.lang.System.Logger.Level.INFO;
@@ -19,31 +20,6 @@ import static java.lang.System.Logger.Level.WARNING;
 public final class DataLoadUtilsJdk {
 
     private static final System.Logger LOGGER = System.getLogger(DataLoadUtilsJdk.class.getName());
-
-    @SuppressWarnings("rawtypes")
-    public static Map<String, QueueTableIterator> mapTablesFromDisk(Map<String, UniqueHashBufferIndex> tableToIndexMap,
-                                                                    Map<String, EntityHandler> entityHandlerMap) {
-        LOGGER.log(INFO, "Mapping tables from disk starting...");
-        long init = System.currentTimeMillis();
-        Map<String, QueueTableIterator> tableInputMap = new HashMap<>();
-        try {
-            for(var idx : tableToIndexMap.entrySet()){
-                if (idx.getKey().contains("stock")){
-                    tableInputMap.put(idx.getKey(), new QueueTableIterator(idx.getValue(), entityHandlerMap.get("stock")));
-                } else if (idx.getKey().contains("customer")) {
-                    tableInputMap.put(idx.getKey(), new QueueTableIterator(idx.getValue(), entityHandlerMap.get("customer")));
-                } else {
-                    tableInputMap.put(idx.getKey(), new QueueTableIterator(idx.getValue(), entityHandlerMap.get(idx.getKey())));
-                }
-            }
-        } catch (Exception e){
-            throw new RuntimeException(e);
-        } finally {
-            long end = System.currentTimeMillis();
-            LOGGER.log(INFO, "Mapping tables from disk finished in "+(end-init)+" ms");
-        }
-        return tableInputMap;
-    }
 
     /**
      * In case the services have been restarted, the cached connections won't work anymore

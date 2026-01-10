@@ -42,6 +42,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         System.gc();
         LOGGER.log(INFO, "Warehouse GC finished.");
 
+        this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
         List<Item> items = this.itemRepository.getAll();
         List<Stock> stockItems = this.stockRepository.getAll();
         LOGGER.log(INFO, "Inventory init reset");

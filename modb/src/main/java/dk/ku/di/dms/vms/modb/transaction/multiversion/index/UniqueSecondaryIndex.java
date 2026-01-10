@@ -113,7 +113,7 @@ public final class UniqueSecondaryIndex implements IMultiVersionIndex {
                 // remove if it contains the key
                 this.writeSet.remove(key);
             } else {
-                var entryCurr = this.currentTidIterator.next();
+                Map.Entry<IKey, WriteType> entryCurr = this.currentTidIterator.next();
                 if(entryCurr.getValue() == WriteType.DELETE)
                     return null;
                 key = entryCurr.getKey();

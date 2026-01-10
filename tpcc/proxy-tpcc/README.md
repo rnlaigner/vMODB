@@ -16,5 +16,5 @@ java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --ad
 
 If you are inside the vms-runtime-java folder, run:
 ```
-java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar tpcc/proxy-tpcc/target/proxy-tpcc-1.0-SNAPSHOT.jar
+java -XX:G1HeapRegionSize=8m --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar tpcc/proxy-tpcc/target/proxy-tpcc-1.0-SNAPSHOT.jar
 ```

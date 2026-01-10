@@ -17,13 +17,7 @@ public abstract class ReadWriteIndex<K> extends AbstractIndex<K> {
 
     public abstract Object[] lookupByKey(K key);
 
-    public void upsert(K key, Object[] record) {
-        if(this.exists(key)) {
-            this.update(key, record);
-            return;
-        }
-        this.insert(key, record);
-    }
+    public abstract void upsert(K key, Object[] record);
 
     public void lock(){
         throw new RuntimeException("Not supported.");

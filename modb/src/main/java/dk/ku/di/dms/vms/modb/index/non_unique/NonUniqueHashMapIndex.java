@@ -47,6 +47,11 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
     }
 
     @Override
+    public void upsert(IKey key, Object[] record) {
+        this.store.get(key).add(record);
+    }
+
+    @Override
     public void delete(IKey key) {
         this.store.remove(key);
     }

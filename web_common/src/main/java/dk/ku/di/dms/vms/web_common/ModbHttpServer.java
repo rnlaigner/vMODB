@@ -169,8 +169,8 @@ public abstract class ModbHttpServer extends StoppableRunnable {
 
                 }
             } else {
-                int newBodyByteRead = requestTracking.bodyBytesRead + data.length;
-                requestTracking.bodyBytesRead = newBodyByteRead;
+                int newBodyByteRead = requestTracking.bodyBytesRead;
+                requestTracking.bodyBytesRead = newBodyByteRead + data.length;
                 if (requestTracking.bodyBytesRead  >= requestTracking.contentLength) {
                     int headersEnd = requestTracking.requestBuilder.indexOf("\r\n\r\n");
                     this.process(requestTracking.method,
@@ -293,7 +293,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
         private void processError(String request, Exception e) {
             this.writeBuffer.clear();
             byte[] errorBytes;
-            if(e.getMessage() == null){
+            if(e.getMessage() == null || e.getMessage().isEmpty()){
                 LOGGER.log(ERROR, "Exception without message has been caught:\n"+ e +"\nRequest:\n"+ request);
                 e.printStackTrace(System.out);
                 errorBytes = ERROR_RESPONSE_BYTES;
@@ -305,7 +305,7 @@ public abstract class ModbHttpServer extends StoppableRunnable {
             this.writeBuffer.flip();
             this.connectionMetadata.channel.write(this.writeBuffer, null, this.defaultWriteCH);
             this.readBuffer.clear();
-            this.connectionMetadata.channel.read(this.readBuffer, null, this);
+            this.connectionMetadata.channel.read(this.readBuffer, new RequestTracking(), this);
         }
 
         private void sendErrorMsgAndCloseConnection(byte[] errorResponseBytes) throws IOException {

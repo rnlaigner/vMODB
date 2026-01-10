@@ -86,6 +86,11 @@ public final class NonUniqueHashBufferIndex extends ReadWriteIndex<IKey> impleme
         throw new RuntimeException("Not implemented");
     }
 
+    @Override
+    public void upsert(IKey key, Object[] record) {
+        throw new RuntimeException("Not implemented");
+    }
+
     /**
      * Must also mark the records as inactive
      */

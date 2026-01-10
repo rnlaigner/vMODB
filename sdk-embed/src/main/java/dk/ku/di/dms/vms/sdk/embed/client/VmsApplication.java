@@ -20,6 +20,7 @@ import dk.ku.di.dms.vms.sdk.embed.metadata.EmbedMetadataLoader;
 import dk.ku.di.dms.vms.web_common.IHttpHandler;
 import org.reflections.Reflections;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -80,6 +81,7 @@ public final class VmsApplication {
                 .collect(Collectors.toSet());
 
         Map<Class<?>, String> entityToTableNameMap = VmsMetadataLoader.loadVmsTableNames(reflections);
+        entityToTableNameMap.entrySet().removeIf(entry -> !entry.getKey().getPackageName().contains(packageName));
         Map<Class<?>, String> entityToVirtualMicroservice = VmsMetadataLoader.mapEntitiesToVirtualMicroservice(filteredVmsClazz, entityToTableNameMap);
         Map<String, VmsDataModel> vmsDataModelMap = VmsMetadataLoader.buildVmsDataModel(entityToVirtualMicroservice, entityToTableNameMap);
 
