@@ -34,11 +34,11 @@ public final class OrderLine implements IEntity<OrderLine.OrderLineId> {
     public int ol_o_id;
 
     @Id
-    @VmsForeignKey(table=Order.class,column = "o_d_id")
+    @VmsForeignKey(table=Order.class, column = "o_d_id")
     public int ol_d_id;
 
     @Id
-    @VmsForeignKey(table=Order.class,column = "o_w_id")
+    @VmsForeignKey(table=Order.class, column = "o_w_id")
     public int ol_w_id;
 
     @Id

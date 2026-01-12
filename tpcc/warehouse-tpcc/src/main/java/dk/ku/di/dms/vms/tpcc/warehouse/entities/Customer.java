@@ -50,8 +50,8 @@ public class Customer implements IEntity<Customer.CustomerId> {
     @Column
     public String c_middle;
 
-    @Column
     @VmsIndex(name = "c_last_idx")
+    @Column
     public String c_last;
 
     @Column

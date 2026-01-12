@@ -28,7 +28,7 @@ public final class OrderStatusIn {
                 + "\"w_id\":" + w_id
                 + ",\"d_id\":" + d_id
                 + ",\"c_id\":" + c_id
-                + ",\"c_last\":" + c_last + "\""
+                + ",\"c_last\":\"" + c_last + "\""
                 + ",\"by_name\":" + by_name
                 + "}";
     }

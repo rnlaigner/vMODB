@@ -14,10 +14,10 @@ import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IDistrictRepository;
 import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IWarehouseRepository;
 
 import java.util.List;
+import java.util.Objects;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
-import static java.lang.System.Logger.Level.DEBUG;
 
 @Microservice("warehouse")
 public final class WarehouseService {
@@ -99,10 +99,13 @@ public final class WarehouseService {
     public OrderStatusOut processOrderStatus(OrderStatusIn in) {
         if(in.by_name){
             List<CustomerInfoDTO> customers = this.issueOrderStatusQuery(in);
-            LOGGER.log(DEBUG, customers);
+            Objects.requireNonNull(customers);
+            Objects.requireNonNull(customers.get(0));
+            //LOGGER.log(DEBUG, customers);
         } else {
             Customer customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
-            LOGGER.log(DEBUG, customer);
+            Objects.requireNonNull(customer);
+            //LOGGER.log(DEBUG, customer);
         }
         return new OrderStatusOut(in.w_id, in.d_id, in.c_id);
     }

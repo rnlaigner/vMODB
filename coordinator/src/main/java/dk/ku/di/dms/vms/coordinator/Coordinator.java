@@ -767,7 +767,7 @@ public final class Coordinator extends ModbHttpServer {
         // only if it is not a duplicate vote
         batchContext.missingVotes.remove( batchComplete.vms() );
         if(batchContext.missingVotes.isEmpty()){
-            LOGGER.log(DEBUG,"Leader: Received all missing votes of batch "+ batchContext.batchOffset + " with "+batchContext.numTIDsOverall+" transactions");
+            LOGGER.log(INFO,"Leader: Received all missing votes of batch "+ batchContext.batchOffset + " with "+batchContext.numTIDsOverall+" transactions");
             this.updateBatchOffsetPendingCommit(batchContext);
         }
     }

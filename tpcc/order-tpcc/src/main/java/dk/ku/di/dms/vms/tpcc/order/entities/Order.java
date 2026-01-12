@@ -1,5 +1,6 @@
 package dk.ku.di.dms.vms.tpcc.order.entities;
 
+import dk.ku.di.dms.vms.modb.api.annotations.VmsIndex;
 import dk.ku.di.dms.vms.modb.api.annotations.VmsTable;
 import dk.ku.di.dms.vms.modb.api.interfaces.IEntity;
 
@@ -35,6 +36,7 @@ public final class Order implements IEntity<Order.OrderId> {
     @Id
     public int o_w_id;
 
+    @VmsIndex(name = "customer_idx")
     @Column
     public int o_c_id;
 

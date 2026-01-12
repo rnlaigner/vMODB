@@ -38,7 +38,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     // total number of records (of a given schema)
     // the conjunction of all buffers can possibly hold
-    private final int capacity;
+    protected final int capacity;
 
     // last addressable record
     private final long limit;
@@ -179,7 +179,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
     public void insert(IKey key, Object[] record){
         long pos = this.getFreePositionToInsert(key);
         if(pos == -1){
-            LOGGER.log(ERROR, "Cannot find an empty entry for record object.\nKey: " + key + " Hash: " + key.hashCode());
+            LOGGER.log(ERROR, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+".\nKey: " + key + " Hash: " + key.hashCode());
             return;
         }
         UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
@@ -204,26 +204,31 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         return this.findRecordAddress(key);
     }
 
+    /**
+     * Linear probing
+     */
     long getFreePositionToInsert(IKey key){
         int attemptsToFind = OPEN_ADDRESSING_ATTEMPTS;
         int aux = 1;
-        long pos = this.getPosition(key.hashCode());
-        boolean busy = UNSAFE.getByte(null, pos) == Header.ACTIVE_BYTE;
-        while (busy && attemptsToFind > 0) {
-            pos = pos + (this.recordSize * Math.multiplyExact(aux, 2));
+        long origPos = this.getPosition(key.hashCode());
+        long pos = origPos;
+        do {
+            if(UNSAFE.getByte(null, pos) != Header.ACTIVE_BYTE) {
+                return pos;
+            }
             attemptsToFind--;
+            pos = origPos + (this.recordSize * aux);
             aux++;
-            busy = UNSAFE.getByte(null, pos) == Header.ACTIVE_BYTE;
-        }
-        if(!busy && pos <= this.limit) return pos;
+        } while(attemptsToFind > 0 && pos <= this.limit);
         return -1;
     }
 
     private long findRecordAddress(IKey key){
         int attemptsToFind = OPEN_ADDRESSING_ATTEMPTS;
         int aux = 1;
-        long pos = this.getPosition(key.hashCode());
-        while(attemptsToFind > 0 && pos <= this.limit){
+        long origPos = this.getPosition(key.hashCode());
+        long pos = origPos;
+        do {
             if(UNSAFE.getByte(null, pos) == Header.ACTIVE_BYTE) {
                 Object[] existingRecord = this.readFromIndex(pos + Schema.RECORD_HEADER);
                 IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), existingRecord);
@@ -232,9 +237,9 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
                 }
             }
             attemptsToFind--;
-            pos = pos + (this.recordSize * Math.multiplyExact(aux, 2));
+            pos = origPos + (this.recordSize * aux);
             aux++;
-        }
+        } while(attemptsToFind > 0 && pos <= this.limit);
         return -1;
     }
 
@@ -288,7 +293,11 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     @Override
     public Object[] record(IKey key) {
-        return this.readFromIndex(this.findRecordAddress(key) + Schema.RECORD_HEADER);
+        long pos = this.findRecordAddress(key);
+        if (pos != -1) {
+            return this.readFromIndex(pos + Schema.RECORD_HEADER);
+        }
+        return null;
     }
 
     @Override

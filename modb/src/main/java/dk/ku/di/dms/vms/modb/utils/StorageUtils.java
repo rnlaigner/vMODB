@@ -124,7 +124,7 @@ public class StorageUtils {
                 StandardOpenOption.WRITE};
         try {
             FileChannel fc = FileChannel.open(Path.of(file.toURI()), options);
-            LOGGER.log(INFO, "Attempt to open file in directory completed successfully: " + file.getAbsolutePath());
+            LOGGER.log(DEBUG, "Attempt to open file in directory completed successfully: " + file.getAbsolutePath());
             return new AppendOnlyUnboundedBuffer(fc, fileName);
         } catch (Exception e) {
             throw new RuntimeException(e);

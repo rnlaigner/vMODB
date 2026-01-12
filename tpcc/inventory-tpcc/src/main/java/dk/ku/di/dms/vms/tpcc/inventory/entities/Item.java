@@ -41,10 +41,10 @@ public final class Item implements IEntity<Integer> {
     @Override
     public String toString() {
         return "{"
-                + "\"i_id\":\"" + i_id + "\""
-                + ",\"i_im_id\":\"" + i_im_id + "\""
+                + "\"i_id\":" + i_id
+                + ",\"i_im_id\":" + i_im_id
                 + ",\"i_name\":\"" + i_name + "\""
-                + ",\"i_price\":\"" + i_price + "\""
+                + ",\"i_price\":" + i_price
                 + ",\"i_data\":\"" + i_data + "\""
                 + "}";
     }

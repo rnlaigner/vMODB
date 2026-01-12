@@ -28,7 +28,7 @@ public final class RecordIterator implements IRecordIterator<IKey> {
     @Override
     public boolean hasNext() {
         // checks for an active bit
-        while(this.progress < this.capacity && UNSAFE.getByte(null, nextAddress) != Header.ACTIVE_BYTE){
+        while(this.progress < this.capacity && UNSAFE.getByte(null, this.nextAddress) != Header.ACTIVE_BYTE){
             this.progress++;
             this.nextAddress += recordSize;
         }
@@ -37,7 +37,7 @@ public final class RecordIterator implements IRecordIterator<IKey> {
 
     @Override
     public IKey next() {
-        var res = SimpleKey.of(UNSAFE.getInt(this.nextAddress + 1));
+        SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.nextAddress + 1));
         this.progress++;
         this.nextAddress += this.recordSize;
         return res;
