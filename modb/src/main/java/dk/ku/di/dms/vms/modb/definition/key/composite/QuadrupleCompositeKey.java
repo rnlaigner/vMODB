@@ -22,9 +22,10 @@ public final class QuadrupleCompositeKey extends BaseComposite implements IKey {
     }
 
     private static int hashCode(Object value0, Object value1, Object value2, Object value3) {
-        int result = 31 * value0.hashCode() + value1.hashCode();
-        result = 31 * result + value2.hashCode();
-        return 31 * result + value3.hashCode();
+        int h = 31 + value0.hashCode();
+        h = 31 * h + value1.hashCode();
+        h = 31 * h + value2.hashCode();
+        return 31 * h + value3.hashCode();
     }
 
     @Override

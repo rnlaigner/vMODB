@@ -6,6 +6,7 @@ import dk.ku.di.dms.vms.modb.api.annotations.VmsPartialIndex;
 import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.modb.common.constraint.ForeignKeyReference;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
+import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.common.schema.VmsDataModel;
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
 import dk.ku.di.dms.vms.modb.definition.Schema;
@@ -218,6 +219,10 @@ public final class EmbedMetadataLoader {
             if(numRec != null && !numRec.isBlank()){
                 maxRecords_ = Integer.parseInt(numRec);
             }
+
+            // power of two
+            if(maxRecords_ <= 1) maxRecords_ = 2;
+            maxRecords_ = MemoryUtils.nextPowerOfTwo(maxRecords_);
 
             boolean chaining = false;
             if(properties.getProperty("table."+tableName+".chaining") != null){
