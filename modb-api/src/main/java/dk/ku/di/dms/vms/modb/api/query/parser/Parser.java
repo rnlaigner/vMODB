@@ -59,14 +59,32 @@ public final class Parser {
             }
         }
 
-        if(i == tokens.length)
+        if(i == tokens.length) {
             return new SelectStatement(projection, table, whereClauseElements);
+        }
 
         // ORDER BY
-        i+=2;
+        i = i + 2;
         String orderByColumn = tokens[i];
-        List<OrderByClauseElement> orderByClauseElement = List.of(new OrderByClauseElement(orderByColumn));
-        return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
+        List<OrderByClauseElement> orderByClauseElement;
+        i++;
+        if(i == tokens.length){
+            orderByClauseElement = List.of(new OrderByClauseElement(orderByColumn));
+            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
+        } else {
+            String sortOrder = tokens[i];
+            orderByClauseElement = List.of(new OrderByClauseElement(orderByColumn, sortOrder));
+        }
+
+        i++;
+        // limit
+        if(i == tokens.length) {
+            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
+        } else {
+            var stmt = new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
+            stmt.limit = Integer.getInteger(tokens[i+1]);
+            return stmt;
+        }
     }
 
     private static ExpressionTypeEnum getExpressionFromString(String exp){

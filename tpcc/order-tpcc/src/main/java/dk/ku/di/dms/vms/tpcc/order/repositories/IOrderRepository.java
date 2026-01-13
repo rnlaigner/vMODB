@@ -12,4 +12,7 @@ public interface IOrderRepository extends IRepository<Order.OrderId, Order> {
     @Query("select o_id, o_entry_d, o_carrier_id from orders where o_id = :o_id and o_d_id = :o_d_id and o_w_id = :o_w_id and o_c_id = :o_c_id")
     OrderInfoDto getOrderInfo(int o_id, int o_d_id, int o_w_id, int o_c_id);
 
+    @Query("select * from orders where o_c_id = :c_id order by o_id desc limit 1")
+    Order getLastOrderByCustomerId(int c_id);
+
 }

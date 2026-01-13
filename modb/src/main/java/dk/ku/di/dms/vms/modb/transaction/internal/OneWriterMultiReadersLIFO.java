@@ -38,7 +38,7 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
 
     /**
      * Gets the entry corresponding to the specified key; if no such entry
-     * exists, returns the entry for the greatest key less than the specified
+     * exists, returns the entry for the greatest key lower than the specified
      * key; if no such entry exists, returns {@code null}.
      */
     public final Entry<K,V> floorEntry(K key) {

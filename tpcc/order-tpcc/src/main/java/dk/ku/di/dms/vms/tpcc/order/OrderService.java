@@ -4,9 +4,6 @@ import dk.ku.di.dms.vms.modb.api.annotations.Inbound;
 import dk.ku.di.dms.vms.modb.api.annotations.Microservice;
 import dk.ku.di.dms.vms.modb.api.annotations.Parallel;
 import dk.ku.di.dms.vms.modb.api.annotations.Transactional;
-import dk.ku.di.dms.vms.modb.api.query.builder.QueryBuilderFactory;
-import dk.ku.di.dms.vms.modb.api.query.enums.ExpressionTypeEnum;
-import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.tpcc.common.events.NewOrderInvOut;
 import dk.ku.di.dms.vms.tpcc.common.events.OrderStatusOut;
 import dk.ku.di.dms.vms.tpcc.common.events.PaymentOut;
@@ -26,6 +23,7 @@ import java.util.List;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.W;
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.ERROR;
 
 @Microservice("order")
@@ -45,13 +43,6 @@ public final class OrderService {
         this.historyRepository = historyRepository;
     }
 
-    public static final SelectStatement ORDER_BASE_QUERY = QueryBuilderFactory.select()
-            .project("*")
-            .from("orders")
-            .and("o_c_id", ExpressionTypeEnum.EQUALS, ":c_id")
-            .orderBy("o_id").desc()
-            .build();
-
     @Inbound(values = "payment-out")
     @Transactional(type = W)
     @Parallel
@@ -63,32 +54,15 @@ public final class OrderService {
     @Inbound(values = "order-status-out")
     @Transactional(type = R)
     public void processOrderStatus(OrderStatusOut in){
-        // instead of aggregate, just order by o_id and get the first: https://github.com/jopereira/EscadaTPC-C/blob/master/src/main/resources/sql/postgresql/orderstatus01
-        List<Order> orders = this.orderRepository.fetchMany(ORDER_BASE_QUERY.setParam(in.c_id), Order.class);
-        if(orders.isEmpty()) return;
-        Order order = orders.get(0);
-        /*
-        Integer max_o_id = this.orderRepository.fetchOne(ORDER_BASE_QUERY.setParam(in.w_id, in.d_id, in.c_id), Integer.class);
-        if(max_o_id == null) {
-            LOGGER.log(DEBUG, "Input event OrderStatusOut led to null max_o_id:\n"+in);
+        Order order = this.orderRepository.getLastOrderByCustomerId(in.c_id);
+        if(order == null){
+            LOGGER.log(DEBUG, "No order for customer "+in.c_id+"\n"+in);
             return;
         }
-        // LOGGER.log(DEBUG, max_o_id);
-        OrderInfoDto orderInfoDto = this.orderRepository.getOrderInfo(max_o_id, in.d_id, in.w_id, in.c_id);
-        if(orderInfoDto == null) {
-            LOGGER.log(WARNING, "Input event OrderStatusOut led to null order info:\n"+in);
-            return;
-        }
-         */
-        // LOGGER.log(DEBUG, orderInfoDto);
-        List<OrderLineInfoDto> orderLinesInfo = this.orderLineRepository.getOrderLinesInfo(order.o_id, in.d_id, in.w_id);
+        List<OrderLineInfoDto> orderLinesInfo = this.orderLineRepository.getOrderLinesInfo(order.o_id, order.o_d_id, order.o_w_id);
         if(orderLinesInfo.isEmpty()){
-            // FIXME check why the FK index is not working for this query...
             LOGGER.log(ERROR, "Input event OrderStatusOut led to empty order lines info:\n"+in);
-            return;
         }
-        // LOGGER.log(DEBUG, orderLinesInfo);
-        // LOGGER.log(WARNING, "max_o_id = "+max_o_id+"\n"+"OrderInfoDto = "+orderInfoDto+"\n"+"orderLinesInfo = "+orderLinesInfo);
     }
 
     @Inbound(values = "new-order-inv-out")

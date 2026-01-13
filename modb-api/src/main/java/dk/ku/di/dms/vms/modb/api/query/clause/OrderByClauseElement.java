@@ -7,9 +7,9 @@ public class OrderByClauseElement {
     public final String column;
     public OrderBySortOrderEnum expression;
 
-    public OrderByClauseElement(String column, OrderBySortOrderEnum expression) {
+    public OrderByClauseElement(String column, String expression) {
         this.column = column;
-        this.expression = expression;
+        this.expression = expression.equalsIgnoreCase("desc") ? OrderBySortOrderEnum.DESC : OrderBySortOrderEnum.ASC;
     }
 
     public OrderByClauseElement(String column) {

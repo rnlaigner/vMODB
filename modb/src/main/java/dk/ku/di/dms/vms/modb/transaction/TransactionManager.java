@@ -25,6 +25,7 @@ import dk.ku.di.dms.vms.modb.query.planner.SimplePlanner;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.IMultiVersionIndex;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.NonUniqueSecondaryIndex;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.PrimaryIndex;
+import dk.ku.di.dms.vms.modb.transaction.multiversion.index.UniqueSecondaryIndex;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -515,10 +516,10 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         for (Table table : this.catalog.values()) {
             LOGGER.log(INFO, "Resetting "+table.name);
             table.primaryKeyIndex().reset();
-            for(var secIdx : table.secondaryIndexMap.values()){
+            for(NonUniqueSecondaryIndex secIdx : table.secondaryIndexMap.values()){
                 secIdx.reset();
             }
-            for(var uniqueIdx : table.partialIndexMap.values()){
+            for(UniqueSecondaryIndex uniqueIdx : table.partialIndexMap.values()){
                 uniqueIdx.reset();
             }
         }

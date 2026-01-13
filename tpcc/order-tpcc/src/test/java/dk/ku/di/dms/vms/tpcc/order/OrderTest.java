@@ -1,5 +1,8 @@
 package dk.ku.di.dms.vms.tpcc.order;
 
+import dk.ku.di.dms.vms.modb.api.query.builder.QueryBuilderFactory;
+import dk.ku.di.dms.vms.modb.api.query.enums.ExpressionTypeEnum;
+import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
@@ -17,12 +20,17 @@ import org.junit.Test;
 import java.util.Date;
 import java.util.List;
 
-import static dk.ku.di.dms.vms.tpcc.order.OrderService.ORDER_BASE_QUERY;
-
 /**
  * Unit test for simple App.
  */
 public class OrderTest {
+
+    public static final SelectStatement ORDER_BASE_QUERY = QueryBuilderFactory.select()
+            .project("*")
+            .from("orders")
+            .and("o_c_id", ExpressionTypeEnum.EQUALS, ":c_id")
+            .orderBy("o_id").desc().limit(1)
+            .build();
 
     private static VmsApplication getVmsApplication() throws Exception {
         VmsApplicationOptions options = VmsApplicationOptions.build("localhost", 8003, new String[]{

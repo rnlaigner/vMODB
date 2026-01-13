@@ -139,7 +139,9 @@ public final class NonUniqueSecondaryIndex implements IMultiVersionIndex {
 
     @Override
     public Iterator<Object[]> iterator(TransactionContext txCtx, IKey key) {
-        if(!this.keyMap.containsKey(key)) return EMPTY_ITERATOR;
+        if(!this.keyMap.containsKey(key)) {
+            return EMPTY_ITERATOR;
+        }
         return new SecondaryIndexIterator(txCtx.readOnly ? txCtx.lastTid : txCtx.tid, this.keyMap.get(key).iterator(), this.primaryIndex::getRecord);
     }
 
@@ -193,7 +195,9 @@ public final class NonUniqueSecondaryIndex implements IMultiVersionIndex {
         public boolean hasNext() {
             while(this.currentIterator.hasNext()){
                 this.currRecord = primaryIndex.getRecord(this.tid, this.currentIterator.next());
-                if(this.currRecord != null) return true;
+                if(this.currRecord != null) {
+                    return true;
+                }
             }
             if(this.idx < this.keys.length - 1){
                 this.idx++;

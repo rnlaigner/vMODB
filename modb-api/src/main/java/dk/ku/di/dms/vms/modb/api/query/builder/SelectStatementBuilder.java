@@ -388,6 +388,11 @@ public class SelectStatementBuilder extends AbstractStatementBuilder  {
             this.statement = selectStatement;
         }
 
+        public QuerySeal limit(int limit){
+            this.statement.limit = limit;
+            return new QuerySeal(this.statement);
+        }
+
         public SelectStatement build(){
             return statement;
         }

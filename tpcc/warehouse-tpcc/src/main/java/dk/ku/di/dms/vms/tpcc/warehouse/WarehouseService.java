@@ -98,7 +98,7 @@ public final class WarehouseService {
     @Transactional(type = R)
     public OrderStatusOut processOrderStatus(OrderStatusIn in) {
         if(in.by_name){
-            List<CustomerInfoDTO> customers = this.issueOrderStatusQuery(in);
+            List<Customer> customers = this.customerRepository.getCustomerByLastName(in.d_id, in.w_id, in.c_last);
             Objects.requireNonNull(customers);
             Objects.requireNonNull(customers.get(0));
             //LOGGER.log(DEBUG, customers);
