@@ -116,6 +116,8 @@ public class Customer implements IEntity<Customer.CustomerId> {
                 + ",\"c_discount\":" + c_discount
                 + ",\"c_balance\":" + c_balance
                 + ",\"c_ytd_payment\":" + c_ytd_payment
+                + ",\"c_payment_cnt\":" + c_payment_cnt
+                + ",\"c_data\":\"" + c_data + "\""
                 + "}";
     }
 }

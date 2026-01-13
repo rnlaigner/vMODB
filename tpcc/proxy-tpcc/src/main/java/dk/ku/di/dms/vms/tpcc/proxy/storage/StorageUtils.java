@@ -107,6 +107,7 @@ public final class StorageUtils {
         int maxRecords = numWare * TPCcConstants.NUM_ITEMS;
         LOGGER.log(INFO, "Creating "+maxRecords+" stock records...");
         int overflowDisk = MemoryUtils.nextPowerOfTwo(TPCcConstants.NUM_ITEMS);
+        if(numWare > 16) overflowDisk = overflowDisk * 2;
         long initTs = System.currentTimeMillis();
         for(int w_id = 1; w_id <= numWare; w_id++) {
             String tableName = "stock_"+w_id;
@@ -136,6 +137,8 @@ public final class StorageUtils {
         int maxRecords = numWare * maxRecordsPerWarehouse;
         LOGGER.log(INFO, "Creating "+maxRecords+" customer records...");
         int overflowDisk = MemoryUtils.nextPowerOfTwo(maxRecordsPerWarehouse);
+        if(numWare > 4) overflowDisk = overflowDisk * 2;
+        if(numWare == 32) overflowDisk = overflowDisk * 2;
         long initTs = System.currentTimeMillis();
         for(int w_id = 1; w_id <= numWare; w_id++){
             String tableName = "customer_"+w_id;
@@ -166,6 +169,7 @@ public final class StorageUtils {
         switch (tableName){
             case "warehouse" -> {
                 int overflowDisk = MemoryUtils.nextPowerOfTwo(numWare);
+                if(numWare == 32) overflowDisk = overflowDisk * 2;
                 LOGGER.log(INFO, "Creating "+ numWare +" warehouse records...");
                 long initTs = System.currentTimeMillis();
                 UniqueHashBufferIndex idx = buildHashIndex(tableName, schema, overflowDisk, true);
@@ -234,6 +238,7 @@ public final class StorageUtils {
             switch (entry.getValue()){
                 case "warehouse" -> {
                     int overflowDisk = MemoryUtils.nextPowerOfTwo(numWare);
+                    if(numWare == 32) overflowDisk = overflowDisk * 2;
                     LOGGER.log(INFO, "Loading "+numWare+" warehouses...");
                     UniqueHashBufferIndex idx = buildHashIndex(entry.getValue(), schema, overflowDisk, false);
                     tableToIndexMap.put(entry.getValue(), idx);
@@ -250,6 +255,8 @@ public final class StorageUtils {
                     int maxRecords = numWare * maxRecordsPerWarehouse;
                     LOGGER.log(INFO, "Loading "+maxRecords+" customers...");
                     int overflowDisk = MemoryUtils.nextPowerOfTwo(maxRecordsPerWarehouse);
+                    if(numWare > 4) overflowDisk = overflowDisk * 2;
+                    if(numWare == 32) overflowDisk = overflowDisk * 2;
                     for(int ware_id = 1; ware_id <= numWare; ware_id++) {
                         var tableName = entry.getValue()+"_"+ware_id;
                         UniqueHashBufferIndex idx = buildHashIndex(tableName, schema, overflowDisk, false);
@@ -266,6 +273,7 @@ public final class StorageUtils {
                     int maxRecords = numWare * TPCcConstants.NUM_ITEMS;
                     int overflowDisk = MemoryUtils.nextPowerOfTwo(TPCcConstants.NUM_ITEMS);
                     LOGGER.log(INFO, "Loading "+maxRecords+" stock items...");
+                    if(numWare > 16) overflowDisk = overflowDisk * 2;
                     for(int ware_id = 1; ware_id <= numWare; ware_id++) {
                         var tableName = entry.getValue()+"_"+ware_id;
                         UniqueHashBufferIndex idx = buildHashIndex(tableName, schema, overflowDisk, false);
