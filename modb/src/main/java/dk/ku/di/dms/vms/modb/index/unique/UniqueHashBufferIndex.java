@@ -32,7 +32,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     protected final RecordBufferContext recordBufferCtx;
 
-    private long size;
+    protected int size;
 
     protected final long recordSize;
 
@@ -80,7 +80,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
             LOGGER.log(INFO, "Size of buffer is zero. No need to reset.");
             return;
         }
-        long initialSize = this.size;
+        int initialSize = this.size;
         LOGGER.log(INFO, "Reset started with initial size: "+initialSize);
         long pos = this.recordBufferCtx.address;
         while(pos <= this.limit){
@@ -105,8 +105,11 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
      * % 0x7fffffff returns a positive value if the key is negative
      */
     long getPosition(int keyHash){
-        int idx = (keyHash * 0x9E3779B9) >>> (32 - this.p);
-        return this.recordBufferCtx.address + (this.recordSize * idx);
+        return this.recordBufferCtx.address + (this.recordSize * this.getIndex(keyHash));
+    }
+
+    int getIndex(int keyHash){
+        return (keyHash * 0x9E3779B9) >>> (32 - this.p);
     }
 
     @Override
@@ -269,7 +272,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     @Override
     public int size() {
-        return (int) this.size;
+        return this.size;
     }
 
     @Override

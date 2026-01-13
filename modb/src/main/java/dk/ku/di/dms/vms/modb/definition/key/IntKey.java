@@ -29,7 +29,13 @@ public class IntKey implements IKey {
 
     @Override
     public boolean equals(Object object){
-        return this.hashCode() == object.hashCode();
+        return object instanceof IntKey other && other.value == this.value;
     }
 
+    @Override
+    public String toString() {
+        return "{"
+                + "\"value\":" + value
+                + "}";
+    }
 }

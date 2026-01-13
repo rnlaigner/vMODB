@@ -33,4 +33,8 @@ public sealed class RecordBufferContext permits AppendOnlyBoundedBuffer {
         this.memorySegment.force();
     }
 
+    public final void unload(){
+        this.memorySegment.unload();
+    }
+
 }

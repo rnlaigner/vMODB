@@ -26,7 +26,7 @@ public final class ConfigUtils {
         try {
             PROPERTIES.load(ConfigUtils.class.getClassLoader().getResourceAsStream(CONFIG_FILE));
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            System.out.println("Error loading application configuration. Error details:\n" + e.getMessage());
         }
     }
 
@@ -89,8 +89,7 @@ public final class ConfigUtils {
     }
 
     private static boolean isVmsApplicationBuild(StackTraceElement element) {
-        return "build".equals(element.getMethodName()) &&
-                "VmsApplication.java".equals(element.getFileName());
+        return "build".equals(element.getMethodName()) && "VmsApplication.java".equals(element.getFileName());
     }
 
 }
