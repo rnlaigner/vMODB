@@ -51,7 +51,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private final Set<Long> partitionedTasksRunning = ConcurrentHashMap.newKeySet();
 
-    private volatile boolean singleThreadTaskRunning = false;
+    private volatile boolean singleThreadWriterTaskRunning = false;
 
     private long nextTidToDelete = 0;
 
@@ -200,7 +200,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
         private void updateSchedulerTaskStats(ExecutionModeEnum executionMode, VmsTransactionTask task) {
             switch (executionMode){
-                case SINGLE_THREADED -> singleThreadTaskRunning = false;
+                case SINGLE_THREADED -> singleThreadWriterTaskRunning = false;
                 case PARALLEL -> parallelTasksRunning.remove(task.tid());
                 case PARTITIONED -> {
                     if(!task.partitionKeys().isEmpty()){
@@ -212,7 +212,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                         partitionedTasksRunning.remove(task.tid());
                         LOGGER.log(DEBUG, vmsIdentifier + ": Partitioned task " + task.tid() + " finished execution.");
                     } else {
-                        singleThreadTaskRunning = false;
+                        singleThreadWriterTaskRunning = false;
                     }
                 }
             }
@@ -265,7 +265,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                     if (!this.canSingleThreadTaskRun()) {
                         return;
                     }
-                    LOGGER.log(DEBUG, this.vmsIdentifier+": Scheduling single-threaded task for execution:\n"+task);
+                    LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduling single-threaded task for execution:\n" + task);
                     this.submitSingleThreadTaskForExecution(task);
                 }
                 case PARALLEL -> {
@@ -274,27 +274,29 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                     }
                     this.parallelTasksRunning.add(task.tid());
                     task.signalReady();
-                    LOGGER.log(DEBUG, this.vmsIdentifier+": Scheduling parallel task for execution:\n"+task);
+                    LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduling parallel task for execution:\n" + task);
                     this.sharedTaskPool.submit(task);
                 }
                 case PARTITIONED -> {
-                    if(task.partitionKeys().isEmpty()){
-                        if(this.canSingleThreadTaskRun()){
-                            LOGGER.log(DEBUG, this.vmsIdentifier + ": Task will run as single-threaded even though it is marked as partitioned:\n"+task);
+                    if (task.partitionKeys().isEmpty()) {
+                        if (this.canSingleThreadTaskRun()) {
+                            LOGGER.log(DEBUG, this.vmsIdentifier + ": Task will run as single-threaded even though it is marked as partitioned:\n" + task);
                             this.submitSingleThreadTaskForExecution(task);
                         }
                         return;
                     }
-                    if (!this.canPartitionedTaskRun()) { return; }
-                    for(Object partitionKey : task.partitionKeys()){
-                        if(this.partitionKeyTrackingMap.contains(partitionKey)) return;
+                    if (!this.canPartitionedTaskRun()) {
+                        return;
+                    }
+                    for (Object partitionKey : task.partitionKeys()) {
+                        if (this.partitionKeyTrackingMap.contains(partitionKey)) return;
                     }
                     this.submitPartitionedTaskForExecution(task);
                 }
             }
             // bypass the single-thread execution if possible
-            if(!this.singleThreadTaskRunning && this.lastTidToTidMap.containsKey( task.tid() )){
-                task = this.transactionTaskMap.get( this.lastTidToTidMap.get( task.tid() ) );
+            if (!this.singleThreadWriterTaskRunning && this.lastTidToTidMap.containsKey(task.tid())) {
+                task = this.transactionTaskMap.get(this.lastTidToTidMap.get(task.tid()));
             }
         }
     }
@@ -308,28 +310,33 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     }
 
     private void submitSingleThreadTaskForExecution(VmsTransactionTask task) {
-        this.singleThreadTaskRunning = true;
+        // read-only tasks are not counted as single thread task so to prevent blocking writer tasks
+        if(task.signature().transactionType() != R) this.singleThreadWriterTaskRunning = true;
         task.signalReady();
-        // can the scheduler itself run it? if so, avoid a context switch cost
-        // but blocks the scheduler until the task finishes
+        // can the scheduler itself run it? yes and it would avoid a context switch cost
+        // however, it would block the scheduler (i.e., processing inputs) until the task finishes
         this.sharedTaskPool.submit(task);
     }
 
+    /**
+     * This function assumes read-only tasks are not annotated with partition by or parallel annotations
+     */
     private boolean canSingleThreadTaskRun() {
-        return !this.singleThreadTaskRunning &&
+        return !this.singleThreadWriterTaskRunning &&
             (
+                // this prevents possible "holes" in the termination of concurrent tasks (i.e., partitioned task with TID lower than lastTidFinished still running)
                 (this.parallelTasksRunning.isEmpty() && partitionedTasksRunning.isEmpty()) ||
                 (this.areAllReadOnly(this.parallelTasksRunning) && this.areAllReadOnly(this.partitionedTasksRunning))
             );
     }
 
     private boolean canPartitionedTaskRun(){
-        return !this.singleThreadTaskRunning &&
+        return !this.singleThreadWriterTaskRunning &&
                 (this.parallelTasksRunning.isEmpty() || this.areAllReadOnly(this.parallelTasksRunning));
     }
 
     private boolean canParallelTaskRun(){
-        return !this.singleThreadTaskRunning &&
+        return !this.singleThreadWriterTaskRunning &&
                 (this.partitionedTasksRunning.isEmpty() || this.areAllReadOnly(this.partitionedTasksRunning));
     }
 

@@ -23,8 +23,7 @@ import java.util.List;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.W;
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.ERROR;
+import static java.lang.System.Logger.Level.*;
 
 @Microservice("order")
 public final class OrderService {
@@ -56,7 +55,7 @@ public final class OrderService {
     public void processOrderStatus(OrderStatusOut in){
         Order order = this.orderRepository.getLastOrderByCustomerId(in.c_id);
         if(order == null){
-            LOGGER.log(DEBUG, "No order for customer "+in.c_id+"\n"+in);
+            LOGGER.log(DEBUG, "No order found for customer "+in.c_id+"\n"+in);
             return;
         }
         List<OrderLineInfoDto> orderLinesInfo = this.orderLineRepository.getOrderLinesInfo(order.o_id, order.o_d_id, order.o_w_id);

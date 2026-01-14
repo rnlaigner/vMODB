@@ -513,7 +513,7 @@ public final class VmsMetadataLoader {
                 String partitionMethodStr = ( (PartitionBy)optionalPartitionBy.get() ).method();
                 try {
                     Method partitionMethod = inputClazz.getMethod(partitionMethodStr);
-                    vmsTransactionSignature = new VmsTransactionSignature(obj, method, transactionType, executionMode, Optional.of(partitionMethod), inputQueues, outputQueue);
+                    vmsTransactionSignature = new VmsTransactionSignature(obj, method, transactionType, executionMode, partitionMethod, inputQueues, outputQueue);
                 } catch (NoSuchMethodException e) {
                     // leave as single threaded
                     vmsTransactionSignature = new VmsTransactionSignature(obj, method, transactionType, executionMode, inputQueues, outputQueue);

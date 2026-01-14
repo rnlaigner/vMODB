@@ -1,9 +1,14 @@
 package dk.ku.di.dms.vms.tpcc.warehouse;
 
+import dk.ku.di.dms.vms.modb.api.annotations.VmsPreparedStatement;
+import dk.ku.di.dms.vms.modb.api.query.builder.QueryBuilderFactory;
+import dk.ku.di.dms.vms.modb.api.query.enums.ExpressionTypeEnum;
+import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.sdk.core.operational.InboundEvent;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.tpcc.common.events.OrderStatusIn;
+import dk.ku.di.dms.vms.tpcc.warehouse.dto.CustomerInfoDTO;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Customer;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.District;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Warehouse;
@@ -18,6 +23,15 @@ import java.util.Date;
 import java.util.List;
 
 public class WarehouseTest {
+
+    @VmsPreparedStatement("orderStatusCustomerQuery")
+    public static final SelectStatement ORDER_STATUS_BASE_QUERY = QueryBuilderFactory.select()
+            .project("c_balance").project("c_first").project("c_middle").project("c_last")
+            .from("customer")
+            .where("c_w_id", ExpressionTypeEnum.EQUALS, ":c_w_id")
+            .and("c_d_id", ExpressionTypeEnum.EQUALS, ":c_d_id")
+            .and("c_last", ExpressionTypeEnum.EQUALS, ":c_last")
+            .orderBy( "c_first" ).build();
 
     private static VmsApplication getVmsApplication() throws Exception {
         VmsApplicationOptions options = VmsApplicationOptions.build("localhost", 8001, new String[]{
@@ -35,10 +49,10 @@ public class WarehouseTest {
         VMS.start();
     }
 
-    private static void insertCustomers(VmsApplication vms) {
-        IWarehouseRepository warehouseRepository = (IWarehouseRepository) vms.getRepositoryProxy("warehouse");
-        IDistrictRepository districtRepository = (IDistrictRepository) vms.getRepositoryProxy("district");
-        ICustomerRepository customerRepository = (ICustomerRepository) vms.getRepositoryProxy("customer");
+    private static void insertCustomers() {
+        IWarehouseRepository warehouseRepository = (IWarehouseRepository) VMS.getRepositoryProxy("warehouse");
+        IDistrictRepository districtRepository = (IDistrictRepository) VMS.getRepositoryProxy("district");
+        ICustomerRepository customerRepository = (ICustomerRepository) VMS.getRepositoryProxy("customer");
         VMS.getTransactionManager().beginTransaction(0, 0, 0, false);
         warehouseRepository.insert(new Warehouse(1, "test", "test", "test", "test", "test", "test", 10, 10));
         districtRepository.insert(new District(1, 1, "test", "test", "test", "test", "test", "test", 10, 10, 1));
@@ -60,15 +74,20 @@ public class WarehouseTest {
         vms.internalChannels().transactionInputQueue().add(inboundEvent);
     }
 
+    public List<CustomerInfoDTO> issueOrderStatusQuery(OrderStatusIn in) {
+        ICustomerRepository customerRepository = (ICustomerRepository) VMS.getRepositoryProxy("customer");
+        return customerRepository.fetchMany(ORDER_STATUS_BASE_QUERY.setParam( in.w_id, in.d_id, in.c_last ), CustomerInfoDTO.class);
+    }
+
     @Test
     public void testOrderStatusQueryByName() throws Exception {
-        insertCustomers(VMS);
+        insertCustomers();
         var txCtx = VMS.getTransactionManager().beginTransaction( 1, 0, 10, true );
         // get warehouse service
         WarehouseService warehouseService = VMS.getService("dk.ku.di.dms.vms.tpcc.warehouse.WarehouseService");
         OrderStatusIn orderStatusIn = new OrderStatusIn(1, 1, 1, "test", true);
 
-        var customers = warehouseService.issueOrderStatusQuery(orderStatusIn);
+        var customers = issueOrderStatusQuery(orderStatusIn);
         Assert.assertEquals(10, customers.size());
 
         var orderStatusOut = warehouseService.processOrderStatus(orderStatusIn);
@@ -79,7 +98,7 @@ public class WarehouseTest {
     @Test
     public void testPaymentQueryByName() throws Exception {
         ICustomerRepository customerRepository = (ICustomerRepository) VMS.getRepositoryProxy("customer");
-        insertCustomers(VMS);
+        insertCustomers();
         var txCtx = VMS.getTransactionManager().beginTransaction( 1, 0, 10, true );
         List<Customer> customers = customerRepository.getCustomerByLastName(1, 1, "test");
         Assert.assertEquals(10, customers.size());

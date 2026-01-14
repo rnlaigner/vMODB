@@ -196,7 +196,7 @@ public final class WorkloadUtils {
         }
     }
 
-    public static List<Map<String,Iterator<Object>>> mapWorkloadInputFiles(int numWare, Map<String, Integer> numTxInputPerType){
+    public static List<Map<String,Iterator<Object>>> mapWorkloadInputFiles(int numWare, Map<String, Integer> txRatioMap){
         LOGGER.log(INFO, "Mapping "+numWare+" warehouse input files from disk...");
         long initTs = System.currentTimeMillis();
         List<Map<String, Iterator<Object>>> input = new ArrayList<>(numWare);
@@ -206,7 +206,7 @@ public final class WorkloadUtils {
             Map<String, Iterator<Object>> wareInput = new HashMap<>(3);
 
             // new order
-            if(numTxInputPerType.containsKey("new_order") && numTxInputPerType.get("new_order") > 0) {
+            if(txRatioMap.containsKey("new_order")) {
                 AppendOnlyBoundedBuffer newOrderBuffer = StorageUtils.loadAppendOnlyBuffer("proxy", NEW_ORDER_INPUT_BASE_FILE_NAME + (i + 1));
                 // calculate number of entries (i.e., transaction requests)
                 numTransactions = (int) newOrderBuffer.size() / NEW_ORDER_SCHEMA.getRecordSize();
@@ -214,14 +214,14 @@ public final class WorkloadUtils {
             }
 
             // payment
-            if(numTxInputPerType.containsKey("payment") && numTxInputPerType.get("payment") > 0) {
+            if(txRatioMap.containsKey("payment")) {
                 AppendOnlyBoundedBuffer paymentBuffer = StorageUtils.loadAppendOnlyBuffer("proxy", PAYMENT_INPUT_BASE_FILE_NAME + (i + 1));
                 numTransactions = (int) paymentBuffer.size() / PAYMENT_SCHEMA.getRecordSize();
                 wareInput.put("payment", createPaymentInputIterator(paymentBuffer, numTransactions));
             }
 
             // order status
-            if(numTxInputPerType.containsKey("order_status") && numTxInputPerType.get("order_status") > 0) {
+            if(txRatioMap.containsKey("order_status")) {
                 AppendOnlyBoundedBuffer orderStatusBuffer = StorageUtils.loadAppendOnlyBuffer("proxy", ORDER_STATUS_INPUT_BASE_FILE_NAME + (i + 1));
                 numTransactions = (int) orderStatusBuffer.size() / ORDER_STATUS_SCHEMA.getRecordSize();
                 wareInput.put("order_status", createOrderStatusInputIterator(orderStatusBuffer, numTransactions));

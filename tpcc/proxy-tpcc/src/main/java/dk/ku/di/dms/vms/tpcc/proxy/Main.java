@@ -62,7 +62,8 @@ public final class Main {
         numTxInputPerType.put("payment", Integer.valueOf(PROPERTIES.get("payment_input_size").toString()));
         numTxInputPerType.put("order_status", Integer.valueOf(PROPERTIES.get("order_status_input_size").toString()));
 
-        Tuple<Integer, String>[] txRatio = buildTransactionRatio();
+        Map<String, Integer> txRatioMap = buildTransactionRatioMap();
+        Tuple<Integer, String>[] txRatio = buildTransactionRatio(txRatioMap);
 
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
@@ -173,7 +174,7 @@ public final class Main {
                     }
 
                     // reload iterators
-                    input = WorkloadUtils.mapWorkloadInputFiles(numWare, numTxInputPerType);
+                    input = WorkloadUtils.mapWorkloadInputFiles(numWare, txRatioMap);
 
                     // load coordinator
                     if(coordinator == null){
@@ -249,24 +250,29 @@ public final class Main {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private static Tuple<Integer, String>[] buildTransactionRatio() {
+    public static Map<String, Integer> buildTransactionRatioMap(){
         Map<String, Integer> txRatioMap = new TreeMap<>();
-        int i = 0;
+        boolean seen_100 = false;
         if(!PROPERTIES.get("new_order").toString().equals("0")) {
             txRatioMap.put("new_order", Integer.valueOf(PROPERTIES.get("new_order").toString()));
-            i++;
+            if(txRatioMap.get("new_order") == 100) seen_100 = true;
         }
         if(!PROPERTIES.get("payment").toString().equals("0")) {
             txRatioMap.put("payment", Integer.valueOf(PROPERTIES.get("payment").toString()));
-            i++;
+            if(txRatioMap.get("payment") == 100) seen_100 = true;
         }
         if(!PROPERTIES.get("order_status").toString().equals("0")) {
             txRatioMap.put("order_status", Integer.valueOf(PROPERTIES.get("order_status").toString()));
-            i++;
+            if(txRatioMap.get("order_status") == 100) seen_100 = true;
         }
-        Tuple<Integer, String>[] txRatio = new Tuple[i];
-        i = 0;
+        if(!seen_100) throw new RuntimeException("No transaction defined as 100 in app.properties!");
+        return txRatioMap;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Tuple<Integer, String>[] buildTransactionRatio(Map<String, Integer> txRatioMap) {
+        Tuple<Integer, String>[] txRatio = new Tuple[txRatioMap.size()];
+        int i = 0;
         for(var entry : txRatioMap.entrySet()) {
             txRatio[i] = Tuple.of(entry.getValue(), entry.getKey());
             i++;

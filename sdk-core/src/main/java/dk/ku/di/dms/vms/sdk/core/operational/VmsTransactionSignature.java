@@ -4,7 +4,6 @@ import dk.ku.di.dms.vms.modb.api.enums.ExecutionModeEnum;
 import dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum;
 
 import java.lang.reflect.Method;
-import java.util.Optional;
 
 /**
  * A data class that stores the method, respective class,
@@ -27,14 +26,14 @@ public final class VmsTransactionSignature {
     private final ExecutionModeEnum executionMode;
 
     // only used if execution mode is partitioned
-    private final Optional<Method> partitionByMethod;
+    private final Method partitionByMethod;
 
     // the identification of the input queues. i.e., these events must have arrived in order to execute the method
     private final String[] inputQueues;
 
     private final String outputQueue;
 
-    public VmsTransactionSignature(Object vmsInstance, Method method, TransactionTypeEnum transactionType, ExecutionModeEnum executionMode, Optional<Method> partitionByMethod, String[] inputQueues, String outputQueue) {
+    public VmsTransactionSignature(Object vmsInstance, Method method, TransactionTypeEnum transactionType, ExecutionModeEnum executionMode, Method partitionByMethod, String[] inputQueues, String outputQueue) {
         this.vmsInstance = vmsInstance;
         this.method = method;
         this.transactionType = transactionType;
@@ -49,7 +48,7 @@ public final class VmsTransactionSignature {
         this.method = method;
         this.transactionType = transactionType;
         this.executionMode = executionMode;
-        this.partitionByMethod = Optional.empty();
+        this.partitionByMethod = null;
         this.inputQueues = inputQueues;
         this.outputQueue = outputQueue;
     }
@@ -79,7 +78,7 @@ public final class VmsTransactionSignature {
     }
 
     public Method partitionByMethod() {
-        return partitionByMethod.get();
+        return partitionByMethod;
     }
 
 }

@@ -164,7 +164,9 @@ public final class NonUniqueSecondaryIndex implements IMultiVersionIndex {
         public boolean hasNext() {
             while(this.iterator.hasNext()){
                 this.currRecord = this.getRecordFunc.apply(this.tid, this.iterator.next());
-                if(this.currRecord != null) return true;
+                if(this.currRecord != null) {
+                    return true;
+                }
             }
             return false;
         }

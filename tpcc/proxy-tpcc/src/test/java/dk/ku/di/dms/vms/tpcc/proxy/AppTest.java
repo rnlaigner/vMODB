@@ -22,7 +22,7 @@ public final class AppTest {
         StorageUtils.EntityMetadata metadata = StorageUtils.loadEntityMetadata();
         StorageUtils.createTables(metadata, NUM_WARE);
         var tableToIndexMap = StorageUtils.mapTablesInDisk(metadata, NUM_WARE);
-        int numWare = StorageUtils.getNumRecordsFromInDiskTable(metadata.entityToSchemaMap().get("warehouse"), "warehouse");
+        int numWare = StorageUtils.getNumWarehousesInDiskTable();
         Assert.assertEquals(NUM_WARE, numWare);
         // init stub warehouse service
         VmsApplication vms = new TestService().buildAndStart();

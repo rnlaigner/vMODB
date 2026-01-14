@@ -19,20 +19,12 @@ public final class OrderStatusOut {
         this.c_id = c_id;
     }
 
-    // would be nice to express a where clause
-    public record WareDistCustId(int w_id, int d_id, int c_id){}
-
-    @SuppressWarnings("unused")
-    public OrderStatusOut.WareDistCustId getId(){
-        return new OrderStatusOut.WareDistCustId(this.w_id, this.d_id, this.c_id);
-    }
-
     @Override
     public String toString() {
         return "{"
-                + "\"w_id\":\"" + w_id + "\""
-                + ",\"d_id\":\"" + d_id + "\""
-                + ",\"c_id\":\"" + c_id + "\""
+                + "\"w_id\":" + w_id
+                + ",\"d_id\":" + d_id
+                + ",\"c_id\":" + c_id
                 + "}";
     }
 
