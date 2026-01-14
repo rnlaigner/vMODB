@@ -68,9 +68,9 @@ public final class PrimaryIndex implements IMultiVersionIndex {
 
     private PrimaryIndex(ReadWriteIndex<IKey> rawIndex, IPrimaryKeyGenerator<?> primaryKeyGenerator) {
         this.rawIndex = rawIndex;
-        this.updatesPerKeyMap = new ConcurrentHashMap<>(1024*1000);
+        this.updatesPerKeyMap = new ConcurrentHashMap<>(1024*100);
         this.primaryKeyGenerator = Optional.ofNullable(primaryKeyGenerator);
-        this.writeSetMap = new ConcurrentHashMap<>(1024*50);
+        this.writeSetMap = new ConcurrentHashMap<>(2048*10);
         this.keysToFlush = ConcurrentHashMap.newKeySet();
     }
 

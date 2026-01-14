@@ -1,15 +1,21 @@
 package dk.ku.di.dms.vms.tpcc.inventory.infra;
 
 import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
+import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
 import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
+import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
 import dk.ku.di.dms.vms.tpcc.inventory.entities.Item;
 import dk.ku.di.dms.vms.tpcc.inventory.entities.Stock;
 import dk.ku.di.dms.vms.tpcc.inventory.repositories.IItemRepository;
 import dk.ku.di.dms.vms.tpcc.inventory.repositories.IStockRepository;
 
+import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.Map;
+import java.util.concurrent.*;
 
+import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.makeAlphaString;
+import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
 import static java.lang.System.Logger.Level.INFO;
 
 public final class InventoryHttpHandler extends DefaultHttpHandler {
@@ -82,6 +88,80 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                 return "";
             }
         }
+    }
+
+    @Override
+    public void put(String uri, String payload) {
+        int numWare = Integer.parseInt(ConfigUtils.loadProperties().getProperty("num_ware"));
+        boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
+        this.transactionManager.reset();
+
+        this.transactionManager.beginTransaction(0, 0, 0, false);
+        // item
+        LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" item records...");
+        long initTs = System.currentTimeMillis();
+        for(int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++){
+            Item item = generateItem(i_id);
+            this.itemRepository.insert(item);
+        }
+        this.transactionManager.commit();
+        if(checkpointing){
+            this.transactionManager.checkpoint(0);
+        }
+        long endTs = System.currentTimeMillis();
+        LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
+
+        ExecutorService threadPool = Executors.newFixedThreadPool(numWare);
+        BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(numWare);
+        CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
+
+        // stock
+        for(int w_id = 1; w_id <= numWare; w_id++) {
+            final int f_w_id = w_id;
+            service.submit(() -> {
+                LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
+                transactionManager.beginTransaction(f_w_id, 0, 0, false);
+                long internalInitTs = System.currentTimeMillis();
+                for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
+                    Stock stock = generateStockItem(f_w_id, i_id);
+                    stockRepository.insert(stock);
+                }
+                transactionManager.commit();
+                LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
+            }, null);
+        }
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                completionQueue.take();
+            }
+            if(checkpointing){
+                this.transactionManager.checkpoint(numWare);
+            }
+            endTs = System.currentTimeMillis();
+            LOGGER.log(INFO, "Finished creating stock records in "+(endTs-initTs)+" ms");
+        } catch(InterruptedException e){
+            threadPool.shutdownNow();
+            e.printStackTrace(System.err);
+        }
+    }
+
+    public static Item generateItem(int I_ID) {
+        int I_IM_ID = randomNumber(1, 10000);
+        String I_NAME = makeAlphaString(14, 24);
+        float I_PRICE = (float) ((randomNumber(100, 10000)) / 100.0);
+        String I_DATA = makeAlphaString(26, 50);
+        return new Item(I_ID, I_IM_ID, I_PRICE, I_NAME, I_DATA);
+    }
+
+    public static Stock generateStockItem(int w_id, int S_I_ID) {
+        int S_QUANTITY = randomNumber(10, 100);
+        Map<Integer, String> S_DIST = new HashMap<>();
+        for (int d = 1; d <= TPCcConstants.NUM_DIST_PER_WARE; d++) S_DIST.put(d, makeAlphaString(24, 24));
+        int S_YTD = 0;
+        int S_ORDER_CNT = 0;
+        int S_REMOTE_CNT = 0;
+        String S_DATA = makeAlphaString(26, 50);
+        return new Stock(S_I_ID, w_id, S_QUANTITY, S_DIST, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DATA);
     }
 
     @Override

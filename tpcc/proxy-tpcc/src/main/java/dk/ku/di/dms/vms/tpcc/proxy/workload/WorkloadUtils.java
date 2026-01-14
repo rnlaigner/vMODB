@@ -9,10 +9,10 @@ import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyBoundedBuffer;
 import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyUnboundedBuffer;
 import dk.ku.di.dms.vms.modb.utils.StorageUtils;
+import dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils;
 import dk.ku.di.dms.vms.tpcc.common.events.NewOrderWareIn;
 import dk.ku.di.dms.vms.tpcc.common.events.OrderStatusIn;
 import dk.ku.di.dms.vms.tpcc.common.events.PaymentIn;
-import dk.ku.di.dms.vms.tpcc.proxy.datagen.DataGenUtils;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -25,9 +25,9 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-import static dk.ku.di.dms.vms.tpcc.proxy.datagen.DataGenUtils.nuRand;
-import static dk.ku.di.dms.vms.tpcc.proxy.datagen.DataGenUtils.randomNumber;
-import static dk.ku.di.dms.vms.tpcc.proxy.infra.TPCcConstants.*;
+import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.nuRand;
+import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
+import static dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants.*;
 import static java.lang.System.Logger.Level.*;
 
 public final class WorkloadUtils {

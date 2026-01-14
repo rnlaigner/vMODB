@@ -1,7 +1,9 @@
 package dk.ku.di.dms.vms.tpcc.warehouse.infra;
 
 import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
+import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
 import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
+import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Customer;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.District;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Warehouse;
@@ -9,8 +11,12 @@ import dk.ku.di.dms.vms.tpcc.warehouse.repositories.ICustomerRepository;
 import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IDistrictRepository;
 import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IWarehouseRepository;
 
+import java.util.Date;
 import java.util.List;
+import java.util.concurrent.*;
 
+import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.*;
+import static java.lang.System.Logger.Level.ERROR;
 import static java.lang.System.Logger.Level.INFO;
 
 public final class WarehouseHttpHandler extends DefaultHttpHandler {
@@ -98,6 +104,162 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                 return "{ \"message\":\" URI not recognized = "+uri+"\" }";
             }
         }
+    }
+
+    @Override
+    public void put(String uri, String payload) {
+        int numWare = Integer.parseInt(ConfigUtils.loadProperties().getProperty("num_ware"));
+        boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
+        this.transactionManager.reset();
+
+        this.transactionManager.beginTransaction(0, 0, 0, false);
+        // warehouse
+        LOGGER.log(INFO, "Creating "+ numWare +" warehouse records...");
+        long initTs = System.currentTimeMillis();
+        for(int w_id = 1; w_id <= numWare; w_id++){
+            Warehouse warehouse = generateWarehouse(w_id);
+            this.warehouseRepository.insert(warehouse);
+        }
+        this.transactionManager.commit();
+        if(checkpointing){
+            this.transactionManager.checkpoint(0);
+        }
+        long endTs = System.currentTimeMillis();
+        LOGGER.log(INFO, "Finished creating "+ numWare +" warehouse records in "+(endTs-initTs)+" ms");
+
+        ExecutorService threadPool = Executors.newFixedThreadPool(numWare);
+        BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(numWare);
+        CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
+
+        // district
+        for(int w_id = 1; w_id <= numWare; w_id++) {
+            final int f_w_id = w_id;
+            service.submit(() -> {
+                LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" district records for warehouse "+f_w_id);
+                transactionManager.beginTransaction(f_w_id, 0, 0, false);
+                long internalInitTs = System.currentTimeMillis();
+                for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++){
+                    District district = generateDistrict(d_id, f_w_id);
+                    districtRepository.insert(district);
+                }
+                transactionManager.commit();
+                LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_DIST_PER_WARE+" district records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
+            }, null);
+        }
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                completionQueue.take();
+            }
+        } catch(InterruptedException e){
+            threadPool.shutdownNow();
+            LOGGER.log(ERROR, "Error:\n"+e);
+            return;
+        }
+
+        if(checkpointing){
+            this.transactionManager.checkpoint(numWare);
+        }
+
+        // customer
+        for(int w_id = 1; w_id <= numWare; w_id++){
+            final int f_w_id = w_id;
+            service.submit(() -> {
+                LOGGER.log(INFO, "Started creating 30K customer records for warehouse " + f_w_id);
+                transactionManager.beginTransaction(f_w_id, 0, 0, false);
+                long internalInitTs = System.currentTimeMillis();
+                for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
+                    for (int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
+                        Customer customer = generateCustomer(c_id, d_id, f_w_id);
+                        customerRepository.insert(customer);
+                    }
+                }
+                transactionManager.commit();
+                LOGGER.log(INFO, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+            }, null);
+        }
+
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                completionQueue.take();
+            }
+        } catch(InterruptedException e){
+            threadPool.shutdownNow();
+            LOGGER.log(ERROR, "Error:\n"+e);
+            return;
+        }
+
+        if(checkpointing){
+            this.transactionManager.checkpoint(numWare);
+        }
+
+//        this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
+//        List<Customer> customers = this.customerRepository.getAll();
+
+        endTs = System.currentTimeMillis();
+        LOGGER.log(INFO, "Finished creating warehouse records in "+(endTs-initTs)+" ms");
+    }
+
+    public static Warehouse generateWarehouse(int W_ID)
+    {
+        String W_NAME = makeAlphaString(6, 10);
+        String W_STREET_1 = makeAlphaString(10, 20);
+        String W_STREET_2 = makeAlphaString(10, 20);
+        String W_CITY = makeAlphaString(10, 20);
+        String W_STATE = makeAlphaString(2, 2);
+        String W_ZIP = makeAlphaString(9, 9);
+        float W_TAX = (float)((float) randomNumber(10, 20) / 100.0);
+        float W_YTD = 3000000;
+        return new Warehouse(W_ID, W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_TAX, W_YTD);
+    }
+
+    public static District generateDistrict(int D_ID, int D_W_ID)
+    {
+        String D_NAME = makeAlphaString(6, 10);
+        String D_STREET_1 = makeAlphaString(10, 20);
+        String D_STREET_2 = makeAlphaString(10, 20);
+        String D_CITY = makeAlphaString(10, 20);
+        String D_STATE = makeAlphaString(2, 2);
+        String D_ZIP = makeAlphaString(9, 9);
+        float D_TAX = (float) (((float) randomNumber(10, 20)) / 100.0);
+        float D_YTD = (float) 30000.0;
+        int D_NEXT_O_ID = 3001;
+        return new District(D_ID, D_W_ID, D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_TAX, D_YTD, D_NEXT_O_ID);
+    }
+
+    public static Customer generateCustomer(int c_id, int c_d_id, int c_w_id) {
+        String C_FIRST = makeAlphaString(8, 16);
+        String C_MIDDLE = "OE";
+        String C_LAST;
+        if (c_id <= 1000) {
+            C_LAST = lastName(c_id - 1);
+        } else {
+            C_LAST = lastName(nuRand(255, 157, 0, 999));
+        }
+
+        String C_STREET_1 = makeAlphaString(10, 20);
+        String C_STREET_2 = makeAlphaString(10, 20);
+        String C_CITY = makeAlphaString(10, 20);
+        String C_STATE = makeAlphaString(2, 2);
+        String C_ZIP = makeAlphaString(9, 9);
+        String C_PHONE = makeNumberString(16, 16);
+        Date C_SINCE = new Date();
+
+        String C_CREDIT;
+        if (randomNumber(0, 1) == 1)
+            C_CREDIT = "GC";
+        else
+            C_CREDIT = "BC";
+
+        int C_CREDIT_LIM = 50000;
+        float C_DISCOUNT = (float) (((float) randomNumber(0, 50)) / 100.0);
+        float C_BALANCE = -10.0f;
+
+        int C_YTD_PAYMENT = 10;
+        int C_PAYMENT_CNT = 1;
+        int C_DELIVERY_CNT = 0;
+        String C_DATA = makeAlphaString(300, 500);
+
+        return new Customer(c_id, c_d_id, c_w_id, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DELIVERY_CNT, C_DATA);
     }
 
     @Override

@@ -89,9 +89,6 @@ public final class MinimalHttpClient implements Closeable {
         MemoryManager.releaseTemporaryDirectBuffer(this.writeBuffer);
     }
 
-    /**
-     * FIXME: Verify support to errors/"Connection: close" right after content-length to avoid hanging forever
-     */
     private int readFully() throws IOException {
         StringBuilder responseBuilder = new StringBuilder();
 

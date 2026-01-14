@@ -3,23 +3,19 @@ package dk.ku.di.dms.vms.tpcc.proxy;
 import dk.ku.di.dms.vms.coordinator.Coordinator;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
-import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
 import dk.ku.di.dms.vms.tpcc.proxy.dataload.DataLoadUtils;
-import dk.ku.di.dms.vms.tpcc.proxy.dataload.QueueTableIterator;
 import dk.ku.di.dms.vms.tpcc.proxy.experiment.ExperimentUtils;
 import dk.ku.di.dms.vms.tpcc.proxy.infra.MinimalHttpClient;
-import dk.ku.di.dms.vms.tpcc.proxy.infra.TPCcConstants;
-import dk.ku.di.dms.vms.tpcc.proxy.storage.StorageUtils;
 import dk.ku.di.dms.vms.tpcc.proxy.workload.WorkloadUtils;
 
 import java.io.IOException;
 import java.util.*;
 
+import static dk.ku.di.dms.vms.tpcc.proxy.dataload.DataLoadUtils.VMS_TO_PORT_MAP;
+
 public final class Main {
 
     private static final Properties PROPERTIES = ConfigUtils.loadProperties();
-
-    private static int NUM_INGESTION_WORKERS;
 
     public static void main(String[] args) throws Exception {
         String option;
@@ -30,14 +26,8 @@ public final class Main {
             option = args[0];
         }
         switch (option){
-            case "1" -> {
-                NUM_INGESTION_WORKERS = Runtime.getRuntime().availableProcessors();
-                loadMenu("Distributed Deployment Menu");
-            }
-            case "2" -> {
-                NUM_INGESTION_WORKERS = Runtime.getRuntime().availableProcessors() / 2;
-                loadLocalDeploymentMenu();
-            }
+            case "1" -> loadMenu("Distributed Deployment Menu");
+            case "2" -> loadLocalDeploymentMenu();
             default -> System.exit(0);
         }
     }
@@ -49,13 +39,10 @@ public final class Main {
         loadMenu("Local Deployment Menu");
     }
 
-    private static void loadMenu(String menuType) throws NoSuchFieldException, IllegalAccessException {
+    private static void loadMenu(String menuType) {
         Coordinator coordinator = null;
         final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
-        Map<String, UniqueHashBufferIndex> tables = null;
         List<Map<String,Iterator<Object>>> input;
-        StorageUtils.EntityMetadata metadata = StorageUtils.loadEntityMetadata();
-        Map<String, String> vmsToHostMap = DataLoadUtils.mapVmsToHost(PROPERTIES);
 
         Map<String, Integer> numTxInputPerType = new HashMap<>(3);
         numTxInputPerType.put("new_order", Integer.valueOf(PROPERTIES.get("new_order_input_size").toString()));
@@ -67,52 +54,42 @@ public final class Main {
 
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
-        boolean dataLoaded = false;
         while (running) {
             printMenu(menuType);
             System.out.print("Enter your choice: ");
             String choice = scanner.nextLine();
             switch (choice) {
-                case "1":
-                    System.out.println("Option 1: \"Create tables in disk\" selected.");
-                    System.out.println("Creating tables with "+numWare+" warehouses...");
-                    tables = StorageUtils.createTables(metadata, numWare);
-                    System.out.println("Tables created!");
-                    break;
-                case "2":
-                    System.out.println("Option 2: \"Load VMSes with tables in disk\" selected.");
-
-                    if(coordinator != null){
-                        long submitted = coordinator.getNumTIDsSubmitted();
-                        long committed = coordinator.getNumTIDsCommitted();
-                        if(submitted > committed) {
-                            System.out.println("Transactions are still executing: "+submitted+" > "+committed);
-                            System.out.println("Do you want to proceed? [y/n]");
-                            String resp = scanner.nextLine();
-                            if(resp.equalsIgnoreCase("n")){
-                                break;
-                            }
+                case "1": {
+                    String order_host = PROPERTIES.getProperty("order_host");
+                    try(MinimalHttpClient client = new MinimalHttpClient(order_host, DataLoadUtils.ORDER_VMS_PORT)){
+                        if(client.sendRequest("PUT", "", "") != 200){
+                            System.out.println("Error on PUT endpoint of order!");
                         }
+                    } catch (IOException e) {
+                        System.out.println("Error on PUT endpoint of order!");
+                        break;
                     }
 
-                    if(tables == null){
-                        // the number of warehouses must be exactly the same otherwise lead to errors in reading from files
-                        int numWareDisk = StorageUtils.getNumWarehousesInDiskTable();
-                        if(numWareDisk != numWare){
-                            System.out.println("Number of warehouses in disk tables ("+numWareDisk+") diverge from the app.properties: "+numWare);
-                            System.out.println("Do you want to proceed? [y/n]");
-                            String resp = scanner.nextLine();
-                            if(resp.equalsIgnoreCase("n")){
-                                break;
-                            }
+                    String warehouse_host = PROPERTIES.getProperty("warehouse_host");
+                    try(MinimalHttpClient client = new MinimalHttpClient(warehouse_host, DataLoadUtils.WAREHOUSE_VMS_PORT)){
+                        if(client.sendRequest("PUT", "", "") != 200){
+                            System.out.println("Error on PUT endpoint of warehouse!");
                         }
-                        System.out.println("Loading tables from disk...");
-                        tables = StorageUtils.mapTablesInDisk(metadata, numWare);
+                    } catch (IOException e) {
+                        System.out.println("Error on PUT endpoint of warehouse!");
+                        break;
                     }
-                    Map<String, QueueTableIterator> tablesInMem = DataLoadUtils.mapTablesFromDisk(tables, metadata.entityHandlerMap());
-                    DataLoadUtils.ingestData(tablesInMem, vmsToHostMap, NUM_INGESTION_WORKERS);
-                    dataLoaded = true;
+
+                    String inventory_host = PROPERTIES.getProperty("inventory_host");
+                    try(MinimalHttpClient client = new MinimalHttpClient(inventory_host, DataLoadUtils.INVENTORY_VMS_PORT)){
+                        if(client.sendRequest("PUT", "", "") != 200){
+                            System.out.println("Error on PUT endpoint of inventory!");
+                        }
+                    } catch (IOException e) {
+                        System.out.println("Error on PUT endpoint of inventory!");
+                    }
                     break;
+                }
                 case "3":
                     System.out.println("Option 3: \"Create workload\" selected.");
                     System.out.println("Number of warehouses: "+numWare);
@@ -126,20 +103,10 @@ public final class Main {
                 case "4":
                     System.out.println("Option 4: \"Submit workload\" selected.");
 
-                    if(!dataLoaded){
-                        System.out.println("Data has not been loaded!");
-                        System.out.println("Do you want to proceed? [y/n]");
-                        String resp = scanner.nextLine();
-                        if(resp.equalsIgnoreCase("n")){
-                            break;
-                        }
-                    }
-
                     // check if workload files exist
                     int numFiles = WorkloadUtils.getNumWorkloadInputFiles(numTxInputPerType);
-                    int numWareDisk = StorageUtils.getNumWarehousesInDiskTable();
 
-                    if(numWareDisk != numFiles){
+                    if(numWare != numFiles){
                         System.out.println("Number of warehouses ("+numWare+") != Number of input files ("+numFiles+")");
                         System.out.println("Do you want to proceed? [y/n]");
                         String resp = scanner.nextLine();
@@ -207,7 +174,6 @@ public final class Main {
                     if (checkCompleteness(coordinator, scanner)) break;
                     cleanup(true);
                     System.out.println("VMS states reset.");
-                    dataLoaded = false;
                     break;
                 case "q":
                     System.out.println("Exiting the application...");
@@ -238,7 +204,7 @@ public final class Main {
     private static void cleanup(boolean reset) {
         String param;
         if(reset) param = "reset"; else param = "cleanup";
-        for(Map.Entry<String, Integer> vms : TPCcConstants.VMS_TO_PORT_MAP.entrySet()){
+        for(Map.Entry<String, Integer> vms : VMS_TO_PORT_MAP.entrySet()){
             String host = PROPERTIES.getProperty(vms.getKey() + "_host");
             try(MinimalHttpClient client = new MinimalHttpClient(host, vms.getValue())){
                 if(client.sendRequest("PATCH", "", param) != 200){
@@ -282,8 +248,8 @@ public final class Main {
 
     private static void printMenu(String menuType) {
         System.out.println("\n=== "+menuType+" ===");
-        System.out.println("1. Create tables in disk");
-        System.out.println("2. Load VMSes with tables in disk");
+        System.out.println("1. Populate tables in VMSes");
+        System.out.println("2. Check data correctness in VMSes");
         System.out.println("3. Create workload");
         System.out.println("4. Submit workload");
         System.out.println("5. Cleanup VMS states");

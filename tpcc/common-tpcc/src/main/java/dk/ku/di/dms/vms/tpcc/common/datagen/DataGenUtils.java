@@ -1,4 +1,4 @@
-package dk.ku.di.dms.vms.tpcc.proxy.datagen;
+package dk.ku.di.dms.vms.tpcc.common.datagen;
 
 import java.util.Arrays;
 import java.util.Random;

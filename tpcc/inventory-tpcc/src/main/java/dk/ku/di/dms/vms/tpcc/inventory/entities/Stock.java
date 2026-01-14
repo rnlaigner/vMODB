@@ -10,7 +10,7 @@ import javax.persistence.Id;
 import javax.persistence.IdClass;
 import javax.validation.constraints.PositiveOrZero;
 import java.io.Serializable;
-import java.util.HashMap;
+import java.util.Map;
 
 @Entity
 @VmsTable(name="stock")
@@ -76,7 +76,7 @@ public final class Stock implements IEntity<Stock.StockId> {
     public Stock(){}
 
     @SuppressWarnings("unused")
-    public Stock(int s_i_id, int s_w_id, int s_quantity, HashMap<Integer, String> s_dist, int s_ytd, int s_order_cnt, int s_remote_cnt, String s_data) {
+    public Stock(int s_i_id, int s_w_id, int s_quantity, Map<Integer, String> s_dist, int s_ytd, int s_order_cnt, int s_remote_cnt, String s_data) {
         this.s_i_id = s_i_id;
         this.s_w_id = s_w_id;
         this.s_quantity = s_quantity;

@@ -470,9 +470,9 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             // LOGGER.log(DEBUG, "Checkpointing table "+table.getName());
             int numRecords = table.primaryKeyIndex().checkpoint(maxTid);
             if(numRecords > 0) {
-                LOGGER.log(DEBUG, numRecords+" record(s) persisted to table "+table.getName());
+                LOGGER.log(INFO, numRecords+" record(s) persisted to table "+table.getName());
             } else {
-                LOGGER.log(DEBUG, "No records have been flushed to table "+table.getName());
+                LOGGER.log(INFO, "No records have been flushed to table "+table.getName());
             }
         }
         LOGGER.log(DEBUG, "Checkpoint for max TID "+maxTid+" finished at "+System.currentTimeMillis());
