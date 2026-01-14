@@ -238,12 +238,12 @@ public final class SimplePlanner {
         int entrySize = calculateQueryResultEntrySize(tb.schema(), queryTree.projections.size(), projectionColumns);
         if(indexSelectionVerdict.indexIsUsedGivenWhereClause()) {
             return new IndexScanWithOrder(indexSelectionVerdict.index(), projectionColumns,
-                    queryTree.orderByPredicates.getFirst().columnReference.columnPosition,  entrySize);
+                    queryTree.orderByPredicates.getFirst().columnReference.columnPosition, entrySize, queryTree.limit.orElse(null));
         } else {
             return new FullScanWithOrder(tb.primaryKeyIndex(), projectionColumns,
-                    queryTree.orderByPredicates.getFirst().columnReference.columnPosition,  entrySize);
+                    queryTree.orderByPredicates.getFirst().columnReference.columnPosition, entrySize);
         }
-          }
+    }
 
     private AbstractScan planSimpleScan(QueryTree queryTree) {
         // given it is simple, pick the table from one of the columns

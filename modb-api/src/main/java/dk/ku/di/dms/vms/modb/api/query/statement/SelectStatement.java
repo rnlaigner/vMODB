@@ -41,7 +41,8 @@ public final class SelectStatement extends AbstractStatement {
         this.whereClause.addAll(whereClause);
     }
 
-    public SelectStatement(List<String> selectClause, String table, List<WhereClauseElement> whereClause) {
+    public SelectStatement(StringBuilder sql, List<String> selectClause, String table, List<WhereClauseElement> whereClause) {
+        super(sql);
         this.selectClause = selectClause;
         this.fromClause = List.of(table);
         this.whereClause.addAll(whereClause);
@@ -53,6 +54,15 @@ public final class SelectStatement extends AbstractStatement {
         this.fromClause = fromClause;
         this.whereClause.addAll(whereClause);
         this.orderByClause = orderByClause;
+    }
+
+    public SelectStatement(StringBuilder sql, List<String> selectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<OrderByClauseElement> orderByClause, Integer limit) {
+        super(sql);
+        this.selectClause = selectClause;
+        this.fromClause = fromClause;
+        this.whereClause.addAll(whereClause);
+        this.orderByClause = orderByClause;
+        this.limit = limit;
     }
 
     public SelectStatement(StringBuilder sql, List<String> selectClause, List<GroupBySelectElement> groupBySelectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<String> groupByClause, List<OrderByClauseElement> orderByClause) {
@@ -76,7 +86,7 @@ public final class SelectStatement extends AbstractStatement {
     }
 
     public SelectStatement clone(List<WhereClauseElement> whereClause){
-        return new SelectStatement(this.SQL, this.selectClause, this.fromClause, whereClause, this.orderByClause);
+        return new SelectStatement(this.SQL, this.selectClause, this.fromClause, whereClause, this.orderByClause, this.limit);
     }
 
     public SelectStatement setParam(Object... params) {

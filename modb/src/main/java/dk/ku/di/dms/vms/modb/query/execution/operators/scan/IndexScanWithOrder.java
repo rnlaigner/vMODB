@@ -11,17 +11,43 @@ import java.util.List;
 
 public final class IndexScanWithOrder extends AbstractScanWithOrder {
 
-    public IndexScanWithOrder(IMultiVersionIndex index, int[] projectionColumns, int orderByColumn, int entrySize) {
+    public final Integer limit;
+
+    public IndexScanWithOrder(IMultiVersionIndex index, int[] projectionColumns, int orderByColumn, int entrySize, Integer limit) {
         super(index, projectionColumns, orderByColumn, entrySize);
+        this.limit = limit;
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key) {
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
-        while(iterator.hasNext()){
-            this.insert(result, this.getProjection(iterator.next()));
+        Object[] next;
+        int pos;
+        // prevent more projection than necessary
+        if(this.limit == null){
+            while(iterator.hasNext()){
+                next = iterator.next();
+                pos = this.getPositionToInsert(result, next);
+                result.add(pos, this.getProjection(next));
+            }
+            return result;
         }
-        return result;
+        while(iterator.hasNext()){
+            next = iterator.next();
+            pos = this.getPositionToInsert(result, next);
+            result.add(pos, next);
+        }
+
+        if(result.isEmpty()) return result;
+
+        int i = 0;
+        if(projectionColumns.length != result.get(0).length) {
+            while (i < this.limit) {
+                result.set(i, this.getProjection(result.get(i)));
+                i++;
+            }
+        }
+        return result.subList(0, this.limit);
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext) {

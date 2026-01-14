@@ -16,8 +16,7 @@ import java.util.concurrent.*;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.makeAlphaString;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
-import static java.lang.System.Logger.Level.ERROR;
-import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.*;
 
 public final class OrderHttpHandler extends DefaultHttpHandler {
 
@@ -67,15 +66,15 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(numWare);
         CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
 
-        LOGGER.log(INFO, "Creating order records...");
+        LOGGER.log(INFO, "Populating order VMS...");
         long initTs = System.currentTimeMillis();
 
         // order and order line
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             service.submit(() -> {
-                LOGGER.log(INFO, "Started creating 30K order records for warehouse " + f_w_id);
-                transactionManager.beginTransaction(f_w_id, 0, 0, false);
+                LOGGER.log(DEBUG, "Started creating 30K order records for warehouse " + f_w_id);
+                transactionManager.beginTransaction(-f_w_id, 0, 0, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
@@ -92,7 +91,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                     }
                 }
                 transactionManager.commit();
-                LOGGER.log(INFO, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(DEBUG, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             }, null);
         }
 
@@ -107,14 +106,11 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         }
 
         if(checkpointing){
-            this.transactionManager.checkpoint(numWare);
+            this.transactionManager.checkpoint(0);
         }
 
-//        this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
-//        List<Customer> customers = this.customerRepository.getAll();
-
         long endTs = System.currentTimeMillis();
-        LOGGER.log(INFO, "Finished creating order records in "+(endTs-initTs)+" ms");
+        LOGGER.log(INFO, "Finished populating order VMS in "+(endTs-initTs)+" ms");
     }
 
 }

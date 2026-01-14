@@ -16,6 +16,7 @@ import java.util.concurrent.*;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.makeAlphaString;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.INFO;
 
 public final class InventoryHttpHandler extends DefaultHttpHandler {
@@ -96,9 +97,10 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
         this.transactionManager.reset();
 
-        this.transactionManager.beginTransaction(0, 0, 0, false);
+        LOGGER.log(INFO, "Populating inventory VMS...");
+        this.transactionManager.beginTransaction(-numWare, 0, 0, false);
         // item
-        LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" item records...");
+        LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
         long initTs = System.currentTimeMillis();
         for(int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++){
             Item item = generateItem(i_id);
@@ -109,7 +111,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
             this.transactionManager.checkpoint(0);
         }
         long endTs = System.currentTimeMillis();
-        LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
+        LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
 
         ExecutorService threadPool = Executors.newFixedThreadPool(numWare);
         BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(numWare);
@@ -119,15 +121,15 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         for(int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
             service.submit(() -> {
-                LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
-                transactionManager.beginTransaction(f_w_id, 0, 0, false);
+                LOGGER.log(DEBUG, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
+                transactionManager.beginTransaction(-f_w_id, 0, 0, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
                     Stock stock = generateStockItem(f_w_id, i_id);
                     stockRepository.insert(stock);
                 }
                 transactionManager.commit();
-                LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
+                LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
             }, null);
         }
         try {
@@ -135,10 +137,10 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                 completionQueue.take();
             }
             if(checkpointing){
-                this.transactionManager.checkpoint(numWare);
+                this.transactionManager.checkpoint(0);
             }
             endTs = System.currentTimeMillis();
-            LOGGER.log(INFO, "Finished creating stock records in "+(endTs-initTs)+" ms");
+            LOGGER.log(INFO, "Finished populating stock VMS in "+(endTs-initTs)+" ms");
         } catch(InterruptedException e){
             threadPool.shutdownNow();
             e.printStackTrace(System.err);

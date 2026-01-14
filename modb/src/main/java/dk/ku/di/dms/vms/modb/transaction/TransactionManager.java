@@ -470,9 +470,9 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             // LOGGER.log(DEBUG, "Checkpointing table "+table.getName());
             int numRecords = table.primaryKeyIndex().checkpoint(maxTid);
             if(numRecords > 0) {
-                LOGGER.log(INFO, numRecords+" record(s) persisted to table "+table.getName());
+                LOGGER.log(DEBUG, numRecords+" record(s) persisted to table "+table.getName());
             } else {
-                LOGGER.log(INFO, "No records have been flushed to table "+table.getName());
+                LOGGER.log(DEBUG, "No records have been flushed to table "+table.getName());
             }
         }
         LOGGER.log(DEBUG, "Checkpoint for max TID "+maxTid+" finished at "+System.currentTimeMillis());
@@ -512,9 +512,9 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
 
     @Override
     public void reset() {
-        LOGGER.log(INFO, "Reset triggered at "+System.currentTimeMillis());
+        LOGGER.log(DEBUG, "Reset triggered at "+System.currentTimeMillis());
         for (Table table : this.catalog.values()) {
-            LOGGER.log(INFO, "Resetting "+table.name);
+            LOGGER.log(DEBUG, "Resetting "+table.name);
             table.primaryKeyIndex().reset();
             for(NonUniqueSecondaryIndex secIdx : table.secondaryIndexMap.values()){
                 secIdx.reset();
@@ -523,7 +523,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
                 uniqueIdx.reset();
             }
         }
-        LOGGER.log(INFO, "Reset finished at "+System.currentTimeMillis());
+        LOGGER.log(DEBUG, "Reset finished at "+System.currentTimeMillis());
     }
 
 }

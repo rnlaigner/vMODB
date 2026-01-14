@@ -10,8 +10,10 @@ import dk.ku.di.dms.vms.tpcc.proxy.workload.WorkloadUtils;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.*;
 
 import static dk.ku.di.dms.vms.tpcc.proxy.dataload.DataLoadUtils.VMS_TO_PORT_MAP;
+import static java.lang.System.Logger.Level.ERROR;
 
 public final class Main {
 
@@ -52,6 +54,11 @@ public final class Main {
         Map<String, Integer> txRatioMap = buildTransactionRatioMap();
         Tuple<Integer, String>[] txRatio = buildTransactionRatio(txRatioMap);
 
+        // population
+        ExecutorService threadPool = Executors.newFixedThreadPool(3);
+        BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(3);
+        CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
+
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
         while (running) {
@@ -60,34 +67,48 @@ public final class Main {
             String choice = scanner.nextLine();
             switch (choice) {
                 case "1": {
-                    String order_host = PROPERTIES.getProperty("order_host");
-                    try(MinimalHttpClient client = new MinimalHttpClient(order_host, DataLoadUtils.ORDER_VMS_PORT)){
-                        if(client.sendRequest("PUT", "", "") != 200){
-                            System.out.println("Error on PUT endpoint of order!");
-                        }
-                    } catch (IOException e) {
-                        System.out.println("Error on PUT endpoint of order!");
-                        break;
-                    }
 
-                    String warehouse_host = PROPERTIES.getProperty("warehouse_host");
-                    try(MinimalHttpClient client = new MinimalHttpClient(warehouse_host, DataLoadUtils.WAREHOUSE_VMS_PORT)){
-                        if(client.sendRequest("PUT", "", "") != 200){
+                    service.submit(() -> {
+                                String order_host = PROPERTIES.getProperty("order_host");
+                                try (MinimalHttpClient client = new MinimalHttpClient(order_host, DataLoadUtils.ORDER_VMS_PORT)) {
+                                    if (client.sendRequest("PUT", "", "") != 200) {
+                                        System.out.println("Error on PUT endpoint of order!");
+                                    }
+                                } catch (IOException e) {
+                                    System.out.println("Error on PUT endpoint of order!");
+                                }
+                            }, null);
+
+                    service.submit(() -> {
+                        String warehouse_host = PROPERTIES.getProperty("warehouse_host");
+                        try(MinimalHttpClient client = new MinimalHttpClient(warehouse_host, DataLoadUtils.WAREHOUSE_VMS_PORT)){
+                            if(client.sendRequest("PUT", "", "") != 200){
+                                System.out.println("Error on PUT endpoint of warehouse!");
+                            }
+                        } catch (IOException e) {
                             System.out.println("Error on PUT endpoint of warehouse!");
                         }
-                    } catch (IOException e) {
-                        System.out.println("Error on PUT endpoint of warehouse!");
-                        break;
-                    }
+                    }, null);
 
-                    String inventory_host = PROPERTIES.getProperty("inventory_host");
-                    try(MinimalHttpClient client = new MinimalHttpClient(inventory_host, DataLoadUtils.INVENTORY_VMS_PORT)){
-                        if(client.sendRequest("PUT", "", "") != 200){
+                    service.submit(() -> {
+                        String inventory_host = PROPERTIES.getProperty("inventory_host");
+                        try(MinimalHttpClient client = new MinimalHttpClient(inventory_host, DataLoadUtils.INVENTORY_VMS_PORT)){
+                            if(client.sendRequest("PUT", "", "") != 200){
+                                System.out.println("Error on PUT endpoint of inventory!");
+                            }
+                        } catch (IOException e) {
                             System.out.println("Error on PUT endpoint of inventory!");
                         }
-                    } catch (IOException e) {
-                        System.out.println("Error on PUT endpoint of inventory!");
+                    }, null);
+
+                    try {
+                        for (int i = 1; i <= 3; i++) {
+                            completionQueue.take();
+                        }
+                    } catch(InterruptedException e){
+                        System.out.println("Error on PUT endpoint of one or more of the endpoints!");
                     }
+
                     break;
                 }
                 case "3":
@@ -248,8 +269,8 @@ public final class Main {
 
     private static void printMenu(String menuType) {
         System.out.println("\n=== "+menuType+" ===");
-        System.out.println("1. Populate tables in VMSes");
-        System.out.println("2. Check data correctness in VMSes");
+        System.out.println("1. Populate VMS states");
+        System.out.println("2. Check VMS state correctness");
         System.out.println("3. Create workload");
         System.out.println("4. Submit workload");
         System.out.println("5. Cleanup VMS states");

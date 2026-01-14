@@ -16,8 +16,7 @@ import java.util.List;
 import java.util.concurrent.*;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.*;
-import static java.lang.System.Logger.Level.ERROR;
-import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.*;
 
 public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
@@ -114,67 +113,31 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
         this.transactionManager.beginTransaction(0, 0, 0, false);
         // warehouse
-        LOGGER.log(INFO, "Creating "+ numWare +" warehouse records...");
-        long initTs = System.currentTimeMillis();
-        for(int w_id = 1; w_id <= numWare; w_id++){
-            Warehouse warehouse = generateWarehouse(w_id);
-            this.warehouseRepository.insert(warehouse);
-        }
-        this.transactionManager.commit();
-        if(checkpointing){
-            this.transactionManager.checkpoint(0);
-        }
-        long endTs = System.currentTimeMillis();
-        LOGGER.log(INFO, "Finished creating "+ numWare +" warehouse records in "+(endTs-initTs)+" ms");
+        LOGGER.log(INFO, "Populating warehouse VMS...");
 
         ExecutorService threadPool = Executors.newFixedThreadPool(numWare);
         BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(numWare);
         CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
 
-        // district
-        for(int w_id = 1; w_id <= numWare; w_id++) {
-            final int f_w_id = w_id;
-            service.submit(() -> {
-                LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" district records for warehouse "+f_w_id);
-                transactionManager.beginTransaction(f_w_id, 0, 0, false);
-                long internalInitTs = System.currentTimeMillis();
-                for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++){
-                    District district = generateDistrict(d_id, f_w_id);
-                    districtRepository.insert(district);
-                }
-                transactionManager.commit();
-                LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_DIST_PER_WARE+" district records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
-            }, null);
-        }
-        try {
-            for (int w_id = 1; w_id <= numWare; w_id++) {
-                completionQueue.take();
-            }
-        } catch(InterruptedException e){
-            threadPool.shutdownNow();
-            LOGGER.log(ERROR, "Error:\n"+e);
-            return;
-        }
-
-        if(checkpointing){
-            this.transactionManager.checkpoint(numWare);
-        }
-
-        // customer
+        long initTs = System.currentTimeMillis();
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             service.submit(() -> {
-                LOGGER.log(INFO, "Started creating 30K customer records for warehouse " + f_w_id);
-                transactionManager.beginTransaction(f_w_id, 0, 0, false);
+                LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
+                transactionManager.beginTransaction(-f_w_id, 0, 0, false);
+                Warehouse warehouse = generateWarehouse(f_w_id);
+                this.warehouseRepository.insert(warehouse);
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
+                    District district = generateDistrict(d_id, f_w_id);
+                    districtRepository.insert(district);
                     for (int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
                         Customer customer = generateCustomer(c_id, d_id, f_w_id);
                         customerRepository.insert(customer);
                     }
                 }
                 transactionManager.commit();
-                LOGGER.log(INFO, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             }, null);
         }
 
@@ -189,14 +152,14 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         }
 
         if(checkpointing){
-            this.transactionManager.checkpoint(numWare);
+            this.transactionManager.checkpoint(0);
         }
 
 //        this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
 //        List<Customer> customers = this.customerRepository.getAll();
 
-        endTs = System.currentTimeMillis();
-        LOGGER.log(INFO, "Finished creating warehouse records in "+(endTs-initTs)+" ms");
+        long endTs = System.currentTimeMillis();
+        LOGGER.log(INFO, "Finished populating warehouse VMS in "+(endTs-initTs)+" ms");
     }
 
     public static Warehouse generateWarehouse(int W_ID)

@@ -91,10 +91,13 @@ public final class WarehouseService {
             if(customers.isEmpty()){
                 LOGGER.log(WARNING, "No customers retrieved by last name with input:\n"+in);
             }
-
         } else {
             Customer customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
-            Objects.requireNonNull(customer);
+            if(customer == null){
+                LOGGER.log(WARNING, "No customer retrieved with input:\n"+in);
+                customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
+            }
+            // Objects.requireNonNull(customer);
             //LOGGER.log(DEBUG, customer);
         }
         return new OrderStatusOut(in.w_id, in.d_id, in.c_id);

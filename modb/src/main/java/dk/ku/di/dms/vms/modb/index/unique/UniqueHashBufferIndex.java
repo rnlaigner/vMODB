@@ -77,11 +77,11 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         this.lock();
         if(this.size == 0){
             this.unlock();
-            LOGGER.log(INFO, "Size of buffer is zero. No need to reset.");
+            LOGGER.log(DEBUG, "Size of buffer is zero. No need to reset.");
             return;
         }
         int initialSize = this.size;
-        LOGGER.log(INFO, "Reset started with initial size: "+initialSize);
+        LOGGER.log(DEBUG, "Reset started with initial size: "+initialSize);
         long pos = this.recordBufferCtx.address;
         while(pos <= this.limit){
             if(UNSAFE.getByte(null, pos) == Header.ACTIVE_BYTE){
@@ -94,7 +94,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         if(this.size > 0){
             LOGGER.log(WARNING, "Reset did not clean all the entries. Size left out: "+this.size);
         } else {
-            LOGGER.log(INFO, "Reset cleaned all the entries. Size left out: "+this.size);
+            LOGGER.log(DEBUG, "Reset cleaned all the entries. Size left out: "+this.size);
         }
         this.size = 0;
         this.unlock();

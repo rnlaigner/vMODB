@@ -60,7 +60,7 @@ public final class Parser {
         }
 
         if(i == tokens.length) {
-            return new SelectStatement(projection, table, whereClauseElements);
+            return new SelectStatement(new StringBuilder(sql), projection, table, whereClauseElements);
         }
 
         // ORDER BY
@@ -81,9 +81,7 @@ public final class Parser {
         if(i == tokens.length) {
             return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
         } else {
-            var stmt = new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
-            stmt.limit = Integer.getInteger(tokens[i+1]);
-            return stmt;
+            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement, Integer.valueOf(tokens[i+1]));
         }
     }
 

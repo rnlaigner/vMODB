@@ -16,8 +16,12 @@ public abstract class AbstractScanWithOrder extends AbstractScan {
         this.orderByColumn = orderByColumn;
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     protected void insert(List<Object[]> result, Object[] record) {
+        result.add(this.getPositionToInsert(result, record), record);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    protected int getPositionToInsert(List<Object[]> result, Object[] record){
         int left = 0, right = result.size();
         while (left < right) {
             int mid = left + (right - left) / 2;
@@ -28,7 +32,7 @@ public abstract class AbstractScanWithOrder extends AbstractScan {
                 right = mid;
             }
         }
-        result.add(left, record);
+        return left;
     }
 
 }
