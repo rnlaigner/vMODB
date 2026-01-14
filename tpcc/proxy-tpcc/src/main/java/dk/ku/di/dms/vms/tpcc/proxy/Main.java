@@ -31,12 +31,10 @@ public final class Main {
         }
         switch (option){
             case "1" -> {
-//                PROPERTIES.setProperty("logging", "true");
                 NUM_INGESTION_WORKERS = Runtime.getRuntime().availableProcessors();
                 loadMenu("Distributed Deployment Menu");
             }
             case "2" -> {
-//                PROPERTIES.setProperty("logging", "true");
                 NUM_INGESTION_WORKERS = Runtime.getRuntime().availableProcessors() / 2;
                 loadLocalDeploymentMenu();
             }
@@ -45,24 +43,15 @@ public final class Main {
     }
 
     private static void loadLocalDeploymentMenu() throws Exception {
-        // set default values to override for all in-process VMSes
-        PROPERTIES.setProperty("vms_thread_pool_size", "0");
-        PROPERTIES.setProperty("network_thread_pool_size", "0");
-
-        // if persistence is required, uncomment lines below
-        // PROPERTIES.setProperty("logging", "true");
-        // PROPERTIES.setProperty("checkpointing", "true");
-
         dk.ku.di.dms.vms.tpcc.warehouse.Main.main(null);
         dk.ku.di.dms.vms.tpcc.inventory.Main.main(null);
         dk.ku.di.dms.vms.tpcc.order.Main.main(null);
-
         loadMenu("Local Deployment Menu");
     }
 
     private static void loadMenu(String menuType) throws NoSuchFieldException, IllegalAccessException {
         Coordinator coordinator = null;
-        int numWare = 0;
+        final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
         Map<String, UniqueHashBufferIndex> tables = null;
         List<Map<String,Iterator<Object>>> input;
         StorageUtils.EntityMetadata metadata = StorageUtils.loadEntityMetadata();
@@ -85,8 +74,6 @@ public final class Main {
             switch (choice) {
                 case "1":
                     System.out.println("Option 1: \"Create tables in disk\" selected.");
-                    System.out.println("Enter number of warehouses: ");
-                    numWare = Integer.parseInt(scanner.nextLine());
                     System.out.println("Creating tables with "+numWare+" warehouses...");
                     tables = StorageUtils.createTables(metadata, numWare);
                     System.out.println("Tables created!");
@@ -108,9 +95,17 @@ public final class Main {
                     }
 
                     if(tables == null){
-                        System.out.println("Loading tables from disk...");
                         // the number of warehouses must be exactly the same otherwise lead to errors in reading from files
-                        numWare = StorageUtils.getNumRecordsFromInDiskTable(metadata.entityToSchemaMap().get("warehouse"), "warehouse");
+                        int numWareDisk = StorageUtils.getNumWarehousesInDiskTable();
+                        if(numWareDisk != numWare){
+                            System.out.println("Number of warehouses in disk tables ("+numWareDisk+") diverge from the app.properties: "+numWare);
+                            System.out.println("Do you want to proceed? [y/n]");
+                            String resp = scanner.nextLine();
+                            if(resp.equalsIgnoreCase("n")){
+                                break;
+                            }
+                        }
+                        System.out.println("Loading tables from disk...");
                         tables = StorageUtils.mapTablesInDisk(metadata, numWare);
                     }
                     Map<String, QueueTableIterator> tablesInMem = DataLoadUtils.mapTablesFromDisk(tables, metadata.entityHandlerMap());
@@ -119,19 +114,10 @@ public final class Main {
                     break;
                 case "3":
                     System.out.println("Option 3: \"Create workload\" selected.");
-
-                    if(numWare == 0){
-                        numWare = StorageUtils.getNumRecordsFromInDiskTable(metadata.entityToSchemaMap().get("warehouse"), "warehouse");
-                    }
-                    if(numWare == 0){
-                        System.out.println("Enter number of warehouses: ");
-                        numWare = Integer.parseInt(scanner.nextLine());
-                    }
-
                     System.out.println("Number of warehouses: "+numWare);
 
                     try {
-                        WorkloadUtils.createWorkload(numWare, Boolean.getBoolean( PROPERTIES.get("multi_warehouse").toString() ), numTxInputPerType);
+                        WorkloadUtils.createWorkload(numWare, Boolean.getBoolean( PROPERTIES.get("multi_ware").toString() ), numTxInputPerType);
                     } catch (IOException e){
                         System.out.println("ERROR:\n"+e);
                     }
@@ -149,13 +135,10 @@ public final class Main {
                     }
 
                     // check if workload files exist
-                    int numFiles = WorkloadUtils.getNumWorkloadInputFiles();
+                    int numFiles = WorkloadUtils.getNumWorkloadInputFiles(numTxInputPerType);
+                    int numWareDisk = StorageUtils.getNumWarehousesInDiskTable();
 
-                    if(numWare == 0){
-                        numWare = StorageUtils.getNumRecordsFromInDiskTable(metadata.entityToSchemaMap().get("warehouse"), "warehouse");
-                    }
-
-                    if(numWare != numFiles){
+                    if(numWareDisk != numFiles){
                         System.out.println("Number of warehouses ("+numWare+") != Number of input files ("+numFiles+")");
                         System.out.println("Do you want to proceed? [y/n]");
                         String resp = scanner.nextLine();

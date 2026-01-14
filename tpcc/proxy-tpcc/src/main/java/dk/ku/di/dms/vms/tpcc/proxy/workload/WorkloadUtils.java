@@ -23,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static dk.ku.di.dms.vms.tpcc.proxy.datagen.DataGenUtils.nuRand;
 import static dk.ku.di.dms.vms.tpcc.proxy.datagen.DataGenUtils.randomNumber;
@@ -362,11 +363,12 @@ public final class WorkloadUtils {
         }
     }
 
-    public static int getNumWorkloadInputFiles(){
+    public static int getNumWorkloadInputFiles(Map<String, Integer> numTxPerType){
         String basePathStr = StorageUtils.getBasePath("proxy");
         Path basePath = Paths.get(basePathStr);
-        try(var paths = Files.walk(basePath)){
-            List<Path> workloadInputFiles = paths.filter(path -> path.toString().contains(NEW_ORDER_INPUT_BASE_FILE_NAME)).toList();
+        try(Stream<Path> paths = Files.walk(basePath)){
+            final String fileName = numTxPerType.containsKey("new_order") ? NEW_ORDER_INPUT_BASE_FILE_NAME : ORDER_STATUS_INPUT_BASE_FILE_NAME;
+            List<Path> workloadInputFiles = paths.filter(path -> path.toString().contains(fileName)).toList();
             return workloadInputFiles.size();
         } catch (IOException e){
             LOGGER.log(ERROR, "Error captured while trying to access base path: \n"+e);

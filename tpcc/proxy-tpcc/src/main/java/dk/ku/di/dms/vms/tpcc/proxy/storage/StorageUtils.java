@@ -15,13 +15,19 @@ import dk.ku.di.dms.vms.tpcc.proxy.entities.*;
 import dk.ku.di.dms.vms.tpcc.proxy.infra.TPCcConstants;
 import org.reflections.Reflections;
 
-import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static java.lang.System.Logger.Level.ERROR;
 import static java.lang.System.Logger.Level.INFO;
 
 public final class StorageUtils {
@@ -40,9 +46,16 @@ public final class StorageUtils {
         ENTITY_TO_VMS_MAP.put(Stock.class, "proxy");
     }
 
-    public static int getNumRecordsFromInDiskTable(Schema schema, String fileName){
-        File file = dk.ku.di.dms.vms.modb.utils.StorageUtils.buildFile("proxy", fileName);
-        return (int) file.length() / schema.getRecordSize();
+    public static int getNumWarehousesInDiskTable(){
+        String basePathStr = dk.ku.di.dms.vms.modb.utils.StorageUtils.getBasePath("proxy");
+        Path basePath = Paths.get(basePathStr);
+        try(Stream<Path> paths = Files.walk(basePath)){
+            List<Path> workloadInputFiles = paths.filter(path -> path.toString().contains("stock")).toList();
+            return workloadInputFiles.size();
+        } catch (IOException e){
+            LOGGER.log(ERROR, "Error captured while trying to access base path: \n"+e);
+            return 0;
+        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
