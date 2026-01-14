@@ -92,13 +92,14 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     public boolean exists(TransactionContext txCtx, IKey key) {
         OperationSetOfKey opSet = this.updatesPerKeyMap.get(key);
         if(opSet != null){
-            // why checking first if I am a WRITE. because by checking if I am right, I don't need to pay O(log n)
-            // 1 write thread at a time. if that is a writer thread, does not matter my lastTid. I can just check the last write for this entry
-            if(!txCtx.readOnly){
+            // also check if insert was part of the same transaction or a past transaction
+            if(!txCtx.readOnly && (opSet.peak().key == txCtx.tid || opSet.peak().key <= txCtx.lastTid)){
                 return opSet.lastWriteType != WriteType.DELETE;
             }
             Entry<Long, TransactionWrite> floorEntry = opSet.floorEntry(txCtx.lastTid);
-            if(floorEntry == null) return this.rawIndex.exists(key);
+            if(floorEntry == null) {
+                return this.rawIndex.exists(key);
+            }
             return floorEntry.val().type != WriteType.DELETE;
         }
         return this.rawIndex.exists(key);

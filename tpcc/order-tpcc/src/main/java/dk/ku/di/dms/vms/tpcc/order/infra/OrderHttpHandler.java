@@ -74,7 +74,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
             final int f_w_id = w_id;
             service.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating 30K order records for warehouse " + f_w_id);
-                transactionManager.beginTransaction(-f_w_id, 0, 0, false);
+                transactionManager.beginTransaction(-f_w_id, 0, -numWare, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {

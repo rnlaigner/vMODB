@@ -98,7 +98,9 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         this.transactionManager.reset();
 
         LOGGER.log(INFO, "Populating inventory VMS...");
-        this.transactionManager.beginTransaction(-numWare, 0, 0, false);
+        long lastTid = -numWare-1;
+        // no need to set lastTid here because there will be no KF check or query
+        this.transactionManager.beginTransaction(lastTid, 0, 0, false);
         // item
         LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
         long initTs = System.currentTimeMillis();
@@ -107,9 +109,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
             this.itemRepository.insert(item);
         }
         this.transactionManager.commit();
-        if(checkpointing){
-            this.transactionManager.checkpoint(0);
-        }
+
         long endTs = System.currentTimeMillis();
         LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
 
@@ -122,7 +122,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
             final int f_w_id = w_id;
             service.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
-                transactionManager.beginTransaction(-f_w_id, 0, 0, false);
+                transactionManager.beginTransaction(-f_w_id, 0, lastTid, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
                     Stock stock = generateStockItem(f_w_id, i_id);

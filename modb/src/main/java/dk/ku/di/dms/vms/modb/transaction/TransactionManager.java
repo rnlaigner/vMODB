@@ -70,6 +70,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         this.txCtxMap = new ConcurrentHashMap<>();
     }
 
+
     private boolean fkConstraintViolation(TransactionContext txCtx, Table table, Object[] values){
         for(Map.Entry<PrimaryIndex, int[]> entry : table.foreignKeys().entrySet()){
             IKey fk = KeyUtils.buildRecordKey( entry.getValue(), values );
