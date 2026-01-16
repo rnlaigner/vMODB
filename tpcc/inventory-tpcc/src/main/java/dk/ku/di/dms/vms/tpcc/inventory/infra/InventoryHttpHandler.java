@@ -113,14 +113,13 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         long endTs = System.currentTimeMillis();
         LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
 
-        ExecutorService threadPool = Executors.newFixedThreadPool(numWare);
-        BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(numWare);
-        CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
+        ForkJoinPool pool = ForkJoinPool.commonPool();
+        Future<?>[] futures = new Future[numWare];
 
         // stock
         for(int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
-            service.submit(() -> {
+            futures[w_id-1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
                 transactionManager.beginTransaction(-f_w_id, 0, lastTid, false);
                 long internalInitTs = System.currentTimeMillis();
@@ -130,19 +129,18 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                 }
                 transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
-            }, null);
+            });
         }
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
-                completionQueue.take();
+                futures[w_id-1].get();
             }
             if(checkpointing){
                 this.transactionManager.checkpoint(0);
             }
             endTs = System.currentTimeMillis();
             LOGGER.log(INFO, "Finished populating stock VMS in "+(endTs-initTs)+" ms");
-        } catch(InterruptedException e){
-            threadPool.shutdownNow();
+        } catch(ExecutionException | InterruptedException e){
             e.printStackTrace(System.err);
         }
     }

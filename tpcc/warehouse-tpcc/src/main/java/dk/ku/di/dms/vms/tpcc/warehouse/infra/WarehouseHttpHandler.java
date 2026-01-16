@@ -111,18 +111,16 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
         this.transactionManager.reset();
 
-        this.transactionManager.beginTransaction(0, 0, 0, false);
         // warehouse
         LOGGER.log(INFO, "Populating warehouse VMS...");
 
-        ExecutorService threadPool = Executors.newFixedThreadPool(numWare);
-        BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(numWare);
-        CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
+        ForkJoinPool pool = ForkJoinPool.commonPool();
+        Future<?>[] futures = new Future[numWare];
 
         long initTs = System.currentTimeMillis();
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
-            service.submit(() -> {
+            futures[w_id-1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 transactionManager.beginTransaction(-f_w_id, 0, 0, false);
@@ -138,15 +136,14 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                 }
                 transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
-            }, null);
+            });
         }
 
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
-                completionQueue.take();
+                futures[w_id-1].get();
             }
-        } catch(InterruptedException e){
-            threadPool.shutdownNow();
+        } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
             return;
         }
@@ -154,9 +151,6 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         if(checkpointing){
             this.transactionManager.checkpoint(0);
         }
-
-//        this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
-//        List<Customer> customers = this.customerRepository.getAll();
 
         long endTs = System.currentTimeMillis();
         LOGGER.log(INFO, "Finished populating warehouse VMS in "+(endTs-initTs)+" ms");

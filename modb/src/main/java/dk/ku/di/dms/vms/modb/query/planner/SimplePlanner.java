@@ -149,7 +149,7 @@ public final class SimplePlanner {
 
     private AbstractSimpleOperator planSimpleAggregate(QueryTree queryTree) {
         // then just one since it is simple
-        var op = queryTree.groupByProjections.getFirst().groupByOperation();
+        GroupByOperationEnum op = queryTree.groupByProjections.getFirst().groupByOperation();
         switch (op){
             case MIN, MAX -> {
                 Table tb = queryTree.groupByProjections.getFirst().columnReference().table;
@@ -164,7 +164,7 @@ public final class SimplePlanner {
 
                 final int[] projectionColumns = new int[queryTree.projections.size()+1];
                 int idxCol = 0;
-                for(var column : queryTree.projections){
+                for(ColumnReference column : queryTree.projections){
                     projectionColumns[idxCol] = column.getColumnPosition();
                     idxCol++;
                 }
@@ -227,11 +227,11 @@ public final class SimplePlanner {
     }
 
     private AbstractScan planSimpleScanWithOrder(QueryTree queryTree) {
-        Table tb = queryTree.projections.getFirst().table;
+        Table tb = queryTree.projections.get(0).table;
         IndexSelectionVerdict indexSelectionVerdict = this.getOptimalIndex(tb, queryTree.wherePredicates);
         int[] projectionColumns = new int[queryTree.projections.size()];
         int idxCol = 0;
-        for(var column : queryTree.projections){
+        for(ColumnReference column : queryTree.projections){
             projectionColumns[idxCol] = column.getColumnPosition();
             idxCol++;
         }
@@ -248,14 +248,14 @@ public final class SimplePlanner {
     private AbstractScan planSimpleScan(QueryTree queryTree) {
         // given it is simple, pick the table from one of the columns
         // must always have at least one projected column
-        Table tb = queryTree.projections.getFirst().table;
+        Table tb = queryTree.projections.get(0).table;
         // avoid one of the columns to have expression different from EQUALS
         // to be picked by unique and non-unique index
         IndexSelectionVerdict indexSelectionVerdict = this.getOptimalIndex(tb, queryTree.wherePredicates);
         // build projection
         int[] projectionColumns = new int[queryTree.projections.size()];
         int idxCol = 0;
-        for(var column : queryTree.projections){
+        for(ColumnReference column : queryTree.projections){
             projectionColumns[idxCol] = column.getColumnPosition();
             idxCol++;
         }

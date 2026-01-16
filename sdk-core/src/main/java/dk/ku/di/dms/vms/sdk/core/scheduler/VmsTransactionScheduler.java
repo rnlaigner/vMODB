@@ -55,6 +55,10 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private long nextTidToDelete = 0;
 
+    // prevent concurrent, consecutive notifications of OOM; listener must still check whether it is indeed necessary to clean up entries
+    @SuppressWarnings("unused")
+    private volatile boolean oomHandoff;
+
     // the callback atomically updates this variable
     // used to track progress in the presence of parallel and partitioned tasks
     @SuppressWarnings("unused")
@@ -65,10 +69,12 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private static final Unsafe U;
     private static final long L_TID_F_OFFSET;
     private static final long L_TID_S_OFFSET;
+    private static final long OOM_HANDOFF_OFFSET;
     static {
         U = Unsafe.getUnsafe();
         L_TID_F_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "lastTidFinished");
         L_TID_S_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "lastTidSafeToDelete");
+        OOM_HANDOFF_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "oomHandoff");
     }
 
     private final Set<Object> partitionKeyTrackingMap = ConcurrentHashMap.newKeySet();
@@ -127,13 +133,10 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             if (pool.getType() == MemoryType.HEAP && pool.isUsageThresholdSupported()) {
                 pool.setUsageThreshold((long) (pool.getUsage().getMax() * 0.70));
                 NotificationEmitter emitter = (NotificationEmitter) ManagementFactory.getMemoryMXBean();
-                emitter.addNotificationListener((_, _) -> this.oomNotifyHandoff.offer(1), (NotificationFilter) notification -> MemoryNotificationInfo.MEMORY_THRESHOLD_EXCEEDED.equals(notification.getType()), null);
+                emitter.addNotificationListener((_, _) -> U.compareAndSetBoolean(this, OOM_HANDOFF_OFFSET, false, true), (NotificationFilter) notification -> MemoryNotificationInfo.MEMORY_THRESHOLD_EXCEEDED.equals(notification.getType()), null);
             }
         }
     }
-
-    // prevent concurrent, consecutive notifications of OOM; listener must still check whether it is indeed necessary to clean up entries
-    private final ArrayBlockingQueue<Object> oomNotifyHandoff = new ArrayBlockingQueue<>(1);
 
     /**
      * Inspired by <a href="https://stackoverflow.com/questions/826212/java-executors-how-to-be-notified-without-blocking-when-a-task-completes">link</a>,
@@ -147,20 +150,22 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             try {
                 this.checkForNewEvents();
                 this.executeReadyTasks();
-
-                // force cleanup to cover cases where input events do not stop coming
-                // confirm whether there is the need to perform another clean up (i.e., source of OOM is not this class)
-                if(this.oomNotifyHandoff.poll() != null && this.lastTidSafeToDelete() - this.nextTidToDelete > 1024){
-                    LOGGER.log(WARNING, "Memory threshold hit!");
-                    this.cleanupTidMappings(false);
-                }
-
+                this.checkCleanup();
             } catch(Exception e){
                 e.printStackTrace(System.out);
                 LOGGER.log(ERROR, this.vmsIdentifier+": Error on scheduler loop: "+(e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
             }
         }
         LOGGER.log(INFO,this.vmsIdentifier+": Transaction scheduler has terminated");
+    }
+
+    private void checkCleanup() {
+        // force cleanup to cover cases where input events do not stop coming
+        // confirm whether there is the need to perform another clean up (i.e., source of OOM is not this class)
+        if(U.compareAndSetBoolean(this, OOM_HANDOFF_OFFSET, true, false) && this.lastTidSafeToDelete() - this.nextTidToDelete > 1024){
+            LOGGER.log(WARNING, "Memory threshold hit!");
+            this.cleanupTidMappings(false);
+        }
     }
 
     private final class SchedulerCallback implements ISchedulerCallback, Thread.UncaughtExceptionHandler {

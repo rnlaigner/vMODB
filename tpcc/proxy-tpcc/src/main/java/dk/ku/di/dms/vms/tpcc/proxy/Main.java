@@ -12,9 +12,6 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 
-import static dk.ku.di.dms.vms.tpcc.proxy.dataload.DataLoadUtils.VMS_TO_PORT_MAP;
-import static java.lang.System.Logger.Level.ERROR;
-
 public final class Main {
 
     private static final Properties PROPERTIES = ConfigUtils.loadProperties();
@@ -54,10 +51,9 @@ public final class Main {
         Map<String, Integer> txRatioMap = buildTransactionRatioMap();
         Tuple<Integer, String>[] txRatio = buildTransactionRatio(txRatioMap);
 
-        // population
-        ExecutorService threadPool = Executors.newFixedThreadPool(3);
-        BlockingQueue<Future<Void>> completionQueue = new ArrayBlockingQueue<>(3);
-        CompletionService<Void> service = new ExecutorCompletionService<>(threadPool, completionQueue);
+        // data population
+        ForkJoinPool pool = ForkJoinPool.commonPool();
+        Future<?>[] futures = new Future[3];
 
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
@@ -67,54 +63,21 @@ public final class Main {
             String choice = scanner.nextLine();
             switch (choice) {
                 case "1": {
-
-                    service.submit(() -> {
-                                String order_host = PROPERTIES.getProperty("order_host");
-                                try (MinimalHttpClient client = new MinimalHttpClient(order_host, DataLoadUtils.ORDER_VMS_PORT)) {
-                                    if (client.sendRequest("PUT", "", "") != 200) {
-                                        System.out.println("Error on PUT endpoint of order!");
-                                    }
-                                } catch (IOException e) {
-                                    System.out.println("Error on PUT endpoint of order!");
-                                }
-                            }, null);
-
-                    service.submit(() -> {
-                        String warehouse_host = PROPERTIES.getProperty("warehouse_host");
-                        try(MinimalHttpClient client = new MinimalHttpClient(warehouse_host, DataLoadUtils.WAREHOUSE_VMS_PORT)){
-                            if(client.sendRequest("PUT", "", "") != 200){
-                                System.out.println("Error on PUT endpoint of warehouse!");
-                            }
-                        } catch (IOException e) {
-                            System.out.println("Error on PUT endpoint of warehouse!");
-                        }
-                    }, null);
-
-                    service.submit(() -> {
-                        String inventory_host = PROPERTIES.getProperty("inventory_host");
-                        try(MinimalHttpClient client = new MinimalHttpClient(inventory_host, DataLoadUtils.INVENTORY_VMS_PORT)){
-                            if(client.sendRequest("PUT", "", "") != 200){
-                                System.out.println("Error on PUT endpoint of inventory!");
-                            }
-                        } catch (IOException e) {
-                            System.out.println("Error on PUT endpoint of inventory!");
-                        }
-                    }, null);
-
+                    //futures[0] = pool.submit(() -> submitDataPopulationRequest("order"));
+                    futures[1] = pool.submit(() -> submitDataPopulationRequest("warehouse"));
+                    futures[2] = pool.submit(() -> submitDataPopulationRequest("inventory"));
                     try {
-                        for (int i = 1; i <= 3; i++) {
-                            completionQueue.take();
+                        for (int i = 2; i >= 1; i--) {
+                            futures[i].get();
                         }
-                    } catch(InterruptedException e){
+                    } catch(InterruptedException | ExecutionException e){
                         System.out.println("Error on PUT endpoint of one or more of the endpoints!");
                     }
-
                     break;
                 }
                 case "3":
                     System.out.println("Option 3: \"Create workload\" selected.");
                     System.out.println("Number of warehouses: "+numWare);
-
                     try {
                         WorkloadUtils.createWorkload(numWare, Boolean.getBoolean( PROPERTIES.get("multi_ware").toString() ), numTxInputPerType);
                     } catch (IOException e){
@@ -186,14 +149,14 @@ public final class Main {
                     // has to wait for all submitted transactions to commit in order to send the reset
                     if (checkCompleteness(coordinator, scanner)) break;
                     // cleanup VMS states
-                    cleanup(false);
+                    DataLoadUtils.cleanup(false);
                     System.out.println("VMS states cleaned.");
                     break;
                 case "6":
                     System.out.println("Option 5: \"Reset VMS states\" selected.");
                     // has to wait for all submitted transactions to commit in order to send the reset
                     if (checkCompleteness(coordinator, scanner)) break;
-                    cleanup(true);
+                    DataLoadUtils.cleanup(true);
                     System.out.println("VMS states reset.");
                     break;
                 case "q":
@@ -208,6 +171,20 @@ public final class Main {
         System.exit(0);
     }
 
+    private static void submitDataPopulationRequest(String vms) {
+        MinimalHttpClient client = null;
+        try {
+            client = DataLoadUtils.obtainHttpClient(vms);
+            if (client.sendRequest("PUT", "", "") != 200) {
+                System.out.println("Error on PUT endpoint of order!");
+            }
+        } catch (IOException e) {
+            System.out.println("Error on PUT endpoint of order!");
+        } finally {
+            if(client != null) DataLoadUtils.returnHttpClient(vms, client);
+        }
+    }
+
     private static boolean checkCompleteness(Coordinator coordinator, Scanner scanner) {
         if(coordinator != null){
             long numTIDsCommitted = coordinator.getNumTIDsCommitted();
@@ -220,21 +197,6 @@ public final class Main {
             }
         }
         return false;
-    }
-
-    private static void cleanup(boolean reset) {
-        String param;
-        if(reset) param = "reset"; else param = "cleanup";
-        for(Map.Entry<String, Integer> vms : VMS_TO_PORT_MAP.entrySet()){
-            String host = PROPERTIES.getProperty(vms.getKey() + "_host");
-            try(MinimalHttpClient client = new MinimalHttpClient(host, vms.getValue())){
-                if(client.sendRequest("PATCH", "", param) != 200){
-                    System.out.println("Error on resetting "+vms+" state!");
-                }
-            } catch (IOException e) {
-                System.out.println("Exception on resetting "+vms+" state: \n"+e);
-            }
-        }
     }
 
     public static Map<String, Integer> buildTransactionRatioMap(){

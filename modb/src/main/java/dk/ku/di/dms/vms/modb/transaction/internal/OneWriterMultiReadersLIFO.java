@@ -83,10 +83,9 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
      * Not safe if there are concurrent writers and the entry returned is the head
      * @param key node identifier
      */
-    public final Entry<K,V> removeUpToEntry(K key){
+    public final void removeUpToEntry(K key){
         final Entry<K,V> entryToReturn = this.getHigherEntryUpToKey(key);
         this.removeChildren(entryToReturn);
-        return entryToReturn;
     }
 
     public final void removeChildren(final Entry<K,V> entry){

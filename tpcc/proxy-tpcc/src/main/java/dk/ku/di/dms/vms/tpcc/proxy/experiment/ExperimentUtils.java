@@ -101,10 +101,10 @@ public final class ExperimentUtils {
 
         double average = allLatencies.stream().mapToLong(Long::longValue).average().orElse(0.0);
         allLatencies.sort(null);
-        double percentile_50 = PercentileCalculator.calculatePercentile(allLatencies, 0.50);
-        double percentile_75 = PercentileCalculator.calculatePercentile(allLatencies, 0.75);
-        double percentile_90 = PercentileCalculator.calculatePercentile(allLatencies, 0.90);
-        double percentile_99 = PercentileCalculator.calculatePercentile(allLatencies, 0.99);
+        double percentile_50 = calculatePercentile(allLatencies, 0.50);
+        double percentile_75 = calculatePercentile(allLatencies, 0.75);
+        double percentile_90 = calculatePercentile(allLatencies, 0.90);
+        double percentile_99 = calculatePercentile(allLatencies, 0.99);
         // considering fixed experiment time
         double txPerSec = numCompleted / ((double) runTime / 1000L);
         // considering first received batch result
@@ -260,6 +260,30 @@ public final class ExperimentUtils {
         starterVMSs.putIfAbsent(inventoryAddress.identifier, inventoryAddress);
         starterVMSs.putIfAbsent(orderAddress.identifier, orderAddress);
         return starterVMSs;
+    }
+
+    /**
+     * The data must be sorted
+     */
+    public static double calculatePercentile(List<Long> data, double percentile) {
+        if (percentile < 0 || percentile > 1) {
+            throw new IllegalArgumentException("Percentile must be between 0 and 1.");
+        }
+        if (data == null || data.isEmpty()) {
+            return 0;
+        }
+
+        double rank = percentile * (data.size() - 1);
+
+        int lowerIndex = (int) Math.floor(rank);
+        int upperIndex = (int) Math.ceil(rank);
+
+        if (lowerIndex == upperIndex) {
+            return data.get(lowerIndex);
+        } else {
+            double weight = rank - lowerIndex;
+            return data.get(lowerIndex) * (1 - weight) + data.get(upperIndex) * weight;
+        }
     }
 
 }

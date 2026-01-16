@@ -10,11 +10,12 @@ import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyBoundedBuffer;
 import dk.ku.di.dms.vms.modb.storage.record.RecordBufferContext;
 import dk.ku.di.dms.vms.modb.utils.StorageUtils;
 
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static dk.ku.di.dms.vms.modb.common.memory.MemoryUtils.UNSAFE;
-import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.*;
 
 public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
@@ -28,6 +29,91 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         super(recordBufferContext, schema, columnsIndex, capacity);
         this.suffix = suffix;
         this.chainingMap = new ConcurrentHashMap<>();
+    }
+
+    @Override
+    public Object[] lookupByKey(IKey key){
+        long pos = this.getPosition(key.hashCode());
+        if (this.chainingMap.containsKey(pos)) {
+            long chainedPos = this.chainingMap.get(pos).address;
+            Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
+            IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
+            if (existingKey.equals(key)) {
+                return chainedRecord;
+            } else {
+                return super.lookupByKey(key);
+            }
+        } else {
+            return super.lookupByKey(key);
+        }
+    }
+
+    @Override
+    public void delete(IKey key) {
+        long pos = this.getPosition(key.hashCode());
+        if (this.chainingMap.containsKey(pos)) {
+            long chainedPos = this.chainingMap.get(pos).address;
+            Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
+            IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
+            if (existingKey.equals(key)) {
+                // simple solution for now. ideal: delete the entry or the entire chain if solo entry
+                this.chainingMap.remove(pos);
+                return;
+            }
+        }
+        super.delete(key);
+    }
+
+    @Override
+    public void update(IKey key, Object[] record){
+        long pos = this.findRecordAddress(key);
+        if(pos != -1) {
+            this.doWrite(pos, record);
+            return;
+        }
+        // chain logic
+        pos = this.getPosition(key.hashCode());
+        if (this.chainingMap.containsKey(pos)) {
+            long chainedPos = this.chainingMap.get(pos).address;
+            Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
+            IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
+            // TODO iterate over chain...
+            if (existingKey.equals(key)) {
+                UNSAFE.putByte(null, chainedPos, Header.ACTIVE_BYTE);
+                UNSAFE.putInt(null, chainedPos + Header.SIZE, key.hashCode());
+                this.doWrite(pos, record);
+                return;
+            }
+        }
+        LOGGER.log(ERROR, "Cannot find an existing record. Perhaps something wrong in the insertion logic?\nKey: " + key+ " Hash: " + key.hashCode());
+    }
+
+    @Override
+    public void upsert(IKey key, Object[] record){
+        // update logic
+        long pos = this.findRecordAddress(key);
+        if(pos != -1) {
+            this.doWrite(pos, record);
+            return;
+        }
+
+        // chain logic
+        pos = this.getPosition(key.hashCode());
+        if (this.chainingMap.containsKey(pos)) {
+            long chainedPos = this.chainingMap.get(pos).address;
+            Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
+            IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
+            // TODO iterate over chain...
+            if (existingKey.equals(key)) {
+                UNSAFE.putByte(null, chainedPos, Header.ACTIVE_BYTE);
+                UNSAFE.putInt(null, chainedPos + Header.SIZE, key.hashCode());
+                this.doWrite(pos, record);
+                return;
+            }
+        }
+
+        // haven't found so far, then insert
+        this.insert(key, record);
     }
 
     @Override
@@ -145,9 +231,9 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
     @Override
     public void reset() {
         super.reset();
-        var it = this.chainingMap.entrySet().iterator();
+        Iterator<Map.Entry<Long, AppendOnlyBoundedBuffer>> it = this.chainingMap.entrySet().iterator();
         while(it.hasNext()){
-            var entry = it.next();
+            Map.Entry<Long, AppendOnlyBoundedBuffer> entry = it.next();
             entry.getValue().unload();
             it.remove();
         }

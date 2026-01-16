@@ -70,7 +70,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         this.rawIndex = rawIndex;
         this.updatesPerKeyMap = new ConcurrentHashMap<>(1024*100);
         this.primaryKeyGenerator = Optional.ofNullable(primaryKeyGenerator);
-        this.writeSetMap = new ConcurrentHashMap<>(2048*10);
+        this.writeSetMap = new ConcurrentHashMap<>(1024*50);
         this.keysToFlush = ConcurrentHashMap.newKeySet();
     }
 
@@ -209,7 +209,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
 
     @Override
     public Object[] lookupByKey(TransactionContext txCtx, IKey key){
-        OperationSetOfKey operationSet = this.updatesPerKeyMap.get( key );
+        OperationSetOfKey operationSet = this.updatesPerKeyMap.get(key);
         if (operationSet == null) {
             return this.rawIndex.lookupByKey(key);
         }
@@ -297,7 +297,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
 
     @Override
     public boolean update(TransactionContext txCtx, IKey key, Object[] values) {
-        OperationSetOfKey operationSet = this.updatesPerKeyMap.get( key );
+        OperationSetOfKey operationSet = this.updatesPerKeyMap.get(key);
         boolean pkConstraintViolation;
         if (operationSet != null){
             pkConstraintViolation = operationSet.lastWriteType == WriteType.DELETE;
@@ -347,7 +347,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     }
 
     public Optional<Object[]> removeOpt(TransactionContext txCtx, IKey key) {
-        OperationSetOfKey operationSet = this.updatesPerKeyMap.get( key );
+        OperationSetOfKey operationSet = this.updatesPerKeyMap.get(key);
         if (operationSet != null && operationSet.lastWriteType != WriteType.DELETE){
             if(operationSet.peak().key > txCtx.tid) {
                 throw new RuntimeException("An attempt to delete with a lower TID than the original record. Perhaps a misconfigured function annotation?");
@@ -357,7 +357,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             operationSet.put(txCtx.tid, entry);
             operationSet.lastWriteType = WriteType.DELETE;
             this.appendWrite(txCtx, key);
-            return Optional.of( lastRecord );
+            return Optional.of(lastRecord);
             // does this key even exist? if not, don't even need to save it on transaction metadata
         }
         Object[] obj = this.rawIndex.lookupByKey(key);
@@ -420,15 +420,16 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             }
             Entry<Long, TransactionWrite> entry = operationSetOfKey.floorEntry(maxTid);
             if (entry == null) continue;
-            // is the head?
-            if (operationSetOfKey.peak() == entry) {
-                this.keysToFlush.remove(key);
-            }
             operationSetOfKey.removeChildren(entry);
             switch (operationSetOfKey.lastWriteType) {
                 case UPDATE -> this.rawIndex.upsert(key, entry.val().record);
                 case INSERT -> this.rawIndex.insert(key, entry.val().record);
                 case DELETE -> this.rawIndex.delete(key);
+            }
+            // is the head?
+            if (operationSetOfKey.peak() == entry) {
+                this.keysToFlush.remove(key);
+                //this.updatesPerKeyMap.remove(key);
             }
             numRecords++;
         }
@@ -508,7 +509,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
                 OperationSetOfKey operation = updatesPerKeyMap.get(this.keys[this.idx]);
                 if(operation == null) {
                     Object[] record = rawIndex.record(this.keys[this.idx]);
-                    if(record != null){
+                    if (record != null) {
                         this.next = record;
                         this.idx++;
                         return true;

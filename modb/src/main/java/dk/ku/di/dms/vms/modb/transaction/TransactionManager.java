@@ -30,8 +30,7 @@ import dk.ku.di.dms.vms.modb.transaction.multiversion.index.UniqueSecondaryIndex
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.*;
 
 /**
  * A transaction management facade
@@ -69,7 +68,6 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         this.queryPlanCacheMap = new ConcurrentHashMap<>();
         this.txCtxMap = new ConcurrentHashMap<>();
     }
-
 
     private boolean fkConstraintViolation(TransactionContext txCtx, Table table, Object[] values){
         for(Map.Entry<PrimaryIndex, int[]> entry : table.foreignKeys().entrySet()){
@@ -459,11 +457,6 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         return null; //operator.run( table.underlyingPrimaryKeyIndex(), filterContext );
     }
 
-    /**
-     * Must log the updates in a separate file. no need for WAL, no need to store before and after
-     * Only log those data versions until the corresponding batch.
-     * TIDs are not necessarily a sequence.
-     */
     @Override
     public void checkpoint(long maxTid){
         LOGGER.log(DEBUG, "Checkpoint for max TID "+maxTid+" started at "+System.currentTimeMillis());

@@ -63,7 +63,8 @@ public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
     @Override
     public Object[] record(IKey key) {
-        throw new RuntimeException("Not supported");
+        // not ideal, but just to avoid unexpected exceptions
+        return null;
     }
 
     @Override
