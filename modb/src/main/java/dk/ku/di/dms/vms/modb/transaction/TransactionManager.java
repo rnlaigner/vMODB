@@ -30,7 +30,7 @@ import dk.ku.di.dms.vms.modb.transaction.multiversion.index.UniqueSecondaryIndex
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
 
 /**
  * A transaction management facade
@@ -66,7 +66,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         this.analyzer = new Analyzer(catalog);
         this.catalog = catalog;
         this.queryPlanCacheMap = new ConcurrentHashMap<>();
-        this.txCtxMap = new ConcurrentHashMap<>();
+        this.txCtxMap = new ConcurrentHashMap<>(2048*10);
     }
 
     private boolean fkConstraintViolation(TransactionContext txCtx, Table table, Object[] values){

@@ -2,6 +2,7 @@ package dk.ku.di.dms.vms.modb.transaction.multiversion.index;
 
 import dk.ku.di.dms.vms.modb.common.constraint.ConstraintEnum;
 import dk.ku.di.dms.vms.modb.common.constraint.ConstraintReference;
+import dk.ku.di.dms.vms.modb.common.data_structure.Set0;
 import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
@@ -70,8 +71,12 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         this.rawIndex = rawIndex;
         this.updatesPerKeyMap = new ConcurrentHashMap<>(1024*100);
         this.primaryKeyGenerator = Optional.ofNullable(primaryKeyGenerator);
-        this.writeSetMap = new ConcurrentHashMap<>(1024*50);
-        this.keysToFlush = ConcurrentHashMap.newKeySet();
+        this.writeSetMap = new ConcurrentHashMap<>(2048*10);
+        if(rawIndex instanceof UniqueHashBufferIndex){
+            this.keysToFlush = ConcurrentHashMap.newKeySet();
+        } else {
+            this.keysToFlush = new Set0<>();
+        }
     }
 
     @Override
@@ -401,9 +406,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     @Override
     public void reset(){
         this.writeSetMap.clear();
-        if(this.rawIndex instanceof UniqueHashBufferIndex){
-            this.rawIndex.reset();
-        }
+        this.rawIndex.reset();
         this.updatesPerKeyMap.clear();
         this.keysToFlush.clear();
     }
@@ -429,7 +432,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             // is the head?
             if (operationSetOfKey.peak() == entry) {
                 this.keysToFlush.remove(key);
-                //this.updatesPerKeyMap.remove(key);
+                this.updatesPerKeyMap.remove(key);
             }
             numRecords++;
         }
@@ -441,17 +444,12 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     }
 
     public void cleanup(long maxTid){
-        for(IKey key : this.keysToFlush){
-            OperationSetOfKey operationSetOfKey = this.updatesPerKeyMap.get(key);
-            if(operationSetOfKey == null){
-                throw new RuntimeException("Error on retrieving operation set for key "+key);
-            }
-            Entry<Long, TransactionWrite> entry = operationSetOfKey.floorEntry(maxTid);
-            if (entry == null) continue;
-            if(operationSetOfKey.peak() == entry) {
-                this.keysToFlush.remove(key);
-            }
-            operationSetOfKey.removeChildren(entry);
+        OperationSetOfKey opSet;
+        Entry<Long, TransactionWrite> entry;
+        for(Map.Entry<IKey, OperationSetOfKey> keyChain : this.updatesPerKeyMap.entrySet()) {
+            opSet = keyChain.getValue();
+            entry = opSet.floorEntry(maxTid);
+            opSet.removeChildren(entry);
         }
     }
 

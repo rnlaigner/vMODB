@@ -12,7 +12,10 @@ import dk.ku.di.dms.vms.tpcc.order.repositories.IOrderLineRepository;
 import dk.ku.di.dms.vms.tpcc.order.repositories.IOrderRepository;
 
 import java.util.Date;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.makeAlphaString;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
@@ -89,7 +92,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                         }
                     }
                 }
-                transactionManager.commit();
+                // transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }

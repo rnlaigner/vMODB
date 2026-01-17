@@ -5,20 +5,15 @@ import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 
-import java.util.Collections;
 import java.util.Iterator;
-import java.util.Map;
 
 /**
  * This class is just a placeholder for obtaining schema information in main memory execution
  */
 public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
-    private final Map<IKey, Object[]> store;
-
     public UniqueHashMapIndex(Schema schema, int[] columns) {
         super(schema, columns);
-        this.store = Collections.emptyMap();
     }
 
     @Override
@@ -37,24 +32,16 @@ public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
     }
 
     @Override
-    public void insert(IKey key, Object[] record) {
-        throw new RuntimeException("Not supported");
-    }
+    public void insert(IKey key, Object[] record) { }
 
     @Override
-    public void update(IKey key, Object[] record) {
-        throw new RuntimeException("Not supported");
-    }
+    public void update(IKey key, Object[] record) { }
 
     @Override
-    public void upsert(IKey key, Object[] record) {
-        throw new RuntimeException("Not supported");
-    }
+    public void upsert(IKey key, Object[] record) { }
 
     @Override
-    public void delete(IKey key) {
-        throw new RuntimeException("Not supported");
-    }
+    public void delete(IKey key) { }
 
     @Override
     public Object[] lookupByKey(IKey key) {
@@ -68,8 +55,23 @@ public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
     }
 
     @Override
+    public void reset() { }
+
+    private static final Iterator<IKey> IT = new Iterator<>() {
+        @Override
+        public boolean hasNext() {
+            return false;
+        }
+
+        @Override
+        public IKey next() {
+            return null;
+        }
+    };
+
+    @Override
     public Iterator<IKey> iterator() {
-        return this.store.keySet().iterator();
+        return IT;
     }
 
 }

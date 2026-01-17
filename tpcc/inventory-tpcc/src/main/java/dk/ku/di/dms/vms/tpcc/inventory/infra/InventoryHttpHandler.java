@@ -12,7 +12,10 @@ import dk.ku.di.dms.vms.tpcc.inventory.repositories.IStockRepository;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.makeAlphaString;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
@@ -64,7 +67,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         }
         this.itemRepository.insertAll(items);
         this.stockRepository.insertAll(stockItems);
-        this.transactionManager.commit();
+        // this.transactionManager.commit();
         LOGGER.log(INFO, "Inventory finished cleanup");
     }
 
@@ -108,7 +111,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
             Item item = generateItem(i_id);
             this.itemRepository.insert(item);
         }
-        this.transactionManager.commit();
+        // this.transactionManager.commit();
 
         long endTs = System.currentTimeMillis();
         LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
@@ -127,7 +130,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                     Stock stock = generateStockItem(f_w_id, i_id);
                     stockRepository.insert(stock);
                 }
-                transactionManager.commit();
+                // transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
             });
         }

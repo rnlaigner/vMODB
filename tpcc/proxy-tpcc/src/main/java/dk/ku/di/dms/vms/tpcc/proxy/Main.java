@@ -10,7 +10,9 @@ import dk.ku.di.dms.vms.tpcc.proxy.workload.WorkloadUtils;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
 
 public final class Main {
 
@@ -63,11 +65,11 @@ public final class Main {
             String choice = scanner.nextLine();
             switch (choice) {
                 case "1": {
-                    //futures[0] = pool.submit(() -> submitDataPopulationRequest("order"));
+                    futures[0] = pool.submit(() -> submitDataPopulationRequest("order"));
                     futures[1] = pool.submit(() -> submitDataPopulationRequest("warehouse"));
                     futures[2] = pool.submit(() -> submitDataPopulationRequest("inventory"));
                     try {
-                        for (int i = 2; i >= 1; i--) {
+                        for (int i = 2; i >= 0; i--) {
                             futures[i].get();
                         }
                     } catch(InterruptedException | ExecutionException e){

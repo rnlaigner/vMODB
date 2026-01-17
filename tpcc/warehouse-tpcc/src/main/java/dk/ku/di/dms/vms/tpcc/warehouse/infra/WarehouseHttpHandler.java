@@ -13,7 +13,9 @@ import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IWarehouseRepository;
 
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.*;
 import static java.lang.System.Logger.Level.*;
@@ -65,7 +67,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         this.warehouseRepository.insertAll(warehouses);
         this.districtRepository.insertAll(districts);
         this.customerRepository.insertAll(customers);
-        this.transactionManager.commit();
+        // this.transactionManager.commit();
         LOGGER.log(INFO, "Warehouse finished cleanup");
     }
 

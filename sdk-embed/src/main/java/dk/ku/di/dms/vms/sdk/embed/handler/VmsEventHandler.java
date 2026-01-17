@@ -32,7 +32,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static dk.ku.di.dms.vms.modb.common.schema.network.Constants.*;
 import static java.lang.System.Logger.Level.*;
@@ -255,10 +254,8 @@ public final class VmsEventHandler extends ModbHttpServer {
             LOGGER.log(DEBUG, this.me.identifier + ": Requesting checkpoint for batch " + thisBatch.batch);
             thisBatch.setStatus(BatchContext.CHECKPOINTING);
             submitBackgroundTask(()->this.checkpoint(thisBatch.batch, batchMetadata.maxTidExecuted));
-        } else if(this.cleanupInProgress.compareAndExchange(false, true)) {
-            // slowly cleans up obsolete record entries
-            this.transactionManager.cleanup(batchMetadata.maxTidExecuted);
-            this.cleanupInProgress.set(false);
+        } else {
+            submitBackgroundTask(()->transactionManager.cleanup(batchMetadata.maxTidExecuted));
         }
         this.cleanUpBatchInfo(thisBatch.batch);
     }
@@ -1046,9 +1043,8 @@ public final class VmsEventHandler extends ModbHttpServer {
                 LOGGER.log(DEBUG, me.identifier + ": Requesting checkpoint for batch " + batchCommitCommand.batch());
                 batchContext.setStatus(BatchContext.CHECKPOINTING);
                 submitBackgroundTask(()->checkpoint(batchCommitCommand.batch(), batchMetadata.maxTidExecuted));
-            } else if(cleanupInProgress.compareAndExchange(false, true)) {
-                transactionManager.cleanup(batchMetadata.maxTidExecuted);
-                cleanupInProgress.set(false);
+            } else {
+                submitBackgroundTask(()->transactionManager.cleanup(batchMetadata.maxTidExecuted));
             }
             cleanUpBatchInfo(batchCommitCommand.batch());
         }
@@ -1060,8 +1056,6 @@ public final class VmsEventHandler extends ModbHttpServer {
             this.setUpNewRead();
         }
     }
-
-    private final AtomicBoolean cleanupInProgress = new AtomicBoolean(false);
 
     public void close() {
         this.stop();
