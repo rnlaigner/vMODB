@@ -207,12 +207,25 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
      */
     private boolean mustWaitForInputEvent = false;
 
+    private long nextTidToDelete = 0;
+    private long lastSeenTidFinished = 0;
+
     private void executeReadyTasks() {
+        long lastTidFinished_ = this.lastTidFinished();
         long nextTid = this.lastTidToTidMap.get(this.lastTidFinished());
         // if nextTid == null then the scheduler must block until a new event arrive to progress
         if(nextTid == 0) {
             // keep scheduler sleeping since next tid is unknown
             this.mustWaitForInputEvent = true;
+
+            // prevent map from growing arbitrarily
+            if(lastTidFinished_ > this.lastSeenTidFinished){
+                while(nextTidToDelete <= this.lastSeenTidFinished){
+                    this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
+                }
+                this.lastSeenTidFinished = lastTidFinished_;
+            }
+
             return;
         }
         VmsTransactionTask task = this.transactionTaskMap.get(nextTid);
