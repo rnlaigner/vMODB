@@ -14,13 +14,10 @@ import jdk.internal.misc.Unsafe;
 import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 
-import javax.management.NotificationEmitter;
-import javax.management.NotificationFilter;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryNotificationInfo;
-import java.lang.management.MemoryPoolMXBean;
-import java.lang.management.MemoryType;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 
@@ -53,28 +50,16 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private volatile boolean singleThreadWriterTaskRunning = false;
 
-    private long nextTidToDelete = 0;
-
-    // prevent concurrent, consecutive notifications of OOM; listener must still check whether it is indeed necessary to clean up entries
-    @SuppressWarnings("unused")
-    private volatile boolean oomHandoff;
-
     // the callback atomically updates this variable
     // used to track progress in the presence of parallel and partitioned tasks
     @SuppressWarnings("unused")
     private volatile long lastTidFinished;
-    @SuppressWarnings("unused")
-    private volatile long lastTidSafeToDelete;
 
     private static final Unsafe U;
     private static final long L_TID_F_OFFSET;
-    private static final long L_TID_S_OFFSET;
-    private static final long OOM_HANDOFF_OFFSET;
     static {
         U = Unsafe.getUnsafe();
         L_TID_F_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "lastTidFinished");
-        L_TID_S_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "lastTidSafeToDelete");
-        OOM_HANDOFF_OFFSET = U.objectFieldOffset(VmsTransactionScheduler.class, "oomHandoff");
     }
 
     private final Set<Object> partitionKeyTrackingMap = ConcurrentHashMap.newKeySet();
@@ -123,19 +108,11 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.transactionInputQueue = transactionInputQueue;
 
         // operational (internal control of transactions and tasks)
-        this.transactionTaskMap = new ConcurrentHashMap<>(1024*1000);
+        this.transactionTaskMap = new ConcurrentHashMap<>(2048*10);
         SchedulerCallback callback = new SchedulerCallback(eventHandler);
         this.vmsTransactionTaskBuilder = new VmsTransactionTaskBuilder(transactionalHandler, callback);
         this.transactionTaskMap.put( 0L, this.vmsTransactionTaskBuilder.buildFinished(0) );
-        this.lastTidToTidMap = new LongLongHashMap(1024*1000);
-
-        for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
-            if (pool.getType() == MemoryType.HEAP && pool.isUsageThresholdSupported()) {
-                pool.setUsageThreshold((long) (pool.getUsage().getMax() * 0.70));
-                NotificationEmitter emitter = (NotificationEmitter) ManagementFactory.getMemoryMXBean();
-                emitter.addNotificationListener((_, _) -> U.compareAndSetBoolean(this, OOM_HANDOFF_OFFSET, false, true), (NotificationFilter) notification -> MemoryNotificationInfo.MEMORY_THRESHOLD_EXCEEDED.equals(notification.getType()), null);
-            }
-        }
+        this.lastTidToTidMap = new LongLongHashMap(2048*10);
     }
 
     /**
@@ -150,22 +127,13 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             try {
                 this.checkForNewEvents();
                 this.executeReadyTasks();
-                this.checkCleanup();
+                // this.checkCleanup();
             } catch(Exception e){
                 e.printStackTrace(System.out);
                 LOGGER.log(ERROR, this.vmsIdentifier+": Error on scheduler loop: "+(e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
             }
         }
         LOGGER.log(INFO,this.vmsIdentifier+": Transaction scheduler has terminated");
-    }
-
-    private void checkCleanup() {
-        // force cleanup to cover cases where input events do not stop coming
-        // confirm whether there is the need to perform another clean up (i.e., source of OOM is not this class)
-        if(U.compareAndSetBoolean(this, OOM_HANDOFF_OFFSET, true, false) && this.lastTidSafeToDelete() - this.nextTidToDelete > 1024){
-            LOGGER.log(WARNING, "Memory threshold hit!");
-            this.cleanupTidMappings(false);
-        }
     }
 
     private final class SchedulerCallback implements ISchedulerCallback, Thread.UncaughtExceptionHandler {
@@ -178,7 +146,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
         @Override
         public void success(ExecutionModeEnum executionMode, OutboundEventResult outboundEventResult) {
-            VmsTransactionTask task = transactionTaskMap.get(outboundEventResult.tid());
+            VmsTransactionTask task = transactionTaskMap.remove(outboundEventResult.tid());
             task.signalFinished();
             updateLastFinishedTid(outboundEventResult.tid());
             this.eventHandler.accept(outboundEventResult);
@@ -232,14 +200,6 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         do {
             v =  this.lastTidFinished();
         } while (v < tid && !U.weakCompareAndSetLong(this, L_TID_F_OFFSET, v, tid));
-
-        if(v == tid) {
-            return;
-        }
-        // it is not the highest tid, so it can update
-        do {
-            v =  this.lastTidSafeToDelete();
-        } while (v < tid && !U.weakCompareAndSetLong(this, L_TID_S_OFFSET, v, tid));
     }
 
     /**
@@ -257,7 +217,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         }
         VmsTransactionTask task = this.transactionTaskMap.get(nextTid);
         while(true) {
-            if(task.isScheduled()){
+            if(task == null || task.isScheduled()){
                 return;
             }
             // must check because partitioned task interleave and may finish before a lower TID
@@ -357,8 +317,6 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private void checkForNewEvents() throws InterruptedException {
         InboundEvent inboundEvent;
         if(this.mustWaitForInputEvent) {
-            // before blocking, cleanup tasks from internal maps as much as possible
-            this.cleanupTidMappings(true);
             inboundEvent = this.transactionInputQueue.take();
             // disable block
             this.mustWaitForInputEvent = false;
@@ -373,78 +331,6 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             this.processNewEvent(inboundEvent_);
         }
         this.drained.clear();
-    }
-
-    private final List<VmsTransactionTask> pendingDeletion = new ArrayList<>();
-
-    /**
-     * The pending deletion list is needed due to possible "holes" coming from concurrent tasks
-     */
-    private void cleanupTidMappings(final boolean stopOnNewInput) {
-        // LOGGER.log(DEBUG, this.vmsIdentifier+": Scheduler cleanup procedure started.");
-        int count;
-        if(stopOnNewInput) {
-            count = this.cleanUpTidMappings_1();
-        } else {
-            count = this.cleanUpTidMappings_0();
-        }
-        count += cleanUpPendingTidMappings();
-        if(count > 0) {
-            LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduler cleanup procedure finished with " + count + " task entries removed.");
-        }
-    }
-
-    private int cleanUpPendingTidMappings() {
-        if(!this.pendingDeletion.isEmpty()) {
-            int count = 0 ;
-            VmsTransactionTask task;
-            for (Iterator<VmsTransactionTask> it = this.pendingDeletion.iterator(); it.hasNext();) {
-                task = it.next();
-                if (!task.isFinished()) {
-                    break;
-                }
-                this.lastTidToTidMap.remove(task.lastTid());
-                this.transactionTaskMap.remove(task.tid());
-                count++;
-                it.remove();
-            }
-            return count;
-        }
-        return 0;
-    }
-
-    private int cleanUpTidMappings_0() {
-        int count = 0;
-        final long lastTidSafeToDelete = this.lastTidSafeToDelete();
-        VmsTransactionTask task = this.transactionTaskMap.get(this.nextTidToDelete);
-        while (task != null && this.nextTidToDelete < lastTidSafeToDelete) {
-            if (!task.isFinished()) {
-                this.pendingDeletion.add(task);
-                break; // to avoid null pointer when it finishes
-            }
-            this.transactionTaskMap.remove(this.nextTidToDelete);
-            this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
-            count++;
-            task = this.transactionTaskMap.get(this.nextTidToDelete);
-        }
-        return count;
-    }
-
-    private int cleanUpTidMappings_1(){
-        int count = 0;
-        final long lastTidSafeToDelete = this.lastTidSafeToDelete();
-        VmsTransactionTask task = this.transactionTaskMap.get(this.nextTidToDelete);
-        while (this.transactionInputQueue.isEmpty() && task != null && this.nextTidToDelete < lastTidSafeToDelete) {
-            if (!task.isFinished()) {
-                this.pendingDeletion.add(task);
-                break; // to avoid null pointer when it finishes
-            }
-            this.transactionTaskMap.remove(this.nextTidToDelete);
-            this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
-            count++;
-            task = this.transactionTaskMap.get(this.nextTidToDelete);
-        }
-        return count;
     }
 
     private void processNewEvent(InboundEvent inboundEvent) {
@@ -469,10 +355,6 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     public long lastTidFinished(){
         return U.getLongVolatile(this, L_TID_F_OFFSET);
-    }
-
-    private long lastTidSafeToDelete(){
-        return U.getLongVolatile(this, L_TID_S_OFFSET);
     }
 
 }
