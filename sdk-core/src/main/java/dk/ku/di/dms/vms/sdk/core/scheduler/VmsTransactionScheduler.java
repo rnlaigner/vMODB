@@ -13,6 +13,7 @@ import dk.ku.di.dms.vms.sdk.core.scheduler.complex.VmsComplexTransactionSchedule
 import jdk.internal.misc.Unsafe;
 import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
+import org.jctools.maps.NonBlockingHashMapLong;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +35,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private static final System.Logger LOGGER = System.getLogger(VmsTransactionScheduler.class.getName());
 
     // must be concurrent since different threads are writing and reading from it concurrently
-    private final Map<Long, VmsTransactionTask> transactionTaskMap;
+    private final NonBlockingHashMapLong<VmsTransactionTask> transactionTaskMap;
 
     // map the last tid
     private final MutableLongLongMap lastTidToTidMap;
@@ -108,7 +109,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         this.transactionInputQueue = transactionInputQueue;
 
         // operational (internal control of transactions and tasks)
-        this.transactionTaskMap = new ConcurrentHashMap<>(2048*10);
+        this.transactionTaskMap = new NonBlockingHashMapLong<>(2048*10);
         SchedulerCallback callback = new SchedulerCallback(eventHandler);
         this.vmsTransactionTaskBuilder = new VmsTransactionTaskBuilder(transactionalHandler, callback);
         this.transactionTaskMap.put( 0L, this.vmsTransactionTaskBuilder.buildFinished(0) );
