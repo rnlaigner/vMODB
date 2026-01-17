@@ -127,7 +127,6 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             try {
                 this.checkForNewEvents();
                 this.executeReadyTasks();
-                // this.checkCleanup();
             } catch(Exception e){
                 e.printStackTrace(System.out);
                 LOGGER.log(ERROR, this.vmsIdentifier+": Error on scheduler loop: "+(e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
@@ -217,12 +216,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         }
         VmsTransactionTask task = this.transactionTaskMap.get(nextTid);
         while(true) {
-            if(task == null || task.isScheduled()){
-                return;
-            }
-            // must check because partitioned task interleave and may finish before a lower TID
-            if(task.isFinished()){
-                this.updateLastFinishedTid(nextTid);
+            if(task == null || !task.isNew()){
                 return;
             }
             switch (task.signature().executionMode()) {

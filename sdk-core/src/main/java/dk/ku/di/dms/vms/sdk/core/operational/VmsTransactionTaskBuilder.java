@@ -148,8 +148,8 @@ public final class VmsTransactionTaskBuilder {
             this.status = RUNNING;
         }
 
-        public boolean isScheduled(){
-            return this.status > NEW && this.status < FINISHED;
+        public boolean isNew(){
+            return this.status == NEW;
         }
 
         public boolean isFinished(){
