@@ -307,5 +307,9 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
         }
     }
 
+    public Table getTable() {
+        return table;
+    }
+
 }
 

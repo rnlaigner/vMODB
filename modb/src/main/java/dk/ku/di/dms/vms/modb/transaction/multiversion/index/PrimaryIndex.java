@@ -432,7 +432,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             // is the head?
             if (operationSetOfKey.peak() == entry) {
                 this.keysToFlush.remove(key);
-                this.updatesPerKeyMap.remove(key);
+                // this.updatesPerKeyMap.remove(key);
             }
             numRecords++;
         }

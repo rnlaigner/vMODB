@@ -2,7 +2,10 @@ package dk.ku.di.dms.vms.tpcc.inventory.infra;
 
 import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
+import dk.ku.di.dms.vms.modb.definition.key.IKey;
+import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
 import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
+import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
 import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
 import dk.ku.di.dms.vms.tpcc.inventory.entities.Item;
 import dk.ku.di.dms.vms.tpcc.inventory.entities.Stock;
@@ -19,8 +22,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.makeAlphaString;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.*;
 
 public final class InventoryHttpHandler extends DefaultHttpHandler {
 
@@ -47,17 +49,18 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         }
         // path: /inventory/cleanup
         LOGGER.log(INFO, "Inventory init cleanup");
-
-        LOGGER.log(INFO, "Warehouse GC triggered.");
-        System.gc();
-        LOGGER.log(INFO, "Warehouse GC finished.");
-
         this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
         List<Item> items = this.itemRepository.getAll();
         List<Stock> stockItems = this.stockRepository.getAll();
         LOGGER.log(INFO, "Inventory init reset");
         this.transactionManager.reset();
+
+        LOGGER.log(INFO, "Warehouse GC triggered.");
+        System.gc();
+        LOGGER.log(INFO, "Warehouse GC finished.");
+
         LOGGER.log(INFO, "Inventory tables reset");
+
         this.transactionManager.beginTransaction(0, 0, 0,false);
         for(Stock stockItem : stockItems){
             stockItem.s_ytd = 0;
@@ -100,13 +103,83 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
         this.transactionManager.reset();
 
+        ForkJoinPool pool = ForkJoinPool.commonPool();
+        Future<?>[] futures = new Future[numWare];
+
         LOGGER.log(INFO, "Populating inventory VMS...");
-        long lastTid = -numWare-1;
-        // no need to set lastTid here because there will be no KF check or query
-        this.transactionManager.beginTransaction(lastTid, 0, 0, false);
-        // item
+        long initTs = System.currentTimeMillis();
+
+        if(checkpointing) {
+            // bypass default interfaces
+            populateDisk(numWare, futures, pool);
+        } else {
+            populateInMemory(numWare, futures, pool);
+        }
+
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                futures[w_id-1].get();
+            }
+
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
+            return;
+        }
+
+        if(checkpointing){
+            this.transactionManager.checkpoint(0);
+        }
+        long endTs = System.currentTimeMillis();
+        LOGGER.log(INFO, "Finished populating stock VMS in "+(endTs-initTs)+" ms");
+
+    }
+
+    @SuppressWarnings("unchecked")
+    private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
         LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
         long initTs = System.currentTimeMillis();
+
+        var itemRepo = ((AbstractProxyRepository<Integer, Item>) itemRepository);
+        var itemTable = itemRepo.getTable();
+
+        var stockRepo = ((AbstractProxyRepository<Stock.StockId, Stock>) stockRepository);
+        var stockTable = stockRepo.getTable();
+
+        // item
+        for(int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++){
+            Item item = generateItem(i_id);
+            Object[] itemObj = itemRepo.extractFieldValuesFromEntityObject(item);
+            IKey itemKey = KeyUtils.buildRecordKey( itemTable.schema().getPrimaryKeyColumns(), itemObj );
+            itemTable.underlyingPrimaryKeyIndex().insert(itemKey, itemObj);
+        }
+
+        long endTs = System.currentTimeMillis();
+        LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
+
+        // stock
+        for(int w_id = 1; w_id <= numWare; w_id++) {
+            final int f_w_id = w_id;
+            futures[w_id-1] = pool.submit(() -> {
+                LOGGER.log(DEBUG, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
+                long internalInitTs = System.currentTimeMillis();
+                for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
+                    Stock stock = generateStockItem(f_w_id, i_id);
+                    Object[] stockObj = stockRepo.extractFieldValuesFromEntityObject(stock);
+                    IKey stockKey = KeyUtils.buildRecordKey( stockTable.schema().getPrimaryKeyColumns(), stockObj );
+                    stockTable.underlyingPrimaryKeyIndex().insert(stockKey, stockObj);
+                }
+                LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
+            });
+        }
+    }
+
+    private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+        LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
+        long initTs = System.currentTimeMillis();
+        long lastTid = -numWare-1;
+        // no need to set lastTid here because there will be no FK check or query
+        this.transactionManager.beginTransaction(lastTid, 0, 0, false);
+        // item
         for(int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++){
             Item item = generateItem(i_id);
             this.itemRepository.insert(item);
@@ -115,9 +188,6 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
 
         long endTs = System.currentTimeMillis();
         LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
-
-        ForkJoinPool pool = ForkJoinPool.commonPool();
-        Future<?>[] futures = new Future[numWare];
 
         // stock
         for(int w_id = 1; w_id <= numWare; w_id++) {
@@ -133,18 +203,6 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                 // transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
             });
-        }
-        try {
-            for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
-            }
-            if(checkpointing){
-                this.transactionManager.checkpoint(0);
-            }
-            endTs = System.currentTimeMillis();
-            LOGGER.log(INFO, "Finished populating stock VMS in "+(endTs-initTs)+" ms");
-        } catch(ExecutionException | InterruptedException e){
-            e.printStackTrace(System.err);
         }
     }
 

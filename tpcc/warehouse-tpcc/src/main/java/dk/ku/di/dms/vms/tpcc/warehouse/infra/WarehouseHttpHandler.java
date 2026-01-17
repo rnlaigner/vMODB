@@ -2,7 +2,10 @@ package dk.ku.di.dms.vms.tpcc.warehouse.infra;
 
 import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
+import dk.ku.di.dms.vms.modb.definition.key.IKey;
+import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
 import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
+import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
 import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Customer;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.District;
@@ -50,16 +53,18 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         // path: /warehouse/cleanup
         LOGGER.log(INFO, "Warehouse init cleanup");
 
-        LOGGER.log(INFO, "Warehouse GC triggered.");
-        System.gc();
-        LOGGER.log(INFO, "Warehouse GC finished.");
-
         this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
         List<Warehouse> warehouses = this.warehouseRepository.getAll();
         List<District> districts = this.districtRepository.getAll();
         List<Customer> customers = this.customerRepository.getAll();
         this.transactionManager.reset();
+
+        LOGGER.log(INFO, "Warehouse GC triggered.");
+        System.gc();
+        LOGGER.log(INFO, "Warehouse GC finished.");
+
         LOGGER.log(INFO, "Warehouse tables reset");
+
         this.transactionManager.beginTransaction(0, 0, 0,false);
         for(District district : districts){
             district.d_next_o_id = 3000;
@@ -120,25 +125,12 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         Future<?>[] futures = new Future[numWare];
 
         long initTs = System.currentTimeMillis();
-        for(int w_id = 1; w_id <= numWare; w_id++){
-            final int f_w_id = w_id;
-            futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
-                long internalInitTs = System.currentTimeMillis();
-                transactionManager.beginTransaction(-f_w_id, 0, 0, false);
-                Warehouse warehouse = generateWarehouse(f_w_id);
-                this.warehouseRepository.insert(warehouse);
-                for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
-                    District district = generateDistrict(d_id, f_w_id);
-                    districtRepository.insert(district);
-                    for (int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
-                        Customer customer = generateCustomer(c_id, d_id, f_w_id);
-                        customerRepository.insert(customer);
-                    }
-                }
-                transactionManager.commit();
-                LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
-            });
+
+        if(checkpointing) {
+            // bypass default interfaces
+            populateDisk(numWare, futures, pool);
+        } else {
+            populateInMemory(numWare, futures, pool);
         }
 
         try {
@@ -156,6 +148,71 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
         long endTs = System.currentTimeMillis();
         LOGGER.log(INFO, "Finished populating warehouse VMS in "+(endTs-initTs)+" ms");
+    }
+
+    private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+        for (int w_id = 1; w_id <= numWare; w_id++) {
+            final int f_w_id = w_id;
+            futures[w_id - 1] = pool.submit(() -> {
+                LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
+                long internalInitTs = System.currentTimeMillis();
+                transactionManager.beginTransaction(-f_w_id, 0, 0, false);
+                Warehouse warehouse = generateWarehouse(f_w_id);
+                this.warehouseRepository.insert(warehouse);
+                for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
+                    District district = generateDistrict(d_id, f_w_id);
+                    districtRepository.insert(district);
+                    for (int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
+                        Customer customer = generateCustomer(c_id, d_id, f_w_id);
+                        customerRepository.insert(customer);
+                    }
+                }
+                // bypass GC of this big writeSet at experiment startup time
+                // transactionManager.commit();
+                LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+            });
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+
+        var wareRepo = ((AbstractProxyRepository<Integer, Warehouse>) warehouseRepository);
+        var wareTable = wareRepo.getTable();
+
+        var distRepo = ((AbstractProxyRepository<District.DistrictId, District>) districtRepository);
+        var distTable = distRepo.getTable();
+
+        var custRepo = ((AbstractProxyRepository<Customer.CustomerId, Customer>) customerRepository);
+        var custTable = custRepo.getTable();
+
+        for (int w_id = 1; w_id <= numWare; w_id++) {
+            final int f_w_id = w_id;
+            futures[w_id - 1] = pool.submit(() -> {
+                LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
+                long internalInitTs = System.currentTimeMillis();
+
+                Warehouse warehouse = generateWarehouse(f_w_id);
+                Object[] warObj = wareRepo.extractFieldValuesFromEntityObject(warehouse);
+                IKey wareKey = KeyUtils.buildRecordKey( wareTable.schema().getPrimaryKeyColumns(), warObj );
+                wareTable.underlyingPrimaryKeyIndex().insert(wareKey, warObj);
+
+                for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
+                    District district = generateDistrict(d_id, f_w_id);
+                    Object[] distObj = distRepo.extractFieldValuesFromEntityObject(district);
+                    IKey distKey = KeyUtils.buildRecordKey( distTable.schema().getPrimaryKeyColumns(), distObj );
+                    distTable.underlyingPrimaryKeyIndex().insert(distKey, distObj);
+
+                    for (int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
+                        Customer customer = generateCustomer(c_id, d_id, f_w_id);
+                        Object[] custObj = custRepo.extractFieldValuesFromEntityObject(customer);
+                        IKey custKey = KeyUtils.buildRecordKey( custTable.schema().getPrimaryKeyColumns(), custObj );
+                        custTable.underlyingPrimaryKeyIndex().insert(custKey, custObj);
+                    }
+                }
+                LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+            });
+        }
     }
 
     public static Warehouse generateWarehouse(int W_ID)

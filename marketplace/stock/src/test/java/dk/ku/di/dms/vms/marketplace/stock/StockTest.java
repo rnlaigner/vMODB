@@ -49,7 +49,7 @@ public class StockTest {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static void insertStockItems(Table table, AbstractProxyRepository repository, int sellerId, int productId){
         var stock = new StockItem( sellerId, productId, 100000, 0, 0, 0,  "test", "1" );
         Object[] obj = repository.extractFieldValuesFromEntityObject(stock);

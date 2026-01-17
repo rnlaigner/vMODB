@@ -1,11 +1,9 @@
 package dk.ku.di.dms.vms.marketplace.customer;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
 import dk.ku.di.dms.vms.marketplace.common.Constants;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
-import dk.ku.di.dms.vms.modb.definition.Table;
+import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
 import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
@@ -13,10 +11,9 @@ import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
 
-import java.io.IOException;
-import java.io.OutputStream;
-
 public final class Main {
+
+    private static final IVmsSerdesProxy SERDES = VmsSerdesProxyBuilder.build();
 
     public static void main(String[] args) throws Exception {
         VmsApplicationOptions options = VmsApplicationOptions.build(
@@ -26,36 +23,29 @@ public final class Main {
                 "dk.ku.di.dms.vms.marketplace.customer",
                 "dk.ku.di.dms.vms.marketplace.common"}
         );
-        VmsApplication vms = VmsApplication.build(options, (x,ignored) -> new DefaultHttpHandler(x));
+        VmsApplication vms = VmsApplication.build(options, (x,y) ->
+                new CustomerHttpHandler(x, (ICustomerRepository) y.apply("customers")
+        ));
+
         vms.start();
     }
 
-    private static class CustomerHttpHandler implements HttpHandler {
-        private final Table table;
+    private static class CustomerHttpHandler extends DefaultHttpHandler {
         private final AbstractProxyRepository<Integer, Customer> repository;
-        VmsApplication vms;
-        IVmsSerdesProxy serdes = VmsSerdesProxyBuilder.build();
 
         @SuppressWarnings("unchecked")
-        public CustomerHttpHandler(VmsApplication vms){
-            this.vms = vms;
-            this.table = vms.getTable("customers");
-            this.repository = (AbstractProxyRepository<Integer, Customer>) vms.getRepositoryProxy("customers");
+        public CustomerHttpHandler(ITransactionManager transactionManager,
+                                   ICustomerRepository customerRepository){
+            super(transactionManager);
+            this.repository = (AbstractProxyRepository<Integer, Customer>) customerRepository;
         }
 
         @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String str = new String( exchange.getRequestBody().readAllBytes() );
-            Customer customer = this.serdes.deserialize(str, Customer.class);
+        public void put(String uri, String body) {
+            Customer customer = Main.SERDES.deserialize(body, Customer.class);
             Object[] obj = this.repository.extractFieldValuesFromEntityObject(customer);
-            IKey key = KeyUtils.buildRecordKey( table.schema().getPrimaryKeyColumns(), obj );
-            this.table.underlyingPrimaryKeyIndex().insert(key, obj);
-
-            // response
-            OutputStream outputStream = exchange.getResponseBody();
-            exchange.sendResponseHeaders(200, 0);
-            outputStream.flush();
-            outputStream.close();
+            IKey key = KeyUtils.buildRecordKey( repository.getTable().schema().getPrimaryKeyColumns(), obj );
+            this.repository.getTable().underlyingPrimaryKeyIndex().insert(key, obj);
         }
     }
 
