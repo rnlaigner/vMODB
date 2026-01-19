@@ -15,4 +15,6 @@ public interface ITransactionManager {
 
     default void reset() { }
 
+    default void rebuildIndexes() { }
+
 }

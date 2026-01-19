@@ -127,11 +127,10 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         }
 
         if(checkpointing){
-            this.transactionManager.checkpoint(0);
+            this.transactionManager.rebuildIndexes();
         }
         long endTs = System.currentTimeMillis();
         LOGGER.log(INFO, "Finished populating stock VMS in "+(endTs-initTs)+" ms");
-
     }
 
     @SuppressWarnings("unchecked")
@@ -171,6 +170,9 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                 LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
             });
         }
+
+        itemTable.underlyingPrimaryKeyIndex().flush();
+        stockTable.underlyingPrimaryKeyIndex().flush();
     }
 
     private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {

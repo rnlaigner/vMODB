@@ -341,7 +341,7 @@ public final class SimplePlanner {
             IKey indexKey = KeyUtils.buildIndexKey(arr);
             if(table.secondaryIndexMap.get(indexKey) != null){
                 if(arr.length > maxLength){
-                    bestSoFar = table.secondaryIndexMap.get(indexKey).getUnderlyingIndex();
+                    bestSoFar = table.secondaryIndexMap.get(indexKey).underlyingIndex();
                     maxLength = arr.length;
                 }
             }

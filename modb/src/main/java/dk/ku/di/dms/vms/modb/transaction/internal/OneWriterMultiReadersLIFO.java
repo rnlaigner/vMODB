@@ -55,36 +55,13 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
     }
 
     /**
-     * Gets the entry for the highest key equal or below the specified
-     * key; if no such entry exists, returns {@code null}.
-     * In other words, gets the immediate successor of key.
-     */
-    public final Entry<K,V> getHigherEntryUpToKey(K key) {
-        if(this.head == null) return null;
-        // is parameter key already higher than the highest entry? if so, just return it
-        if(key.compareTo(this.head.key) >= 0) return this.head;
-        Entry<K,V> next = this.head;
-        Entry<K,V> curr;
-        int cmp;
-        do {
-            curr = next;
-            next = next.next;
-            if(next == null) break;
-            cmp = curr.key.compareTo(key);
-        } while(cmp > 0); // curr node is higher than parameter key? if so, continue
-        // it means no entry key is below the parameter key
-        if(next == null && curr.key.compareTo(key) > 0) return null;
-        return curr;
-    }
-
-    /**
      * Remove all entries below the key
      * Method is used to remove TIDs that cannot be seen anymore
      * Not safe if there are concurrent writers and the entry returned is the head
      * @param key node identifier
      */
     public final void removeUpToEntry(K key){
-        final Entry<K,V> entryToReturn = this.getHigherEntryUpToKey(key);
+        final Entry<K,V> entryToReturn = this.floorEntry(key);
         this.removeChildren(entryToReturn);
     }
 

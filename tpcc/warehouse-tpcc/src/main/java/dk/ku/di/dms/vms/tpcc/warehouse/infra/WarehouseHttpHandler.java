@@ -143,7 +143,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         }
 
         if(checkpointing){
-            this.transactionManager.checkpoint(0);
+             this.transactionManager.rebuildIndexes();
         }
 
         long endTs = System.currentTimeMillis();
@@ -191,18 +191,15 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
             futures[w_id - 1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
-
                 Warehouse warehouse = generateWarehouse(f_w_id);
                 Object[] warObj = wareRepo.extractFieldValuesFromEntityObject(warehouse);
                 IKey wareKey = KeyUtils.buildRecordKey( wareTable.schema().getPrimaryKeyColumns(), warObj );
                 wareTable.underlyingPrimaryKeyIndex().insert(wareKey, warObj);
-
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     District district = generateDistrict(d_id, f_w_id);
                     Object[] distObj = distRepo.extractFieldValuesFromEntityObject(district);
                     IKey distKey = KeyUtils.buildRecordKey( distTable.schema().getPrimaryKeyColumns(), distObj );
                     distTable.underlyingPrimaryKeyIndex().insert(distKey, distObj);
-
                     for (int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
                         Customer customer = generateCustomer(c_id, d_id, f_w_id);
                         Object[] custObj = custRepo.extractFieldValuesFromEntityObject(customer);
@@ -213,6 +210,10 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                 LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
+
+        wareTable.underlyingPrimaryKeyIndex().flush();
+        distTable.underlyingPrimaryKeyIndex().flush();
+        custTable.underlyingPrimaryKeyIndex().flush();
     }
 
     public static Warehouse generateWarehouse(int W_ID)

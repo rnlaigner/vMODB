@@ -146,11 +146,14 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
         @Override
         public void success(ExecutionModeEnum executionMode, OutboundEventResult outboundEventResult) {
-            VmsTransactionTask task = transactionTaskMap.remove(outboundEventResult.tid());
+            // do not remove right now because a new task to be scheduled may never find the entry if it is deleted in the scheduling loop
+            VmsTransactionTask task = transactionTaskMap.get(outboundEventResult.tid());
+            // signal finished first to avoid confusion (i.e., removing an "in progress" tid from the taskRunning sets)
             task.signalFinished();
-            updateLastFinishedTid(outboundEventResult.tid());
-            this.eventHandler.accept(outboundEventResult);
             this.updateSchedulerTaskStats(executionMode, task);
+            updateLastFinishedTid(outboundEventResult.tid());
+            // dispatching the event later leads to lower latency and higher throughput
+            this.eventHandler.accept(outboundEventResult);
         }
 
         @Override
@@ -212,7 +215,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private void executeReadyTasks() {
         long lastTidFinished_ = this.lastTidFinished();
-        long nextTid = this.lastTidToTidMap.get(this.lastTidFinished());
+        long nextTid = this.lastTidToTidMap.get(lastTidFinished_);
         // if nextTid == null then the scheduler must block until a new event arrive to progress
         if(nextTid == 0) {
             // keep scheduler sleeping since next tid is unknown
@@ -220,7 +223,13 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
             // prevent map from growing arbitrarily
             if(lastTidFinished_ > this.lastSeenTidFinished){
-                while(nextTidToDelete <= this.lastSeenTidFinished){
+                while(this.nextTidToDelete <= this.lastSeenTidFinished){
+                    // will it always find it finished? no. due to concurrent execution, a "hole" may appear
+                    if(!this.transactionTaskMap.get(this.nextTidToDelete).isFinished()) {
+                        this.lastSeenTidFinished = this.nextTidToDelete;
+                        return;
+                    }
+                    this.transactionTaskMap.remove(this.nextTidToDelete);
                     this.nextTidToDelete = this.lastTidToTidMap.removeKeyIfAbsent(this.nextTidToDelete, this.nextTidToDelete);
                 }
                 this.lastSeenTidFinished = lastTidFinished_;

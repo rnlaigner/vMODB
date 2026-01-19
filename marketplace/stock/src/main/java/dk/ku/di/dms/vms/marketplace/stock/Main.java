@@ -73,7 +73,6 @@ public final class Main {
                 item.qty_reserved = 0;
                 this.repository.insert(item);
             }
-            this.transactionManager.commit();
         }
 
         @Override

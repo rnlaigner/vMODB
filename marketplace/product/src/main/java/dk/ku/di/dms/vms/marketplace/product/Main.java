@@ -68,7 +68,6 @@ public final class Main {
                 product.version = "0";
                 this.repository.insert(product);
             }
-            this.transactionManager.commit();
         }
 
         @Override

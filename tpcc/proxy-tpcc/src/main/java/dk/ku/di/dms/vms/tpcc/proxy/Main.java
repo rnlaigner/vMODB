@@ -144,7 +144,7 @@ public final class Main {
 
                     ExperimentUtils.ExperimentStats expStats = ExperimentUtils.runExperiment(coordinator, txRatio, input, runTime, warmUp);
                     ExperimentUtils.writeResultsToFile(numWare, expStats, runTime, warmUp,
-                            coordinator.getOptions().getNumTransactionWorkers(), coordinator.getOptions().getBatchWindow(), coordinator.getOptions().getMaxTransactionsPerBatch(), txRatio);
+                            coordinator.getOptions().getNumTransactionWorkers(), coordinator.getOptions().getBatchWindow(), coordinator.getOptions().getMaxTransactionsPerBatch(), txRatio, PROPERTIES.getProperty("logging"), PROPERTIES.getProperty("checkpointing"));
                     break;
                 case "5":
                     System.out.println("Option 5: \"Cleanup VMS states\" selected.");

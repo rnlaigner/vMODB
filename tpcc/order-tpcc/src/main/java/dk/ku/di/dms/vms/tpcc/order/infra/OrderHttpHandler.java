@@ -140,7 +140,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         }
 
         if(checkpointing){
-            this.transactionManager.checkpoint(0);
+            this.transactionManager.rebuildIndexes();
         }
 
         long endTs = System.currentTimeMillis();
@@ -160,7 +160,6 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating 30K order records for warehouse " + f_w_id);
-
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
@@ -170,22 +169,22 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                         Object[] orderObj = orderRepo.extractFieldValuesFromEntityObject(order);
                         IKey orderKey = KeyUtils.buildRecordKey( orderTable.schema().getPrimaryKeyColumns(), orderObj );
                         orderTable.underlyingPrimaryKeyIndex().insert(orderKey, orderObj);
-
                         Date ol_delivery_d = o_id < 2101 ? new Date() : null;
                         float ol_amount = o_id < 2101 ? 0 : (float) (Math.floor((ThreadLocalRandom.current().nextDouble() * 9999.99) * 100) / 100.0);
                         for (int ol_id = 1; ol_id <= ol_count; ol_id++) {
                             OrderLine orderLine = new OrderLine(o_id, d_id, f_w_id, ol_id, randomNumber(1, TPCcConstants.NUM_ITEMS), f_w_id, ol_delivery_d, 5, ol_amount, makeAlphaString(26, 50));
-
                             Object[] orderLineObj = orderLineRepo.extractFieldValuesFromEntityObject(orderLine);
                             IKey orderLineKey = KeyUtils.buildRecordKey( orderLineTable.schema().getPrimaryKeyColumns(), orderLineObj );
                             orderLineTable.underlyingPrimaryKeyIndex().insert(orderLineKey, orderLineObj);
                         }
                     }
                 }
-                // transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
+
+        orderTable.underlyingPrimaryKeyIndex().flush();
+        orderLineTable.underlyingPrimaryKeyIndex().flush();
     }
 
     private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {

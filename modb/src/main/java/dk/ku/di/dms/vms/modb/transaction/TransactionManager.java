@@ -306,10 +306,13 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             txCtx.indexes.add(secIndex);
             secIndex.insert(txCtx, pk, values);
         }
-        for(var entry : table.partialIndexMap.entrySet()){
+        if(table.partialIndexMap.isEmpty()) {
+            return;
+        }
+        for (var entry : table.partialIndexMap.entrySet()) {
             // does the record "fits" the partial index?
-            Tuple<Integer, Object> check = table.partialIndexMetaMap.get( entry.getKey() );
-            if (primaryIndex.meetPartialIndex(values, check.t1(), check.t2() )){
+            Tuple<Integer, Object> check = table.partialIndexMetaMap.get(entry.getKey());
+            if (primaryIndex.meetPartialIndex(values, check.t1(), check.t2())) {
                 txCtx.indexes.add(entry.getValue());
                 entry.getValue().insert(txCtx, pk, values);
             }
@@ -518,6 +521,28 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             }
         }
         LOGGER.log(DEBUG, "Reset finished at "+System.currentTimeMillis());
+    }
+
+    @Override
+    public void rebuildIndexes() {
+        TransactionContext txCtx = (TransactionContext) beginTransaction(0, 0, 0, false);
+        for (Table table : this.catalog.values()) {
+            if(table.getName().equalsIgnoreCase("district")){
+                System.out.println("HEEEEY");
+            }
+            int count = 0;
+            Iterator<Object[]> it = table.primaryKeyIndex().iterator(txCtx);
+            while ((it.hasNext())) {
+                Object[] record = it.next();
+                IKey key = KeyUtils.buildRecordKey(table.schema().getPrimaryKeyColumns(), record);
+                table.primaryKeyIndex().doInsert(txCtx, key, record, null);
+                for (NonUniqueSecondaryIndex secIndex : table.secondaryIndexMap.values()) {
+                    secIndex.insert(txCtx, key, record);
+                }
+                count++;
+            }
+            System.out.println("Table "+table.getName()+" with "+count+" entries scanned for index rebuilding.");
+        }
     }
 
 }

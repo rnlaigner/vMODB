@@ -6,8 +6,10 @@ import dk.ku.di.dms.vms.modb.common.data_structure.Set0;
 import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
+import dk.ku.di.dms.vms.modb.index.interfaces.ReadOnlyBufferIndex;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
+import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 import dk.ku.di.dms.vms.modb.transaction.TransactionContext;
 import dk.ku.di.dms.vms.modb.transaction.internal.Entry;
 import dk.ku.di.dms.vms.modb.transaction.internal.OperationSetOfKey;
@@ -266,7 +268,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         return true;
     }
 
-    private void doInsert(TransactionContext txCtx, IKey key, Object[] values, OperationSetOfKey operationSet) {
+    public void doInsert(TransactionContext txCtx, IKey key, Object[] values, OperationSetOfKey operationSet) {
         TransactionWrite entry = TransactionWrite.upsert(WriteType.INSERT, values);
         if(operationSet == null){
             operationSet = new OperationSetOfKey(WriteType.INSERT);
@@ -464,11 +466,11 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         WRITE_SET_BUFFER.addLast(writeSet);
     }
 
-    public void appendWrite(TransactionContext txCtx, IKey key){
+    private void appendWrite(TransactionContext txCtx, IKey key){
         this.writeSetMap.computeIfAbsent(txCtx.tid, _ -> Objects.requireNonNullElseGet(WRITE_SET_BUFFER.poll(), HashSet::new)).add(key);
     }
 
-    public Set<IKey> removeWriteSet(TransactionContext txCtx){
+    private Set<IKey> removeWriteSet(TransactionContext txCtx){
         return this.writeSetMap.remove(txCtx.tid);
     }
 
@@ -553,16 +555,69 @@ public final class PrimaryIndex implements IMultiVersionIndex {
      */
     @Override
     public Iterator<Object[]> iterator(TransactionContext txCtx) {
-        return new PrimaryIndexIterator(txCtx);
+        if(this.rawIndex instanceof UniqueHashBufferIndex) {
+            return new PrimaryIndexIteratorDisk(txCtx);
+        }
+        return new PrimaryIndexIteratorMemory(txCtx);
     }
 
-    private final class PrimaryIndexIterator implements Iterator<Object[]> {
+    private final class PrimaryIndexIteratorDisk implements Iterator<Object[]> {
+        private final TransactionContext txCtx;
+        private final IRecordIterator<IKey> iterator;
+        private final Set<IKey> updatesPerKeyMapCopy;
+        private Object[] currRecord;
 
+        public PrimaryIndexIteratorDisk(TransactionContext txCtx) {
+            this.txCtx = txCtx;
+            this.iterator = (IRecordIterator<IKey>) rawIndex.iterator();
+            this.updatesPerKeyMapCopy = new HashSet<>(updatesPerKeyMap.keySet());
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public boolean hasNext() {
+            while(this.iterator.hasNext()){
+                this.currRecord = ((ReadOnlyBufferIndex<IKey>)rawIndex).readFromIndex(iterator.address() + Schema.RECORD_HEADER);
+                IKey nextKey = KeyUtils.buildRecordKey(rawIndex.schema().getPrimaryKeyColumns(), this.currRecord);
+                // move iterator
+                this.iterator.next();
+                if(this.updatesPerKeyMapCopy.remove(nextKey)){
+                    OperationSetOfKey opSet = updatesPerKeyMap.get(nextKey);
+                    if(opSet == null) {
+                        return true;
+                        // store entry in memory map to prevent new read from buffer
+//                    opSet = new OperationSetOfKey(WriteType.INSERT);
+//                    opSet.put(0L, TransactionWrite.upsert(WriteType.INSERT, this.currRecord));
+//                    updatesPerKeyMap.put(nextKey, opSet);
+                    }
+                    Entry<Long, TransactionWrite> entry = opSet.floorEntry(this.txCtx.readOnly ? this.txCtx.lastTid : this.txCtx.tid);
+                    if(entry == null || entry.val().type == WriteType.DELETE) {
+                        if(this.iterator.hasNext()) {
+                            continue;
+                        } else {
+                            return false;
+                        }
+                    }
+                    this.currRecord = entry.val().record;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public Object[] next() {
+            return this.currRecord;
+        }
+
+    }
+
+    private final class PrimaryIndexIteratorMemory implements Iterator<Object[]> {
         private final TransactionContext txCtx;
         private final Iterator<Map.Entry<IKey, OperationSetOfKey>> iterator;
         private Object[] currRecord;
 
-        public PrimaryIndexIterator(TransactionContext txCtx){
+        public PrimaryIndexIteratorMemory(TransactionContext txCtx){
             this.txCtx = txCtx;
             this.iterator = updatesPerKeyMap.entrySet().iterator();
         }
@@ -571,7 +626,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         public boolean hasNext() {
             while(this.iterator.hasNext()){
                 Map.Entry<IKey, OperationSetOfKey> next = this.iterator.next();
-                Entry<Long, TransactionWrite> entry = next.getValue().getHigherEntryUpToKey(this.txCtx.tid);
+                Entry<Long, TransactionWrite> entry = next.getValue().floorEntry(this.txCtx.tid);
                 if(entry == null) {
                     this.currRecord = rawIndex.lookupByKey(next.getKey());
                     if(this.currRecord == null){

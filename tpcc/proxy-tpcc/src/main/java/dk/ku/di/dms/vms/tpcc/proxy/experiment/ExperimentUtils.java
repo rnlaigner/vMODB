@@ -114,6 +114,7 @@ public final class ExperimentUtils {
         System.out.println("Latency at 50th percentile: "+ percentile_50);
         System.out.println("Latency at 75th percentile: "+ percentile_75);
         System.out.println("Latency at 90th percentile: "+ percentile_90);
+        System.out.println("Latency at 99th percentile: "+ percentile_99);
         System.out.println("Number of completed transactions (during warm up): "+ numCompletedDuringWarmUp);
         System.out.println("Number of completed transactions (after warm up): "+ numCompleted);
         System.out.println("Number of completed transactions (total): "+ numCompletedWithWarmUp);
@@ -130,11 +131,8 @@ public final class ExperimentUtils {
 
     public record ExperimentStats(long initTs, int runTime, long usefulRuntime, int numCompletedWithWarmUp, int numCompleted, double txPerSec, double txPerSecUseful, double average, double percentile_50, double percentile_75, double percentile_90, double percentile_99){}
 
-    public static void writeResultsToFile(int numWare, ExperimentStats expStats, int runTime, int warmUp, int numTransactionWorkers, int batchWindow, int maxTransactionsPerBatch, Tuple<Integer, String>[] txRatio){
-        LocalDateTime time = LocalDateTime.ofInstant(
-                Instant.ofEpochMilli(expStats.initTs),
-                ZoneId.systemDefault()
-        );
+    public static void writeResultsToFile(int numWare, ExperimentStats expStats, int runTime, int warmUp, int numTransactionWorkers, int batchWindow, int maxTransactionsPerBatch, Tuple<Integer, String>[] txRatio, String logging, String checkpointing){
+        LocalDateTime time = LocalDateTime.ofInstant(Instant.ofEpochMilli(expStats.initTs),  ZoneId.systemDefault());
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd_MM_yy_HH_mm_ss");
         String formattedDate = time.format(formatter);
         String fileName = "tpcc_" + formattedDate + ".txt";
@@ -164,6 +162,11 @@ public final class ExperimentUtils {
                 writer.write("  "+tx.t2+"=" + tx.t1);
                 writer.newLine();
             }
+            writer.write("Logging: "+logging);
+            writer.newLine();
+            writer.write("Checkpointing: "+checkpointing);
+            writer.newLine();
+
             writer.newLine();
             writer.write("Average latency: "+ expStats.average);
             writer.newLine();

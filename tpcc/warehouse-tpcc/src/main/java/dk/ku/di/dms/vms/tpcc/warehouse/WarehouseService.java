@@ -73,7 +73,6 @@ public final class WarehouseService {
         customer.c_balance -= in.amount;
         customer.c_ytd_payment += in.amount;
         customer.c_payment_cnt += 1;
-
         this.customerRepository.update(customer);
 
         String h_data = "%s    %s".formatted( warehouse.w_name.length() > 10 ? warehouse.w_name.substring(0, 10) : warehouse.w_name, district.d_name.length() > 10 ? district.d_name.substring(0, 10) : district.d_name );
@@ -90,6 +89,7 @@ public final class WarehouseService {
             Objects.requireNonNull(customers);
             if(customers.isEmpty()){
                 LOGGER.log(WARNING, "No customers retrieved by last name with input:\n"+in);
+                customers = this.customerRepository.getCustomerByLastName(in.d_id, in.w_id, in.c_last);
             }
         } else {
             Customer customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
@@ -97,8 +97,6 @@ public final class WarehouseService {
                 LOGGER.log(WARNING, "No customer retrieved with input:\n"+in);
                 customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
             }
-            // Objects.requireNonNull(customer);
-            //LOGGER.log(DEBUG, customer);
         }
         return new OrderStatusOut(in.w_id, in.d_id, in.c_id);
     }
