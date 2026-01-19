@@ -12,7 +12,7 @@ import dk.ku.di.dms.vms.tpcc.order.repositories.IOrderRepository;
 import java.util.Properties;
 
 /**
- * Port of the TPC-C order-related code as a virtual microservice
+ * Port of the TPC-C order-related code as a virtual micro service
  */
 public final class Main {
     public static void main( String[] args ) throws Exception {
@@ -21,13 +21,17 @@ public final class Main {
 
     public static VmsApplication build() throws Exception {
         Properties prop = ConfigUtils.loadProperties();
-//        String numWareStr = prop.getProperty("num_ware");
-//        int num_ware = Integer.parseInt(numWareStr);
+        String numWareStr = prop.getProperty("num_ware");
+        int num_ware = Integer.parseInt(numWareStr);
+        // num orders fixed = 30k * num_ware
+        int numOrders = num_ware * 30_000;
+        // based on 20k tx/s and 10s run
+        numOrders += (20_000 * 10);
+        int numOrderLine = numOrders * 10;
 
-        prop.setProperty("max_records.orders", "500000");
-        // numCustomers = MemoryUtils.nextPowerOfTwo(numCustomers) + 1;
-        prop.setProperty("max_records.new_orders", "500000");
-        prop.setProperty("max_records.order_line", "10000000");
+        prop.setProperty("max_records.orders", String.valueOf(numOrders));
+        prop.setProperty("max_records.new_orders", String.valueOf(numOrders));
+        prop.setProperty("max_records.order_line", String.valueOf(numOrderLine));
         prop.setProperty("max_records.history", "500000");
 
         prop.setProperty("table.orders.chaining", "true");

@@ -10,7 +10,7 @@ import dk.ku.di.dms.vms.tpcc.inventory.repositories.IStockRepository;
 import java.util.Properties;
 
 /**
- * Port of the TPC-C inventory-related code as a virtual microservice
+ * Port of the TPC-C inventory-related code as a virtual micro service
  */
 public final class Main {
     public static void main(String[] args) throws Exception {
@@ -25,6 +25,7 @@ public final class Main {
         // variable
         int numStockItems = num_ware * 100_000;
         prop.setProperty("max_records.stock", String.valueOf(numStockItems));
+        prop.setProperty("table.stock.chaining", "true");
 
         VmsApplicationOptions options = VmsApplicationOptions.build(
                 "0.0.0.0",

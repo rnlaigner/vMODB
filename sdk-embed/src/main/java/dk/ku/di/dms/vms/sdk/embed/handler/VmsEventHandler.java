@@ -210,7 +210,7 @@ public final class VmsEventHandler extends ModbHttpServer {
     public void run() {
         // setup accept since we need to accept connections from the coordinator and other VMSs
         this.serverSocket.accept(null, new AcceptCompletionHandler());
-        LOGGER.log(INFO,this.me.identifier+": Accept handler setup");
+        LOGGER.log(DEBUG,this.me.identifier+": Accept handler setup");
     }
 
     public void processOutputEvent(IVmsTransactionResult txResult) {

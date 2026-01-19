@@ -11,7 +11,7 @@ import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IWarehouseRepository;
 import java.util.Properties;
 
 /**
- * Port of the TPC-C warehouse-related code as a virtual microservice
+ * Port of the TPC-C warehouse-related code as a virtual micro service
  */
 public final class Main {
     public static void main( String[] args ) throws Exception {
@@ -28,7 +28,6 @@ public final class Main {
         int numDistrict = num_ware * 10;
         prop.setProperty("max_records.district", String.valueOf(numDistrict));
         int numCustomers = num_ware * 30_000;
-        // numCustomers = MemoryUtils.nextPowerOfTwo(numCustomers) + 1;
         prop.setProperty("max_records.customer", String.valueOf(numCustomers));
         prop.setProperty("table.customer.chaining", "true");
 

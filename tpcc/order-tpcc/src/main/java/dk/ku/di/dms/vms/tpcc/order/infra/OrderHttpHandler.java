@@ -130,19 +130,6 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
             populateInMemory(numWare, futures, pool);
         }
 
-        try {
-            for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
-            }
-        } catch(ExecutionException | InterruptedException e){
-            LOGGER.log(ERROR, "Error:\n"+e);
-            return;
-        }
-
-        if(checkpointing){
-            this.transactionManager.rebuildIndexes();
-        }
-
         long endTs = System.currentTimeMillis();
         LOGGER.log(INFO, "Finished populating order VMS in "+(endTs-initTs)+" ms");
     }
@@ -159,7 +146,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30K order records for warehouse " + f_w_id);
+                LOGGER.log(INFO, "Started creating 30K order records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
@@ -179,12 +166,20 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                         }
                     }
                 }
-                LOGGER.log(DEBUG, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(INFO, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
-
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                futures[w_id-1].get();
+            }
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
+            return;
+        }
         orderTable.underlyingPrimaryKeyIndex().flush();
         orderLineTable.underlyingPrimaryKeyIndex().flush();
+        this.transactionManager.rebuildIndexes();
     }
 
     private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
@@ -212,6 +207,13 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                 // transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
+        }
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                futures[w_id-1].get();
+            }
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
         }
     }
 

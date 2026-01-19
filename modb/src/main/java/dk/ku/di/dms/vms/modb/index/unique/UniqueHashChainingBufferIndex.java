@@ -15,8 +15,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static dk.ku.di.dms.vms.modb.common.memory.MemoryUtils.UNSAFE;
-import static java.lang.System.Logger.Level.ERROR;
-import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.*;
 
 public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
@@ -126,7 +125,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             if(this.chainingMap.containsKey(headPos)){
                 aob = this.chainingMap.get(headPos);
             } else {
-                LOGGER.log(INFO, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+". Creating a new chaining....\nKey: " + key + " Hash: " + key.hashCode());
+                LOGGER.log(DEBUG, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+". Creating a new chaining....\nKey: " + key + " Hash: " + key.hashCode());
                 aob = StorageUtils.loadAppendOnlyBoundedBuffer(this.suffix, OPEN_ADDRESSING_ATTEMPTS, (int) this.recordSize, STR."\{this.recordBufferCtx.fileName}_\{headPos}", true);
                 this.chainingMap.put(headPos, aob);
             }

@@ -133,19 +133,6 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
             populateInMemory(numWare, futures, pool);
         }
 
-        try {
-            for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
-            }
-        } catch(ExecutionException | InterruptedException e){
-            LOGGER.log(ERROR, "Error:\n"+e);
-            return;
-        }
-
-        if(checkpointing){
-             this.transactionManager.rebuildIndexes();
-        }
-
         long endTs = System.currentTimeMillis();
         LOGGER.log(INFO, "Finished populating warehouse VMS in "+(endTs-initTs)+" ms");
     }
@@ -172,6 +159,13 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                 LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                futures[w_id-1].get();
+            }
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -189,7 +183,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         for (int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
             futures[w_id - 1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
+                LOGGER.log(INFO, "Started creating 30K customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 Warehouse warehouse = generateWarehouse(f_w_id);
                 Object[] warObj = wareRepo.extractFieldValuesFromEntityObject(warehouse);
@@ -207,13 +201,21 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                         custTable.underlyingPrimaryKeyIndex().insert(custKey, custObj);
                     }
                 }
-                LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(INFO, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
-
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                futures[w_id-1].get();
+            }
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
+            return;
+        }
         wareTable.underlyingPrimaryKeyIndex().flush();
         distTable.underlyingPrimaryKeyIndex().flush();
         custTable.underlyingPrimaryKeyIndex().flush();
+        this.transactionManager.rebuildIndexes();
     }
 
     public static Warehouse generateWarehouse(int W_ID)

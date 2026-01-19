@@ -31,6 +31,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.INFO;
 
 /**
  * A transaction management facade
@@ -527,9 +528,6 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
     public void rebuildIndexes() {
         TransactionContext txCtx = (TransactionContext) beginTransaction(0, 0, 0, false);
         for (Table table : this.catalog.values()) {
-            if(table.getName().equalsIgnoreCase("district")){
-                System.out.println("HEEEEY");
-            }
             int count = 0;
             Iterator<Object[]> it = table.primaryKeyIndex().iterator(txCtx);
             while ((it.hasNext())) {
@@ -541,7 +539,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
                 }
                 count++;
             }
-            System.out.println("Table "+table.getName()+" with "+count+" entries scanned for index rebuilding.");
+            LOGGER.log(INFO, "Table "+table.getName()+" with "+count+" entries scanned for index rebuilding.");
         }
     }
 

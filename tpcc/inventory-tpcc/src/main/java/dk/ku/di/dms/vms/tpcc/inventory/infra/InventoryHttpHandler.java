@@ -116,19 +116,6 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
             populateInMemory(numWare, futures, pool);
         }
 
-        try {
-            for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
-            }
-
-        } catch(ExecutionException | InterruptedException e){
-            LOGGER.log(ERROR, "Error:\n"+e);
-            return;
-        }
-
-        if(checkpointing){
-            this.transactionManager.rebuildIndexes();
-        }
         long endTs = System.currentTimeMillis();
         LOGGER.log(INFO, "Finished populating stock VMS in "+(endTs-initTs)+" ms");
     }
@@ -136,13 +123,14 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
     @SuppressWarnings("unchecked")
     private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
         LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
-        long initTs = System.currentTimeMillis();
 
         var itemRepo = ((AbstractProxyRepository<Integer, Item>) itemRepository);
         var itemTable = itemRepo.getTable();
 
         var stockRepo = ((AbstractProxyRepository<Stock.StockId, Stock>) stockRepository);
         var stockTable = stockRepo.getTable();
+
+        long initTs = System.currentTimeMillis();
 
         // item
         for(int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++){
@@ -159,7 +147,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         for(int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
+                LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
                     Stock stock = generateStockItem(f_w_id, i_id);
@@ -167,12 +155,20 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                     IKey stockKey = KeyUtils.buildRecordKey( stockTable.schema().getPrimaryKeyColumns(), stockObj );
                     stockTable.underlyingPrimaryKeyIndex().insert(stockKey, stockObj);
                 }
-                LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
+                LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
             });
         }
-
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                futures[w_id-1].get();
+            }
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
+            return;
+        }
         itemTable.underlyingPrimaryKeyIndex().flush();
         stockTable.underlyingPrimaryKeyIndex().flush();
+        this.transactionManager.rebuildIndexes();
     }
 
     private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
@@ -205,6 +201,14 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
                 // transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
             });
+        }
+
+        try {
+            for (int w_id = 1; w_id <= numWare; w_id++) {
+                futures[w_id-1].get();
+            }
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
         }
     }
 

@@ -81,7 +81,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                                                 ITransactionManager transactionalHandler,
                                                 Consumer<IVmsTransactionResult> eventHandler,
                                                 int vmsThreadPoolSize){
-        LOGGER.log(INFO, vmsIdentifier+ ": Building transaction scheduler with thread pool size of "+ vmsThreadPoolSize);
+        LOGGER.log(DEBUG, vmsIdentifier+ ": Building transaction scheduler with thread pool size of "+ vmsThreadPoolSize);
         return new VmsTransactionScheduler(
                 vmsIdentifier,
                 vmsThreadPoolSize == 0 ? ForkJoinPool.commonPool() :
@@ -123,7 +123,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
      */
     @Override
     public void run() {
-        LOGGER.log(INFO,this.vmsIdentifier+": Transaction scheduler has started");
+        LOGGER.log(DEBUG,this.vmsIdentifier+": Transaction scheduler has started");
         while(this.isRunning()) {
             try {
                 this.checkForNewEvents();
@@ -133,7 +133,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 LOGGER.log(ERROR, this.vmsIdentifier+": Error on scheduler loop: "+(e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
             }
         }
-        LOGGER.log(INFO,this.vmsIdentifier+": Transaction scheduler has terminated");
+        LOGGER.log(DEBUG,this.vmsIdentifier+": Transaction scheduler has terminated");
     }
 
     private final class SchedulerCallback implements ISchedulerCallback, Thread.UncaughtExceptionHandler {

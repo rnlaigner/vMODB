@@ -1,47 +1,42 @@
-# Virtual Microservice-Oriented Database System (vMODB)
+# vMODB — Virtual Microservice‑Oriented Database System
 
-MODB is a distributed, event-driven, microservice-oriented database management system. The first principled approach for designing stateful microservices that require advanced data management requirements.
+![Java](https://img.shields.io/badge/Java-21-blue.svg) ![Maven](https://img.shields.io/badge/Maven-3.9%2B-blue.svg) ![Branch](https://img.shields.io/badge/branch-multi__vms-purple.svg) [![arXiv](https://img.shields.io/badge/arXiv-2504.19757-b31b1b.svg)](https://arxiv.org/abs/2504.19757)
 
-MODB offers event-driven functionalities by design, which makes it easy for developers to build stateful microservices that run on the cloud, at the same time offering abstractions developers are more used to work with.
+vMODB is a distributed, event-driven, microservice-oriented database management system. The first principled approach for designing and implementing microservices that require advanced data management requirements. vMODB unifies event and data management, offering event-driven functionalities and ACID guarantees by design, making it easier for developers to build scalable microservices to run in the cloud.
 
-MODB runs application logic in seamlessly within the application tier, not requiring developers to implement complex and error-prone stored procedures in the database.
+Differently from traditional server-based database and message systems, where users interact via a well-defined network protocol, in vMODB, users solely write application code and all the data and event management complexity is abstracted away. For that, vMODB offers familiar programming abstractions to developers, including object-relational mapping and metaprogramming (i.e., annotations). 
 
-Developers can plug and play any microservice at any time, the MODB then adapt the event streams seamlessly as requested by the application. In the end, developers still experience the flexibility and dynamicity offered by microservice architectures, but with built-in system-level database support to alleviate several challenges usually found in the practice.
-
-Differently from traditional server-based database systems, where users interact via a well-defined network protocol, in MODB, users solely write code and all the data management complexity is abstracted by the runtime.
+In the end, developers experience the same flexibility and dynamicity offered by microservice architectures, while enjoying native system-level data management support that effectively prevents several challenges usually found in the practice.
 
 ## Table of Contents
-- [Getting Started](#getting-started)
+- [Why vMODB](#why-vmodb)
+- [Quickstart](#quickstart)
     * [Prerequisites](#prerequisites)
-    * [Compilation](#compilation)
+    * [Build](#build)
     * [Configuration](#config)
-- [vMODB](#vmodb)
+- [System](#system)
     * [Abstractions](#abstractions)
     * [Architecture](#architecture)
     * [APIs](#apis)
     * [Play Around](#play)
     * [Testing](#test)
-- [Links](#links)
+- [Troubleshooting](#troubleshooting)
 
-## <a name="getting-started"></a>Getting Started
+### <a name="why-vmodb"></a>Why vMODB?
 
-### <a name="prerequisites"></a>Prerequisites
+Event‑driven microservice architectures (EDMAs) allow teams to build systems formed by self-contained components that can be deployed, scaled, and upgraded independently. To achieve such non-functional requirements, EDMAs typically rely on asynchronous messages to enable interaction across components. While decoupling components in time facilitate software teams to move fast and adapt the system to varied workloads, ensuring transactional guarantees across components (e.g., workflow atomicity) is often perceived as a major challenge. In most cases, EDMAs end up relying on weaker guarantees, such as eventual consistency, in order to achieve performance requirements like scalability.
 
-- Maven
+vMODB departs from traditional EDMAs by providing a programming model (VMS) and a runtime that unifies event logs and state to deliver ACID across microservices. In evaluations, vMODB outperforms widely adopted eventual‑consistency frameworks by up to 3x.
 
-  To assemble the dependencies and compile the project
+### <a name="quickstart"></a>Quickstart
 
-  [How to install maven on Ubuntu](https://www.hostinger.com/tutorials/how-to-install-maven-on-ubuntu)
+#### <a name="prerequisites"></a>Prerequisites
 
-- Java Runtime Environment 21 
+- Java Runtime Environment 21 to execute; JDK 21 to modify and compile the source code
+- Maven to assemble the dependencies and compile the project: [Maven install](https://www.hostinger.com/tutorials/how-to-install-maven-on-ubuntu)
+- Curl to play with the HTTP APIs
 
-  Java Development Kit 21 if you intend to modify the source code
-
-- Curl 
-
-  If you want to play with the APIs, Curl allows to easily submit HTTP requests
-
-### <a name="compilation"></a>Compilation
+#### <a name="build"></a>Build
 
 It is necessary to generate the dependencies required to compile the microservice.
 This can be accomplished via running the following command in the root folder:
@@ -97,10 +92,14 @@ java.base/java.nio=ALL-UNNAMED
 java.base/sun.nio.ch=ALL-UNNAMED
 ```
 
-### <a name="vmodb"></a>vMODB
+### <a name="system"></a>System
 
-## <a name="links"></a>Useful links
+#### <a name="architecture"></a>Architecture
+
+At the core of vMODB lies the virtual micro service (VMS) programming model. Through a VMS, users define a component’s data model, constraints, and concurrency semantics. vMODB coordinates the execution of a collection of VMS instances. Developers specify transactions that may traverse multiple VMSes; the coordinator orders, validates, and commits them, preserving ACID across components while retaining the decoupling benefits of EDA.
+
+## <a name="troubleshooting"></a>Troubleshooting
 
 - [Packet Size ,Window Size and Socket Buffer In TCP](https://stackoverflow.com/a/37267929/7735153)
 - [Throughput and TCP windows](http://packetbomb.com/understanding-throughput-and-tcp-windows/)
-- [Tuning the windows size](https://docs.oracle.com/cd/E23507_01/Platform.20073/ATGInstallGuide/html/s0507tuningthetcpwindowsize01.html)
+- [Tuning the window size](https://docs.oracle.com/cd/E23507_01/Platform.20073/ATGInstallGuide/html/s0507tuningthetcpwindowsize01.html)
