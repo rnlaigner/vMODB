@@ -146,7 +146,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(INFO, "Started creating 30K order records for warehouse " + f_w_id);
+                LOGGER.log(INFO, "Started creating 30000 order records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
@@ -166,7 +166,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                         }
                     }
                 }
-                LOGGER.log(INFO, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(INFO, "Finished creating 30000 order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {
@@ -187,7 +187,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30K order records for warehouse " + f_w_id);
+                LOGGER.log(DEBUG, "Started creating 30000 order records for warehouse " + f_w_id);
                 transactionManager.beginTransaction(-f_w_id, 0, -numWare, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
@@ -205,7 +205,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                     }
                 }
                 // transactionManager.commit();
-                LOGGER.log(DEBUG, "Finished creating 30K order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(DEBUG, "Finished creating 30000 order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {

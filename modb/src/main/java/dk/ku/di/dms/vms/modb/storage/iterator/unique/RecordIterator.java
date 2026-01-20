@@ -5,6 +5,8 @@ import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.SimpleKey;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 
+import static dk.ku.di.dms.vms.modb.common.memory.MemoryUtils.UNSAFE;
+
 /**
  * Iterator tamed for verification of records in sequential positions
  * Cannot be used for iterating over ordered record buffer
@@ -37,7 +39,7 @@ public final class RecordIterator implements IRecordIterator<IKey> {
 
     @Override
     public IKey next() {
-        SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.nextAddress + 1));
+        SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.nextAddress + Header.SIZE));
         this.progress++;
         this.nextAddress += this.recordSize;
         return res;

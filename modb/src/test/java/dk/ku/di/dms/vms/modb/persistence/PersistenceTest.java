@@ -51,7 +51,6 @@ public final class PersistenceTest {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING,
                 StandardOpenOption.READ,
-                StandardOpenOption.SPARSE,
                 StandardOpenOption.WRITE
         );
         MemorySegment memorySegment = fc.map(FileChannel.MapMode.READ_WRITE, 0,
@@ -62,6 +61,8 @@ public final class PersistenceTest {
         index.insert(IntKey.of(1), new Object[] { 1, 10 } );
         index.insert(IntKey.of(2), new Object[] { 2, 20 } );
         index.insert(IntKey.of(3), new Object[] { 3, 30 } );
+        index.insert(IntKey.of(4), new Object[] { 4, 40 } );
+        index.insert(IntKey.of(5), new Object[] { 5, 50 } );
 
         int count = 0;
         IRecordIterator<IKey> it = index.iterator();
@@ -72,7 +73,8 @@ public final class PersistenceTest {
             count++;
         }
 
-        Assert.assertEquals(count, index.size());
+        Assert.assertEquals(5, count);
+        Assert.assertEquals(5, index.size());
 
         index.reset();
     }

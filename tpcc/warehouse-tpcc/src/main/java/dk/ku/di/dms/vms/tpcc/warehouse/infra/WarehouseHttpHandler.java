@@ -141,7 +141,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         for (int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
             futures[w_id - 1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30K customer records for warehouse " + f_w_id);
+                LOGGER.log(DEBUG, "Started creating 30000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 transactionManager.beginTransaction(-f_w_id, 0, 0, false);
                 Warehouse warehouse = generateWarehouse(f_w_id);
@@ -156,7 +156,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                 }
                 // bypass GC of this big writeSet at experiment startup time
                 // transactionManager.commit();
-                LOGGER.log(DEBUG, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(DEBUG, "Finished creating 30000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {
@@ -183,7 +183,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         for (int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
             futures[w_id - 1] = pool.submit(() -> {
-                LOGGER.log(INFO, "Started creating 30K customer records for warehouse " + f_w_id);
+                LOGGER.log(INFO, "Started creating 30000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 Warehouse warehouse = generateWarehouse(f_w_id);
                 Object[] warObj = wareRepo.extractFieldValuesFromEntityObject(warehouse);
@@ -201,7 +201,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                         custTable.underlyingPrimaryKeyIndex().insert(custKey, custObj);
                     }
                 }
-                LOGGER.log(INFO, "Finished creating 30K customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(INFO, "Finished creating 30000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {

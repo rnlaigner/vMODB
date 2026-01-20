@@ -569,7 +569,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
 
         public PrimaryIndexIteratorDisk(TransactionContext txCtx) {
             this.txCtx = txCtx;
-            this.iterator = (IRecordIterator<IKey>) rawIndex.iterator();
+            this.iterator = rawIndex.iterator();
             this.updatesPerKeyMapCopy = new HashSet<>(updatesPerKeyMap.keySet());
         }
 

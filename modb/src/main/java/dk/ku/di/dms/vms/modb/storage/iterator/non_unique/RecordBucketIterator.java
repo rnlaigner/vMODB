@@ -6,6 +6,8 @@ import dk.ku.di.dms.vms.modb.storage.iterator.CachingKeyIterator;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 import dk.ku.di.dms.vms.modb.storage.record.OrderedRecordBuffer;
 
+import static dk.ku.di.dms.vms.modb.common.memory.MemoryUtils.UNSAFE;
+
 /**
  * Encapsulates an iteration over records that belong
  * to a non-unique index hash bucket

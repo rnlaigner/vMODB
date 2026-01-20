@@ -4,6 +4,7 @@ import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
+import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 
 import java.util.Iterator;
 
@@ -57,7 +58,7 @@ public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
     @Override
     public void reset() { }
 
-    private static final Iterator<IKey> IT = new Iterator<>() {
+    private static final IRecordIterator<IKey> IT = new IRecordIterator<>() {
         @Override
         public boolean hasNext() {
             return false;
@@ -70,7 +71,7 @@ public final class UniqueHashMapIndex extends ReadWriteIndex<IKey> {
     };
 
     @Override
-    public Iterator<IKey> iterator() {
+    public IRecordIterator<IKey> iterator() {
         return IT;
     }
 

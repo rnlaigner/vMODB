@@ -107,9 +107,15 @@ public class StorageUtils {
         return RecordBufferContext.build(segment, fileName);
     }
 
-    public static AppendOnlyBoundedBuffer loadAppendOnlyBoundedBuffer(String vmsIdentifier, int maxNumberOfRecords, int recordSize, String fileName, boolean truncate){
+    public static AppendOnlyBoundedBuffer loadAppendOnlyBoundedBuffer(String vmsIdentifier, int maxNumberOfRecords, int recordSize, String fileName){
         long sizeInBytes = (long) maxNumberOfRecords * recordSize;
-        MemorySegment segment = mapFileIntoMemorySegment(vmsIdentifier, sizeInBytes, fileName, truncate);
+        MemorySegment segment = mapFileIntoMemorySegment(vmsIdentifier, sizeInBytes, fileName,
+                new StandardOpenOption[]{
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.READ,
+                        StandardOpenOption.WRITE}
+                );
         return new AppendOnlyBoundedBuffer(segment, fileName);
     }
 
@@ -153,6 +159,17 @@ public class StorageUtils {
         File file = buildFile(vmsIdentifier, fileName);
         try {
             StandardOpenOption[] options = buildFileOpenOptions(truncate);
+            FileChannel fc = FileChannel.open(Path.of(file.toURI()), options);
+            LOGGER.log(DEBUG, "Attempt to open file in directory completed successfully: "+file.getAbsolutePath());
+            return mapFileChannelIntoMemorySegment(fc, bytes);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static MemorySegment mapFileIntoMemorySegment(String vmsIdentifier, long bytes, String fileName, StandardOpenOption[] options) {
+        File file = buildFile(vmsIdentifier, fileName);
+        try {
             FileChannel fc = FileChannel.open(Path.of(file.toURI()), options);
             LOGGER.log(DEBUG, "Attempt to open file in directory completed successfully: "+file.getAbsolutePath());
             return mapFileChannelIntoMemorySegment(fc, bytes);

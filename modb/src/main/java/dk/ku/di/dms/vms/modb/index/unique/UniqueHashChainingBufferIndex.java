@@ -10,6 +10,7 @@ import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyBoundedBuffer;
 import dk.ku.di.dms.vms.modb.storage.record.RecordBufferContext;
 import dk.ku.di.dms.vms.modb.utils.StorageUtils;
 
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,7 +20,7 @@ import static java.lang.System.Logger.Level.*;
 
 public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
-    public final Map<Long, AppendOnlyBoundedBuffer> chainingMap;
+    public final Map<Integer, AppendOnlyBoundedBuffer> chainingMap;
 
     public final String suffix;
 
@@ -33,9 +34,9 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     @Override
     public Object[] lookupByKey(IKey key){
-        long pos = this.getPosition(key.hashCode());
-        if (this.chainingMap.containsKey(pos)) {
-            long chainedPos = this.chainingMap.get(pos).address;
+        int index = this.getIndex(key.hashCode());
+        if (this.chainingMap.containsKey(index)) {
+            long chainedPos = this.chainingMap.get(index).address;
             Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
             IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
             if (existingKey.equals(key)) {
@@ -50,14 +51,14 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     @Override
     public void delete(IKey key) {
-        long pos = this.getPosition(key.hashCode());
-        if (this.chainingMap.containsKey(pos)) {
-            long chainedPos = this.chainingMap.get(pos).address;
+        int index = this.getIndex(key.hashCode());
+        if (this.chainingMap.containsKey(index)) {
+            long chainedPos = this.chainingMap.get(index).address;
             Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
             IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
             if (existingKey.equals(key)) {
                 // simple solution for now. ideal: delete the entry or the entire chain if solo entry
-                this.chainingMap.remove(pos);
+                this.chainingMap.remove(index);
                 return;
             }
         }
@@ -66,41 +67,28 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     @Override
     public void update(IKey key, Object[] record){
-        long pos = this.findRecordAddress(key);
-        if(pos != -1) {
-            this.doWrite(pos, record);
-            return;
-        }
-        // chain logic
-        pos = this.getPosition(key.hashCode());
-        if (this.chainingMap.containsKey(pos)) {
-            long chainedPos = this.chainingMap.get(pos).address;
-            Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
-            IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
-            // TODO iterate over chain...
-            if (existingKey.equals(key)) {
-                UNSAFE.putByte(null, chainedPos, Header.ACTIVE_BYTE);
-                UNSAFE.putInt(null, chainedPos + Header.SIZE, key.hashCode());
-                this.doWrite(pos, record);
-                return;
-            }
-        }
+        if (this.updated(key, record)) return;
         LOGGER.log(ERROR, "Cannot find an existing record. Perhaps something wrong in the insertion logic?\nKey: " + key+ " Hash: " + key.hashCode());
     }
 
     @Override
     public void upsert(IKey key, Object[] record){
+        if (this.updated(key, record)) return;
+        // haven't found so far, then insert
+        this.insert(key, record);
+    }
+
+    private boolean updated(IKey key, Object[] record) {
         // update logic
         long pos = this.findRecordAddress(key);
         if(pos != -1) {
             this.doWrite(pos, record);
-            return;
+            return true;
         }
-
         // chain logic
-        pos = this.getPosition(key.hashCode());
-        if (this.chainingMap.containsKey(pos)) {
-            long chainedPos = this.chainingMap.get(pos).address;
+        int index = this.getIndex(key.hashCode());
+        if (this.chainingMap.containsKey(index)) {
+            long chainedPos = this.chainingMap.get(index).address;
             Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
             IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
             // TODO iterate over chain...
@@ -108,54 +96,54 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
                 UNSAFE.putByte(null, chainedPos, Header.ACTIVE_BYTE);
                 UNSAFE.putInt(null, chainedPos + Header.SIZE, key.hashCode());
                 this.doWrite(pos, record);
-                return;
+                return true;
             }
         }
-
-        // haven't found so far, then insert
-        this.insert(key, record);
+        return false;
     }
 
     @Override
     public void insert(IKey key, Object[] record){
-        long pos = this.getFreePositionToInsert(key);
+        int keyHash = key.hashCode();
+        long pos = this.getFreePositionToInsert(keyHash);
         if(pos == -1){
-            long headPos = this.getPosition(key.hashCode());
+            int index = this.getIndex(keyHash);
             AppendOnlyBoundedBuffer aob;
-            if(this.chainingMap.containsKey(headPos)){
-                aob = this.chainingMap.get(headPos);
+            if(this.chainingMap.containsKey(index)){
+                aob = this.chainingMap.get(index);
             } else {
-                LOGGER.log(DEBUG, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+". Creating a new chaining....\nKey: " + key + " Hash: " + key.hashCode());
-                aob = StorageUtils.loadAppendOnlyBoundedBuffer(this.suffix, OPEN_ADDRESSING_ATTEMPTS, (int) this.recordSize, STR."\{this.recordBufferCtx.fileName}_\{headPos}", true);
-                this.chainingMap.put(headPos, aob);
+                LOGGER.log(DEBUG, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+". Creating a new chaining....\nKey: " + key + " Hash: " + keyHash);
+                aob = StorageUtils.loadAppendOnlyBoundedBuffer(this.suffix, OPEN_ADDRESSING_ATTEMPTS, (int) this.recordSize, STR."\{this.recordBufferCtx.fileName}_\{index}");
+                this.chainingMap.put(index, aob);
             }
-            pos = aob.address;
-            aob.forwardOffset(Schema.RECORD_HEADER + this.recordSize);
+            pos = aob.nextOffset();
+            aob.forwardOffset(this.recordSize);
             UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
-            UNSAFE.putInt(null, pos + Header.SIZE, key.hashCode());
+            UNSAFE.putInt(null, pos + Header.SIZE, keyHash);
             this.doWrite(pos, record);
             aob.force();
             this.chainSize++;
             return;
         }
         UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
-        UNSAFE.putInt(null, pos + Header.SIZE, key.hashCode());
+        UNSAFE.putInt(null, pos + Header.SIZE, keyHash);
         this.doWrite(pos, record);
         this.updateSize(1);
     }
 
     @Override
     public Object[] record(IKey key) {
-        long pos = this.getPosition(key.hashCode());
-        if (this.chainingMap.containsKey(pos)) {
+        int index = this.getIndex(key.hashCode());
+        if (this.chainingMap.containsKey(index)) {
             // before returning, make sure it is the same key
-            long chainedPos = this.chainingMap.get(pos).address;
+            long chainedPos = this.chainingMap.get(index).address;
             Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
             IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
             if (existingKey.equals(key)) {
                 return chainedRecord;
             }
         }
+        long pos = this.getPositionWithIndex(index);
         return this.readFromIndex(pos + Schema.RECORD_HEADER);
     }
 
@@ -172,15 +160,19 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         private final long mainCapacity;
         private int mainProgress;
 
-        private long currChain = -1;
+        private long currChain;
         private long chainCapacity;
         private int chainProgress;
+
+        private final Map<Integer, AppendOnlyBoundedBuffer> chainingMapCopy;
 
         public ChainedRecordIterator(long address, int recordSize, long capacity){
             this.nextAddress = address;
             this.recordSize = recordSize;
             this.mainCapacity = capacity;
             this.mainProgress = 0;
+            this.currChain = -1;
+            this.chainingMapCopy = new HashMap<>(chainingMap);
         }
 
         @Override
@@ -191,17 +183,19 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
                 this.nextAddress += recordSize;
             }
 
-            if(chainingMap.containsKey(this.nextAddress)){
-                if(this.currChain == -1) {
-                    AppendOnlyBoundedBuffer aob = chainingMap.get(this.nextAddress);
-                    this.chainCapacity = (aob.nextOffset() - aob.address) / this.recordSize;
+            if(this.currChain == -1) {
+                int keyHash = UNSAFE.getInt(null, this.nextAddress + Header.SIZE);
+                int index = getIndex(keyHash);
+                AppendOnlyBoundedBuffer aob = this.chainingMapCopy.remove(index);
+                if(aob != null){
+                    this.chainCapacity = (aob.nextOffset() - aob.address) / (this.recordSize);
                     this.currChain = aob.address;
                     this.chainProgress = 0;
                     return true;
-                } else {
-                    if(this.chainProgress < this.chainCapacity) return true;
-                    this.currChain = -1;
                 }
+            } else {
+                if(this.chainProgress < this.chainCapacity) return true;
+                this.currChain = -1;
             }
 
             return this.mainProgress < this.mainCapacity;
@@ -210,12 +204,12 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         @Override
         public IKey next() {
             if(this.currChain > -1){
-                SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.currChain + Header.ACTIVE_BYTE));
+                SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.currChain + Header.SIZE));
                 this.chainProgress++;
                 this.currChain += this.recordSize;
                 return res;
             }
-            SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.nextAddress + Header.ACTIVE_BYTE));
+            SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.nextAddress + Header.SIZE));
             this.mainProgress++;
             this.nextAddress += this.recordSize;
             return res;
@@ -223,6 +217,9 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
         @Override
         public long address(){
+            if(this.currChain > -1){
+                return this.currChain;
+            }
             return this.nextAddress;
         }
 
@@ -231,9 +228,9 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
     @Override
     public void reset() {
         super.reset();
-        Iterator<Map.Entry<Long, AppendOnlyBoundedBuffer>> it = this.chainingMap.entrySet().iterator();
+        Iterator<Map.Entry<Integer, AppendOnlyBoundedBuffer>> it = this.chainingMap.entrySet().iterator();
         while(it.hasNext()){
-            Map.Entry<Long, AppendOnlyBoundedBuffer> entry = it.next();
+            Map.Entry<Integer, AppendOnlyBoundedBuffer> entry = it.next();
             entry.getValue().unload();
             it.remove();
         }

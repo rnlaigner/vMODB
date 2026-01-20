@@ -63,7 +63,7 @@ public final class AppendOnlyBoundedBuffer extends RecordBufferContext {
      *
      */
     public void append(long srcAddress, long bytes){
-        UNSAFE.copyMemory(null, srcAddress, null, nextOffset, bytes);
+        UNSAFE.copyMemory(null, srcAddress, null, this.nextOffset, bytes);
         this.nextOffset += bytes;
     }
 

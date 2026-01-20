@@ -108,19 +108,24 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         return this.recordBufferCtx.address + (this.recordSize * this.getIndex(keyHash));
     }
 
+    long getPositionWithIndex(int index){
+        return this.recordBufferCtx.address + (this.recordSize * index);
+    }
+
     int getIndex(int keyHash){
         return (keyHash * 0x9E3779B9) >>> (32 - this.p);
     }
 
     @Override
     public void insert(IKey key, long srcAddress) {
-        long pos = this.getFreePositionToInsert(key);
+        int keyHash = key.hashCode();
+        long pos = this.getFreePositionToInsert(keyHash);
         if(pos == -1){
-            LOGGER.log(ERROR, "Cannot find an empty entry for inserting the record from address. Perhaps should increase number of entries?\nKey: " + key + " Hash: " + key.hashCode());
+            LOGGER.log(ERROR, "Cannot find an empty entry for inserting the record from address. Perhaps should increase number of entries?\nKey: " + key + " Hash: " + keyHash);
             return;
         }
         UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
-        UNSAFE.putInt(null, pos, key.hashCode());
+        UNSAFE.putInt(null, pos, keyHash);
         UNSAFE.copyMemory(null, srcAddress, null, pos + Schema.RECORD_HEADER, this.schema.getRecordSizeWithoutHeader());
         this.updateSize(1);
     }
@@ -180,13 +185,14 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     @Override
     public void insert(IKey key, Object[] record){
-        long pos = this.getFreePositionToInsert(key);
+        int keyHash = key.hashCode();
+        long pos = this.getFreePositionToInsert(keyHash);
         if(pos == -1){
-            LOGGER.log(ERROR, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+".\nKey: " + key + " Hash: " + key.hashCode());
+            LOGGER.log(ERROR, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+".\nKey: " + key + " Hash: " + keyHash);
             return;
         }
         UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
-        UNSAFE.putInt(null, pos + Header.SIZE, key.hashCode());
+        UNSAFE.putInt(null, pos + Header.SIZE, keyHash);
         this.doWrite(pos, record);
         this.updateSize(1);
     }
@@ -210,10 +216,10 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
     /**
      * Linear probing
      */
-    long getFreePositionToInsert(IKey key){
+    long getFreePositionToInsert(int keyHash){
         int attemptsToFind = OPEN_ADDRESSING_ATTEMPTS;
         int aux = 1;
-        long origPos = this.getPosition(key.hashCode());
+        long origPos = this.getPosition(keyHash);
         long pos = origPos;
         do {
             if(UNSAFE.getByte(null, pos) != Header.ACTIVE_BYTE) {
