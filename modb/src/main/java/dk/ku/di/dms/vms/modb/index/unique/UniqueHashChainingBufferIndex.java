@@ -13,6 +13,7 @@ import dk.ku.di.dms.vms.modb.utils.StorageUtils;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static dk.ku.di.dms.vms.modb.common.memory.MemoryUtils.UNSAFE;
@@ -26,10 +27,13 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     private int chainSize;
 
+    private final Set<Integer> pendingFlush;
+
     public UniqueHashChainingBufferIndex(String suffix, RecordBufferContext recordBufferContext, Schema schema, int[] columnsIndex, int capacity) {
         super(recordBufferContext, schema, columnsIndex, capacity);
         this.suffix = suffix;
         this.chainingMap = new ConcurrentHashMap<>();
+        this.pendingFlush = ConcurrentHashMap.newKeySet();
     }
 
     @Override
@@ -74,6 +78,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
                     }
                     UNSAFE.putByte(null, chainedPos, Header.INACTIVE_BYTE);
                     this.chainSize--;
+                    this.pendingFlush.add(index);
                     return;
                 }
                 chainedPos = chainedPos + this.recordSize;
@@ -114,6 +119,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
                     UNSAFE.putByte(null, chainedPos, Header.ACTIVE_BYTE);
                     UNSAFE.putInt(null, chainedPos + Header.SIZE, key.hashCode());
                     this.doWrite(pos, record);
+                    this.pendingFlush.add(index);
                     return true;
                 }
                 chainedPos = chainedPos + this.recordSize;
@@ -141,8 +147,8 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
             UNSAFE.putInt(null, pos + Header.SIZE, keyHash);
             this.doWrite(pos, record);
-            aob.force();
             this.chainSize++;
+            this.pendingFlush.add(index);
             return;
         }
         UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
@@ -174,6 +180,16 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             }
         }
         return null;
+    }
+
+    @Override
+    public void flush() {
+        this.recordBufferCtx.force();
+        Iterator<Integer> it = this.pendingFlush.iterator();
+        while(it.hasNext()){
+            this.chainingMap.get(it.next()).force();
+            it.remove();
+        }
     }
 
     @Override
