@@ -67,9 +67,16 @@ public final class PersistenceTest {
         int count = 0;
         IRecordIterator<IKey> it = index.iterator();
         while(it.hasNext()){
+            Object[] recordFromAddress = index.readFromIndex(it.address() + Schema.RECORD_HEADER);
             IKey currKey = it.next();
             System.out.println(currKey);
-            System.out.println(Arrays.toString(index.record(currKey)));
+            Object[] recordFromApi = index.record(currKey);
+            Assert.assertNotNull(recordFromApi);
+            System.out.println(Arrays.toString(recordFromApi));
+            Assert.assertEquals(recordFromAddress.length, recordFromApi.length);
+            for(int i = 0; i < recordFromAddress.length; i++){
+                Assert.assertEquals(recordFromAddress[i], recordFromApi[i]);
+            }
             count++;
         }
 
