@@ -577,18 +577,13 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         @Override
         public boolean hasNext() {
             while(this.iterator.hasNext()){
-                this.currRecord = ((ReadOnlyBufferIndex<IKey>)rawIndex).readFromIndex(iterator.address() + Schema.RECORD_HEADER);
+                long address = this.iterator.address();
+                this.currRecord = ((ReadOnlyBufferIndex<IKey>)rawIndex).readFromIndex(address + Schema.RECORD_HEADER);
                 IKey nextKey = KeyUtils.buildRecordKey(rawIndex.schema().getPrimaryKeyColumns(), this.currRecord);
-                // move iterator
-                this.iterator.next();
                 if(this.updatesPerKeyMapCopy.remove(nextKey)){
                     OperationSetOfKey opSet = updatesPerKeyMap.get(nextKey);
                     if(opSet == null) {
                         return true;
-                        // store entry in memory map to prevent new read from buffer
-//                    opSet = new OperationSetOfKey(WriteType.INSERT);
-//                    opSet.put(0L, TransactionWrite.upsert(WriteType.INSERT, this.currRecord));
-//                    updatesPerKeyMap.put(nextKey, opSet);
                     }
                     Entry<Long, TransactionWrite> entry = opSet.floorEntry(this.txCtx.readOnly ? this.txCtx.lastTid : this.txCtx.tid);
                     if(entry == null || entry.val().type == WriteType.DELETE) {
@@ -607,6 +602,8 @@ public final class PrimaryIndex implements IMultiVersionIndex {
 
         @Override
         public Object[] next() {
+            // move iterator
+            this.iterator.next();
             return this.currRecord;
         }
 

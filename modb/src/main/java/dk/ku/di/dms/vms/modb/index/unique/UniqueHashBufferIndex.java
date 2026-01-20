@@ -30,7 +30,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     protected static final int OPEN_ADDRESSING_ATTEMPTS = 20;
 
-    protected final RecordBufferContext recordBufferCtx;
+    protected final RecordBufferContext recordBufferContext;
 
     protected int size;
 
@@ -49,13 +49,13 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
     // for operations that require exclusive access to the whole buffer like reset and checkpoint
     private final ReentrantLock lock = new ReentrantLock();
 
-    public UniqueHashBufferIndex(RecordBufferContext recordBufferCtx, Schema schema, int[] columnsIndex, int capacity){
+    public UniqueHashBufferIndex(RecordBufferContext recordBufferContext, Schema schema, int[] columnsIndex, int capacity){
         super(schema, columnsIndex);
-        this.recordBufferCtx = recordBufferCtx;
+        this.recordBufferContext = recordBufferContext;
         this.recordSize = schema.getRecordSize();
         this.size = 0;
         this.capacity = capacity;
-        this.limit = recordBufferCtx.address + (this.recordSize * (this.capacity == 1 ? 1 : this.capacity - 1));
+        this.limit = recordBufferContext.address + (this.recordSize * (this.capacity == 1 ? 1 : this.capacity - 1));
         this.p = Integer.numberOfTrailingZeros(this.capacity);
     }
 
@@ -82,7 +82,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         }
         int initialSize = this.size;
         LOGGER.log(DEBUG, "Reset started with initial size: "+initialSize);
-        long pos = this.recordBufferCtx.address;
+        long pos = this.recordBufferContext.address;
         while(pos <= this.limit){
             if(UNSAFE.getByte(null, pos) == Header.ACTIVE_BYTE){
                 UNSAFE.putByte(null, pos, Header.INACTIVE_BYTE);
@@ -105,11 +105,11 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
      * % 0x7fffffff returns a positive value if the key is negative
      */
     long getPosition(int keyHash){
-        return this.recordBufferCtx.address + (this.recordSize * this.getIndex(keyHash));
+        return this.recordBufferContext.address + (this.recordSize * this.getIndex(keyHash));
     }
 
     long getPositionWithIndex(int index){
-        return this.recordBufferCtx.address + (this.recordSize * index);
+        return this.recordBufferContext.address + (this.recordSize * index);
     }
 
     int getIndex(int keyHash){
@@ -188,7 +188,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
         int keyHash = key.hashCode();
         long pos = this.getFreePositionToInsert(keyHash);
         if(pos == -1){
-            LOGGER.log(ERROR, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+".\nKey: " + key + " Hash: " + keyHash);
+            LOGGER.log(ERROR, "Cannot find an empty entry for "+this.recordBufferContext.fileName+".\nKey: " + key + " Hash: " + keyHash);
             return;
         }
         UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
@@ -283,7 +283,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     @Override
     public IRecordIterator<IKey> iterator() {
-        return new RecordIterator(this.recordBufferCtx.address, this.schema.getRecordSize(), this.capacity);
+        return new RecordIterator(this.recordBufferContext.address, this.schema.getRecordSize(), this.capacity);
     }
 
     @Override
@@ -316,7 +316,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     @Override
     public void flush() {
-        this.recordBufferCtx.force();
+        this.recordBufferContext.force();
     }
 
 }

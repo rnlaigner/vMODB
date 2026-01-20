@@ -114,6 +114,14 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
     @Override
     public void put(String uri, String payload) {
+        final String[] uriSplit = uri.split("/");
+        String op = uriSplit[uriSplit.length - 1];
+        if(op.contentEquals("load")){
+            // path: /warehouse/load
+            this.transactionManager.rebuildIndexes();
+            return;
+        }
+
         int numWare = Integer.parseInt(ConfigUtils.loadProperties().getProperty("num_ware"));
         boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
         this.transactionManager.reset();
@@ -128,9 +136,9 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
         if(checkpointing) {
             // bypass default interfaces
-            populateDisk(numWare, futures, pool);
+            this.populateDisk(numWare, futures, pool);
         } else {
-            populateInMemory(numWare, futures, pool);
+            this.populateInMemory(numWare, futures, pool);
         }
 
         long endTs = System.currentTimeMillis();
@@ -141,7 +149,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         for (int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
             futures[w_id - 1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30000 customer records for warehouse " + f_w_id);
+                LOGGER.log(DEBUG, "Started creating 30_000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 transactionManager.beginTransaction(-f_w_id, 0, 0, false);
                 Warehouse warehouse = generateWarehouse(f_w_id);
@@ -156,7 +164,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
                 }
                 // bypass GC of this big writeSet at experiment startup time
                 // transactionManager.commit();
-                LOGGER.log(DEBUG, "Finished creating 30000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(DEBUG, "Finished creating 30_000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {
@@ -171,51 +179,60 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
     @SuppressWarnings("unchecked")
     private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
 
-        var wareRepo = ((AbstractProxyRepository<Integer, Warehouse>) warehouseRepository);
-        var wareTable = wareRepo.getTable();
+        final var wareRepo = ((AbstractProxyRepository<Integer, Warehouse>) warehouseRepository);
+        final var wareIndex = wareRepo.getTable().underlyingPrimaryKeyIndex();
 
-        var distRepo = ((AbstractProxyRepository<District.DistrictId, District>) districtRepository);
-        var distTable = distRepo.getTable();
+        final var distRepo = ((AbstractProxyRepository<District.DistrictId, District>) districtRepository);
+        final var distIndex = distRepo.getTable().underlyingPrimaryKeyIndex();
 
-        var custRepo = ((AbstractProxyRepository<Customer.CustomerId, Customer>) customerRepository);
-        var custTable = custRepo.getTable();
+        final var custRepo = ((AbstractProxyRepository<Customer.CustomerId, Customer>) customerRepository);
+        final var custIndex = custRepo.getTable().underlyingPrimaryKeyIndex();
 
         for (int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
+            // coordinate accesses to primary index given it is designed for single-thread access
             futures[w_id - 1] = pool.submit(() -> {
-                LOGGER.log(INFO, "Started creating 30000 customer records for warehouse " + f_w_id);
+                LOGGER.log(INFO, "Started creating 30_000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 Warehouse warehouse = generateWarehouse(f_w_id);
                 Object[] warObj = wareRepo.extractFieldValuesFromEntityObject(warehouse);
-                IKey wareKey = KeyUtils.buildRecordKey( wareTable.schema().getPrimaryKeyColumns(), warObj );
-                wareTable.underlyingPrimaryKeyIndex().insert(wareKey, warObj);
+                IKey wareKey = KeyUtils.buildRecordKey( wareIndex.schema().getPrimaryKeyColumns(), warObj );
+                synchronized (wareIndex) {
+                    wareIndex.insert(wareKey, warObj);
+                }
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     District district = generateDistrict(d_id, f_w_id);
                     Object[] distObj = distRepo.extractFieldValuesFromEntityObject(district);
-                    IKey distKey = KeyUtils.buildRecordKey( distTable.schema().getPrimaryKeyColumns(), distObj );
-                    distTable.underlyingPrimaryKeyIndex().insert(distKey, distObj);
+                    IKey distKey = KeyUtils.buildRecordKey( distIndex.schema().getPrimaryKeyColumns(), distObj );
+                    synchronized (distIndex) {
+                        distIndex.insert(distKey, distObj);
+                    }
                     for (int c_id = 1; c_id <= TPCcConstants.NUM_CUST_PER_DIST; c_id++) {
                         Customer customer = generateCustomer(c_id, d_id, f_w_id);
                         Object[] custObj = custRepo.extractFieldValuesFromEntityObject(customer);
-                        IKey custKey = KeyUtils.buildRecordKey( custTable.schema().getPrimaryKeyColumns(), custObj );
-                        custTable.underlyingPrimaryKeyIndex().insert(custKey, custObj);
+                        IKey custKey = KeyUtils.buildRecordKey( custIndex.schema().getPrimaryKeyColumns(), custObj );
+                        synchronized (custIndex) {
+                            custIndex.insert(custKey, custObj);
+                        }
                     }
                 }
-                LOGGER.log(INFO, "Finished creating 30000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(INFO, "Finished creating 30_000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
                 futures[w_id-1].get();
             }
+            futures[0] = pool.submit(wareIndex::flush);
+            futures[1] = pool.submit(distIndex::flush);
+            futures[2] = pool.submit(custIndex::flush);
+            for (int i = 0; i < 3; i++) {
+                futures[i].get();
+            }
+            this.transactionManager.rebuildIndexes();
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
-            return;
         }
-        wareTable.underlyingPrimaryKeyIndex().flush();
-        distTable.underlyingPrimaryKeyIndex().flush();
-        custTable.underlyingPrimaryKeyIndex().flush();
-        this.transactionManager.rebuildIndexes();
     }
 
     public static Warehouse generateWarehouse(int W_ID)

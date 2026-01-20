@@ -56,7 +56,7 @@ public final class PersistenceTest {
         MemorySegment memorySegment = fc.map(FileChannel.MapMode.READ_WRITE, 0,
                 (long) capacity * schema.getRecordSize(), Arena.ofShared());
         RecordBufferContext bufCtx = RecordBufferContext.build(memorySegment, fileName);
-        UniqueHashChainingBufferIndex index = new UniqueHashChainingBufferIndex("test", bufCtx, schema, schema.getPrimaryKeyColumns(),capacity);
+        UniqueHashChainingBufferIndex index = UniqueHashChainingBufferIndex.build("test", bufCtx, schema, schema.getPrimaryKeyColumns(),capacity, true);
 
         index.insert(IntKey.of(1), new Object[] { 1, 10 } );
         index.insert(IntKey.of(2), new Object[] { 2, 20 } );

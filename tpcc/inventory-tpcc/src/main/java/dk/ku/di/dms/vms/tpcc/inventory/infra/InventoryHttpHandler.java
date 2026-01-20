@@ -99,21 +99,29 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
 
     @Override
     public void put(String uri, String payload) {
+        final String[] uriSplit = uri.split("/");
+        String op = uriSplit[uriSplit.length - 1];
+        if(op.contentEquals("load")){
+            // path: /inventory/load
+            this.transactionManager.rebuildIndexes();
+            return;
+        }
+
         int numWare = Integer.parseInt(ConfigUtils.loadProperties().getProperty("num_ware"));
         boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
         this.transactionManager.reset();
 
         ForkJoinPool pool = ForkJoinPool.commonPool();
-        Future<?>[] futures = new Future[numWare];
+        Future<?>[] futures = new Future[numWare+1];
 
         LOGGER.log(INFO, "Populating inventory VMS...");
         long initTs = System.currentTimeMillis();
 
         if(checkpointing) {
             // bypass default interfaces
-            populateDisk(numWare, futures, pool);
+            this.populateDisk(numWare, futures, pool);
         } else {
-            populateInMemory(numWare, futures, pool);
+            this.populateInMemory(numWare, futures, pool);
         }
 
         long endTs = System.currentTimeMillis();
@@ -122,53 +130,56 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
 
     @SuppressWarnings("unchecked")
     private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
-        LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
 
-        var itemRepo = ((AbstractProxyRepository<Integer, Item>) itemRepository);
-        var itemTable = itemRepo.getTable();
+        final var itemRepo = ((AbstractProxyRepository<Integer, Item>) itemRepository);
+        final var itemIndex = itemRepo.getTable().underlyingPrimaryKeyIndex();
 
-        var stockRepo = ((AbstractProxyRepository<Stock.StockId, Stock>) stockRepository);
-        var stockTable = stockRepo.getTable();
-
-        long initTs = System.currentTimeMillis();
+        final var stockRepo = ((AbstractProxyRepository<Stock.StockId, Stock>) stockRepository);
+        final var stockIndex = stockRepo.getTable().underlyingPrimaryKeyIndex();
 
         // item
-        for(int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++){
-            Item item = generateItem(i_id);
-            Object[] itemObj = itemRepo.extractFieldValuesFromEntityObject(item);
-            IKey itemKey = KeyUtils.buildRecordKey( itemTable.schema().getPrimaryKeyColumns(), itemObj );
-            itemTable.underlyingPrimaryKeyIndex().insert(itemKey, itemObj);
-        }
-
-        long endTs = System.currentTimeMillis();
-        LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(endTs-initTs)+" ms");
+        futures[0] = pool.submit(() -> {
+            LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
+            long internalInitTs = System.currentTimeMillis();
+            for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
+                Item item = generateItem(i_id);
+                Object[] itemObj = itemRepo.extractFieldValuesFromEntityObject(item);
+                IKey itemKey = KeyUtils.buildRecordKey(itemIndex.schema().getPrimaryKeyColumns(), itemObj);
+                itemIndex.insert(itemKey, itemObj);
+            }
+            LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" item records in "+(System.currentTimeMillis()-internalInitTs)+" ms");
+        });
 
         // stock
         for(int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
-            futures[w_id-1] = pool.submit(() -> {
+            futures[w_id] = pool.submit(() -> {
                 LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
                     Stock stock = generateStockItem(f_w_id, i_id);
                     Object[] stockObj = stockRepo.extractFieldValuesFromEntityObject(stock);
-                    IKey stockKey = KeyUtils.buildRecordKey( stockTable.schema().getPrimaryKeyColumns(), stockObj );
-                    stockTable.underlyingPrimaryKeyIndex().insert(stockKey, stockObj);
+                    IKey stockKey = KeyUtils.buildRecordKey( stockIndex.schema().getPrimaryKeyColumns(), stockObj );
+                    synchronized (stockIndex) {
+                        stockIndex.insert(stockKey, stockObj);
+                    }
                 }
                 LOGGER.log(INFO, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");
             });
         }
         try {
-            for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
+            for (int w_id = 0; w_id <= numWare; w_id++) {
+                futures[w_id].get();
             }
+            futures[0] = pool.submit(itemIndex::flush);
+            futures[1] = pool.submit(stockIndex::flush);
+            for (int i = 0; i < 2; i++) {
+                futures[i].get();
+            }
+            this.transactionManager.rebuildIndexes();
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
-            return;
         }
-        itemTable.underlyingPrimaryKeyIndex().flush();
-        stockTable.underlyingPrimaryKeyIndex().flush();
-        this.transactionManager.rebuildIndexes();
     }
 
     private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {

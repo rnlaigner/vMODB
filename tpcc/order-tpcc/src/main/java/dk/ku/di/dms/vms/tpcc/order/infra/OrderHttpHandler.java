@@ -113,6 +113,14 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
 
     @Override
     public void put(String uri, String payload) {
+        final String[] uriSplit = uri.split("/");
+        String op = uriSplit[uriSplit.length - 1];
+        if(op.contentEquals("load")){
+            // path: /order/load
+            this.transactionManager.rebuildIndexes();
+            return;
+        }
+
         int numWare = Integer.parseInt(ConfigUtils.loadProperties().getProperty("num_ware"));
         boolean checkpointing = Boolean.parseBoolean(ConfigUtils.loadProperties().getProperty("checkpointing"));
         this.transactionManager.reset();
@@ -125,9 +133,9 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
 
         if(checkpointing) {
             // bypass default interfaces
-            populateDisk(numWare, futures, pool);
+            this.populateDisk(numWare, futures, pool);
         } else {
-            populateInMemory(numWare, futures, pool);
+            this.populateInMemory(numWare, futures, pool);
         }
 
         long endTs = System.currentTimeMillis();
@@ -137,16 +145,16 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
     @SuppressWarnings("unchecked")
     private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
 
-        var orderRepo = ((AbstractProxyRepository<Order.OrderId, Order>) orderRepository);
-        var orderTable = orderRepo.getTable();
+        final var orderRepo = ((AbstractProxyRepository<Order.OrderId, Order>) orderRepository);
+        final var orderIndex = orderRepo.getTable().underlyingPrimaryKeyIndex();
 
-        var orderLineRepo = ((AbstractProxyRepository<OrderLine.OrderLineId, OrderLine>) orderLineRepository);
-        var orderLineTable = orderLineRepo.getTable();
+        final var orderLineRepo = ((AbstractProxyRepository<OrderLine.OrderLineId, OrderLine>) orderLineRepository);
+        final var orderLineIndex = orderLineRepo.getTable().underlyingPrimaryKeyIndex();
 
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(INFO, "Started creating 30000 order records for warehouse " + f_w_id);
+                LOGGER.log(INFO, "Started creating 30_000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
@@ -154,32 +162,38 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                         int ol_count = randomNumber(5, 15);
                         Order order = new Order(o_id, d_id, f_w_id, randomNumber(1, 3000), new Date(), carrier_id, ol_count, 1);
                         Object[] orderObj = orderRepo.extractFieldValuesFromEntityObject(order);
-                        IKey orderKey = KeyUtils.buildRecordKey( orderTable.schema().getPrimaryKeyColumns(), orderObj );
-                        orderTable.underlyingPrimaryKeyIndex().insert(orderKey, orderObj);
+                        IKey orderKey = KeyUtils.buildRecordKey( orderIndex.schema().getPrimaryKeyColumns(), orderObj );
+                        synchronized (orderIndex) {
+                            orderIndex.insert(orderKey, orderObj);
+                        }
                         Date ol_delivery_d = o_id < 2101 ? new Date() : null;
                         float ol_amount = o_id < 2101 ? 0 : (float) (Math.floor((ThreadLocalRandom.current().nextDouble() * 9999.99) * 100) / 100.0);
                         for (int ol_id = 1; ol_id <= ol_count; ol_id++) {
                             OrderLine orderLine = new OrderLine(o_id, d_id, f_w_id, ol_id, randomNumber(1, TPCcConstants.NUM_ITEMS), f_w_id, ol_delivery_d, 5, ol_amount, makeAlphaString(26, 50));
                             Object[] orderLineObj = orderLineRepo.extractFieldValuesFromEntityObject(orderLine);
-                            IKey orderLineKey = KeyUtils.buildRecordKey( orderLineTable.schema().getPrimaryKeyColumns(), orderLineObj );
-                            orderLineTable.underlyingPrimaryKeyIndex().insert(orderLineKey, orderLineObj);
+                            IKey orderLineKey = KeyUtils.buildRecordKey( orderLineIndex.schema().getPrimaryKeyColumns(), orderLineObj );
+                            synchronized (orderLineIndex) {
+                                orderLineIndex.insert(orderLineKey, orderLineObj);
+                            }
                         }
                     }
                 }
-                LOGGER.log(INFO, "Finished creating 30000 order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(INFO, "Finished creating 30_000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
                 futures[w_id-1].get();
             }
+            futures[0] = pool.submit(orderIndex::flush);
+            futures[1] = pool.submit(orderLineIndex::flush);
+            for (int i = 0; i < 2; i++) {
+                futures[i].get();
+            }
+            this.transactionManager.rebuildIndexes();
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
-            return;
         }
-        orderTable.underlyingPrimaryKeyIndex().flush();
-        orderLineTable.underlyingPrimaryKeyIndex().flush();
-        this.transactionManager.rebuildIndexes();
     }
 
     private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
@@ -187,7 +201,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30000 order records for warehouse " + f_w_id);
+                LOGGER.log(DEBUG, "Started creating 30_000 customer records for warehouse " + f_w_id);
                 transactionManager.beginTransaction(-f_w_id, 0, -numWare, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
@@ -205,7 +219,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                     }
                 }
                 // transactionManager.commit();
-                LOGGER.log(DEBUG, "Finished creating 30000 order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(DEBUG, "Finished creating 30_000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {

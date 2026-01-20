@@ -43,6 +43,7 @@ public final class Main {
     private static void loadMenu(String menuType) {
         Coordinator coordinator = null;
         final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
+        final boolean truncate = Boolean.parseBoolean(PROPERTIES.getProperty("checkpointing_truncate"));
         List<Map<String,Iterator<Object>>> input;
 
         Map<String, Integer> numTxInputPerType = new HashMap<>(3);
@@ -65,9 +66,9 @@ public final class Main {
             String choice = scanner.nextLine();
             switch (choice) {
                 case "1": {
-                    futures[0] = pool.submit(() -> submitDataPopulationRequest("order"));
-                    futures[1] = pool.submit(() -> submitDataPopulationRequest("warehouse"));
-                    futures[2] = pool.submit(() -> submitDataPopulationRequest("inventory"));
+                    futures[0] = pool.submit(() -> submitDataPopulationRequest("order", truncate));
+                    futures[1] = pool.submit(() -> submitDataPopulationRequest("warehouse", truncate));
+                    futures[2] = pool.submit(() -> submitDataPopulationRequest("inventory", truncate));
                     try {
                         for (int i = 2; i >= 0; i--) {
                             futures[i].get();
@@ -173,15 +174,16 @@ public final class Main {
         System.exit(0);
     }
 
-    private static void submitDataPopulationRequest(String vms) {
+    private static void submitDataPopulationRequest(String vms, boolean truncate) {
         MinimalHttpClient client = null;
+        String param = truncate ? "populate" : "load";
         try {
             client = DataLoadUtils.obtainHttpClient(vms);
-            if (client.sendRequest("PUT", "", "") != 200) {
-                System.out.println("Error on PUT endpoint of order!");
+            if (client.sendRequest("PUT", "", param) != 200) {
+                System.out.println("Error on PUT endpoint of "+vms);
             }
         } catch (IOException e) {
-            System.out.println("Error on PUT endpoint of order!");
+            System.out.println("Error on PUT endpoint of "+vms);
         } finally {
             if(client != null) DataLoadUtils.returnHttpClient(vms, client);
         }

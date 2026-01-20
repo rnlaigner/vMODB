@@ -10,11 +10,12 @@ import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyBoundedBuffer;
 import dk.ku.di.dms.vms.modb.storage.record.RecordBufferContext;
 import dk.ku.di.dms.vms.modb.utils.StorageUtils;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
+import java.util.stream.Stream;
 
 import static dk.ku.di.dms.vms.modb.common.memory.MemoryUtils.UNSAFE;
 import static java.lang.System.Logger.Level.*;
@@ -23,34 +24,50 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     public final Map<Integer, AppendOnlyBoundedBuffer> chainingMap;
 
-    public final String suffix;
+    private final String prefix;
 
     private int chainSize;
 
     private final Set<Integer> pendingFlush;
 
-    public UniqueHashChainingBufferIndex(String suffix, RecordBufferContext recordBufferContext, Schema schema, int[] columnsIndex, int capacity) {
+    private UniqueHashChainingBufferIndex(String prefix, RecordBufferContext recordBufferContext, Schema schema, int[] columnsIndex, int capacity, Map<Integer, AppendOnlyBoundedBuffer> chainingMap) {
         super(recordBufferContext, schema, columnsIndex, capacity);
-        this.suffix = suffix;
-        this.chainingMap = new ConcurrentHashMap<>();
-        this.pendingFlush = ConcurrentHashMap.newKeySet();
+        this.prefix = prefix;
+        this.chainingMap = chainingMap;
+        this.pendingFlush = new HashSet<>();
+    }
+
+    public static UniqueHashChainingBufferIndex build(String prefix, RecordBufferContext recordBufferContext, Schema schema, int[] columnsIndex, int capacity, boolean isTruncating){
+        if(isTruncating){
+            return new UniqueHashChainingBufferIndex(prefix, recordBufferContext, schema, columnsIndex, capacity, new HashMap<>());
+        }
+        // check existing files
+        String basePathStr = StorageUtils.getBasePath(prefix);
+        Path basePath = Paths.get(basePathStr);
+        try(Stream<Path> paths = Files.walk(basePath)){
+            List<Path> chains = paths.filter(path -> path.toString().contains(recordBufferContext.fileName+"_")).toList();
+            Map<Integer, AppendOnlyBoundedBuffer> map = new HashMap<>(chains.size());
+            for(Path path : chains){
+                String fileName = path.getFileName().toString();
+                Integer index = Integer.valueOf(fileName.substring(fileName.indexOf("_")+1,fileName.indexOf(".")));
+                AppendOnlyBoundedBuffer aob = StorageUtils.loadAppendOnlyBoundedBuffer(prefix, OPEN_ADDRESSING_ATTEMPTS, schema.getRecordSize(), STR."\{recordBufferContext.fileName}_\{index}", false);
+                map.put(index, aob);
+            }
+            return new UniqueHashChainingBufferIndex(prefix, recordBufferContext, schema, columnsIndex, capacity, map);
+        } catch (IOException e){
+            LOGGER.log(ERROR, "Error captured while trying to access base path: \n"+e);
+        }
+        return new UniqueHashChainingBufferIndex(prefix, recordBufferContext, schema, columnsIndex, capacity, new HashMap<>());
     }
 
     @Override
     public Object[] lookupByKey(IKey key){
-        int index = this.getIndex(key.hashCode());
-        if (this.chainingMap.containsKey(index)) {
-            long chainedPos = this.chainingMap.get(index).address;
-            Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
-            IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
-            if (existingKey.equals(key)) {
-                return chainedRecord;
-            } else {
-                return super.lookupByKey(key);
-            }
-        } else {
-            return super.lookupByKey(key);
+        long pos = this.findRecordAddress(key);
+        if(pos != -1) {
+            return this.readFromIndex(pos + Schema.RECORD_HEADER);
         }
+        int index = this.getIndex(key.hashCode());
+        return lookupChain(key, index);
     }
 
     @Override
@@ -138,8 +155,8 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             if(this.chainingMap.containsKey(index)){
                 aob = this.chainingMap.get(index);
             } else {
-                LOGGER.log(DEBUG, "Cannot find an empty entry for "+this.recordBufferCtx.fileName+". Creating a new chaining....\nKey: " + key + " Hash: " + keyHash);
-                aob = StorageUtils.loadAppendOnlyBoundedBuffer(this.suffix, OPEN_ADDRESSING_ATTEMPTS, (int) this.recordSize, STR."\{this.recordBufferCtx.fileName}_\{index}");
+                LOGGER.log(DEBUG, "Cannot find an empty entry for "+this.recordBufferContext.fileName+". Creating a new chaining....\nKey: " + key + " Hash: " + keyHash);
+                aob = StorageUtils.loadAppendOnlyBoundedBuffer(this.prefix, OPEN_ADDRESSING_ATTEMPTS, (int) this.recordSize, STR."\{this.recordBufferContext.fileName}_\{index}", true);
                 this.chainingMap.put(index, aob);
             }
             pos = aob.nextOffset();
@@ -166,6 +183,10 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         if (hashedKey.equals(key)) {
             return hashedRecord;
         }
+        return this.lookupChain(key, index);
+    }
+
+    private Object[] lookupChain(IKey key, int index) {
         AppendOnlyBoundedBuffer aob = this.chainingMap.get(index);
         if (aob != null) {
             long chainedPos = aob.address;
@@ -184,7 +205,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     @Override
     public void flush() {
-        this.recordBufferCtx.force();
+        this.recordBufferContext.force();
         Iterator<Integer> it = this.pendingFlush.iterator();
         while(it.hasNext()){
             this.chainingMap.get(it.next()).force();
@@ -194,7 +215,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     @Override
     public IRecordIterator<IKey> iterator() {
-        return new ChainedRecordIterator(this.recordBufferCtx.address, this.schema.getRecordSize(), this.capacity);
+        return new ChainedRecordIterator(this.recordBufferContext.address, this.schema.getRecordSize(), this.capacity);
     }
 
     final class ChainedRecordIterator implements IRecordIterator<IKey> {
