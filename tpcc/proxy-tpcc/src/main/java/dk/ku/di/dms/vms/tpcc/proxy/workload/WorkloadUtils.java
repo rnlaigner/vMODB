@@ -196,7 +196,7 @@ public final class WorkloadUtils {
         }
     }
 
-    public static List<Map<String,Iterator<Object>>> mapWorkloadInputFiles(int numWare, Map<String, Integer> txRatioMap){
+    public static List<Map<String, Iterator<Object>>> mapWorkloadInputFiles(int numWare, Map<String, Integer> txRatioMap){
         LOGGER.log(INFO, "Mapping "+numWare+" warehouse input files from disk...");
         long initTs = System.currentTimeMillis();
         List<Map<String, Iterator<Object>>> input = new ArrayList<>(numWare);

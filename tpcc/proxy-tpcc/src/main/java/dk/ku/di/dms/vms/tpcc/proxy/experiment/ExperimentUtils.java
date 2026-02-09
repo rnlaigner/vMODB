@@ -6,6 +6,7 @@ import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionInput;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.IdentifiableNode;
+import dk.ku.di.dms.vms.modb.transaction.internal.Entry;
 import dk.ku.di.dms.vms.tpcc.common.events.NewOrderWareIn;
 import dk.ku.di.dms.vms.tpcc.common.events.PaymentIn;
 import dk.ku.di.dms.vms.tpcc.proxy.workload.WorkloadUtils;
@@ -131,7 +132,7 @@ public final class ExperimentUtils {
 
     public record ExperimentStats(long initTs, int runTime, long usefulRuntime, int numCompletedWithWarmUp, int numCompleted, double txPerSec, double txPerSecUseful, double average, double percentile_50, double percentile_75, double percentile_90, double percentile_99){}
 
-    public static void writeResultsToFile(int numWare, ExperimentStats expStats, int runTime, int warmUp, int numTransactionWorkers, int batchWindow, int maxTransactionsPerBatch, Tuple<Integer, String>[] txRatio, String logging, String checkpointing){
+    public static void writeResultsToFile(int numWare, ExperimentStats expStats, int runTime, int warmUp, int numTransactionWorkers, int batchWindow, int maxTransactionsPerBatch, Tuple<Integer, String>[] txRatio, Map<String, Integer> numTxInputPerType, String logging, String checkpointing){
         LocalDateTime time = LocalDateTime.ofInstant(Instant.ofEpochMilli(expStats.initTs),  ZoneId.systemDefault());
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd_MM_yy_HH_mm_ss");
         String formattedDate = time.format(formatter);
@@ -160,6 +161,13 @@ public final class ExperimentUtils {
             writer.newLine();
             for(Tuple<Integer, String> tx : txRatio){
                 writer.write("  "+tx.t2+"=" + tx.t1);
+                writer.newLine();
+            }
+            writer.write("Transaction input size: ");
+            writer.newLine();
+            for(Map.Entry<String, Integer> tx : numTxInputPerType.entrySet()){
+                if(tx.getValue() <= 0) continue;
+                writer.write("  "+tx.getKey()+"=" + tx.getValue());
                 writer.newLine();
             }
             writer.write("Logging: "+logging);

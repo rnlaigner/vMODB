@@ -325,10 +325,6 @@ public final class TransactionWorker extends StoppableRunnable {
         this.precedenceMapCache.put(entry.getKey(), precedenceMap);
     }
 
-    private static final Deque<Map<String, Long>> PREVIOUS_BATCH_PER_VMS_CACHE = new ConcurrentLinkedDeque<>();
-    private static final Deque<Map<String, Integer>> NUM_TIDS_PER_VMS_CACHE = new ConcurrentLinkedDeque<>();
-
-
     private boolean advanceCurrentBatch() {
         Map<String, PrecedenceInfo> precedenceMap = this.precedenceMapCache.remove(this.currBatchContext.batchOffset - this.numWorkers);
         if(precedenceMap == null) {
@@ -337,11 +333,9 @@ public final class TransactionWorker extends StoppableRunnable {
         // cannot issue a batch if we don't know the last batch of each VMS in this batch
         // the last batch might have been updated by previous workers in the ring
         // update for those vms that have not participated in this batch
-        Map<String, Long> previousBatchPerVms = PREVIOUS_BATCH_PER_VMS_CACHE.poll();
-        if(previousBatchPerVms == null) previousBatchPerVms = new HashMap<>();
-
-        Map<String, Integer> numberOfTIDsPerVms = NUM_TIDS_PER_VMS_CACHE.poll();
-        if(numberOfTIDsPerVms == null) numberOfTIDsPerVms = new HashMap<>();
+        // WARNING: DO NOT REUSE THESE DATA STRUCTURES SINCE THEY CAN BE ACCESSED CONCURRENTLY BY THE COORDINATOR
+        Map<String, Long> previousBatchPerVms = new HashMap<>();
+        Map<String, Integer> numberOfTIDsPerVms = new HashMap<>();
 
         for(Map.Entry<String, VmsTracking> vmsEntry : this.vmsTrackingMap.entrySet()){
             VmsTracking vms = vmsEntry.getValue();
@@ -373,12 +367,6 @@ public final class TransactionWorker extends StoppableRunnable {
         long lastTid = this.tid == this.startingTidBatch ? this.lastBatchContext.lastTid : this.tid - 1;
         this.currBatchContext.seal(this.tid - this.startingTidBatch, lastTid, previousBatchPerVms, numberOfTIDsPerVms);
         this.coordinatorQueue.add(this.currBatchContext);
-
-        // cleanup last batch context
-        this.lastBatchContext.previousBatchPerVms.clear();
-        PREVIOUS_BATCH_PER_VMS_CACHE.addLast(this.lastBatchContext.previousBatchPerVms);
-        this.lastBatchContext.numberOfTIDsPerVms.clear();
-        NUM_TIDS_PER_VMS_CACHE.addLast( this.lastBatchContext.numberOfTIDsPerVms);
 
         // optimization: iterate over all vms in the last batch, filter those which last tid != this.tid
         // after filtering, send a map containing the vms (identifier) and their corresponding last TIDs to the next transaction worker in the ring
