@@ -49,8 +49,7 @@ public final class WarehouseService {
         if(in.by_name){
             List<Customer> customers = this.customerRepository.getCustomerByLastName(in.c_d_id, in.c_w_id, in.c_last);
             if(customers.isEmpty()){
-                String msg = "Empty customer list\nc_d_id: %d c_w_id: %d c_last: %s\n".formatted(in.c_d_id, in.c_w_id, in.c_last);
-                throw new RuntimeException(msg);
+                throw new RuntimeException("Empty customer list\nc_d_id: %d c_w_id: %d c_last: %s\n".formatted(in.c_d_id, in.c_w_id, in.c_last));
             }
             int index = customers.size() / 2;
             if (customers.size() % 2 == 0) {
@@ -59,7 +58,7 @@ public final class WarehouseService {
             customer = customers.get(index);
             // LOGGER.log(DEBUG, customers);
         } else {
-            customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
+            customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.c_d_id, in.c_w_id));
             // LOGGER.log(DEBUG, customer);
         }
 
@@ -75,7 +74,7 @@ public final class WarehouseService {
         customer.c_payment_cnt += 1;
         this.customerRepository.update(customer);
 
-        String h_data = "%s    %s".formatted( warehouse.w_name.length() > 10 ? warehouse.w_name.substring(0, 10) : warehouse.w_name, district.d_name.length() > 10 ? district.d_name.substring(0, 10) : district.d_name );
+        String h_data = "%s    %s".formatted(warehouse.w_name.length() > 10 ? warehouse.w_name.substring(0, 10) : warehouse.w_name, district.d_name.length() > 10 ? district.d_name.substring(0, 10) : district.d_name);
 
         return new PaymentOut(in.w_id, in.d_id, in.c_id, in.c_w_id, in.c_d_id, in.amount, h_data);
     }

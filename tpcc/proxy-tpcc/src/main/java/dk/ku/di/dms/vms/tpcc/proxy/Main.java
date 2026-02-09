@@ -44,7 +44,7 @@ public final class Main {
         Coordinator coordinator = null;
         final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
         final boolean truncate = Boolean.parseBoolean(PROPERTIES.getProperty("checkpointing_truncate"));
-        List<Map<String,Iterator<Object>>> input;
+        List<Map<String, Iterator<Object>>> input;
 
         Map<String, Integer> numTxInputPerType = new HashMap<>(3);
         numTxInputPerType.put("new_order", Integer.valueOf(PROPERTIES.get("new_order_input_size").toString()));
@@ -57,6 +57,8 @@ public final class Main {
         // data population
         ForkJoinPool pool = ForkJoinPool.commonPool();
         Future<?>[] futures = new Future[3];
+
+        boolean populated = false;
 
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
@@ -73,6 +75,7 @@ public final class Main {
                         for (int i = 2; i >= 0; i--) {
                             futures[i].get();
                         }
+                        populated = true;
                     } catch(InterruptedException | ExecutionException e){
                         System.out.println("Error on PUT endpoint of one or more of the endpoints!");
                     }
@@ -95,6 +98,15 @@ public final class Main {
 
                     if(numWare != numFiles){
                         System.out.println("Number of warehouses ("+numWare+") != Number of input files ("+numFiles+")");
+                        System.out.println("Do you want to proceed? [y/n]");
+                        String resp = scanner.nextLine();
+                        if(resp.equalsIgnoreCase("n")){
+                            break;
+                        }
+                    }
+
+                    if(!populated){
+                        System.out.println("Data has not been populated into VMS states!");
                         System.out.println("Do you want to proceed? [y/n]");
                         String resp = scanner.nextLine();
                         if(resp.equalsIgnoreCase("n")){
@@ -160,6 +172,7 @@ public final class Main {
                     // has to wait for all submitted transactions to commit in order to send the reset
                     if (checkCompleteness(coordinator, scanner)) break;
                     DataLoadUtils.cleanup(true);
+                    populated = false;
                     System.out.println("VMS states reset.");
                     break;
                 case "q":

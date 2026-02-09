@@ -17,11 +17,11 @@ public final class BatchContext {
     // set of terminal VMSs that has not voted yet
     public final Set<String> missingVotes;
 
-    public final Set<String> terminalVMSs;
+    public final Set<String> terminalVMSes;
 
     public Map<String, Long> previousBatchPerVms;
 
-    public Map<String,Integer> numberOfTIDsPerVms;
+    public Map<String, Integer> numberOfTIDsPerVms;
 
     public long tidAborted;
 
@@ -31,7 +31,7 @@ public final class BatchContext {
 
     public BatchContext(long batchOffset) {
         this.batchOffset = batchOffset;
-        this.terminalVMSs = new HashSet<>();
+        this.terminalVMSes = new HashSet<>();
         this.missingVotes = new HashSet<>();
     }
 
@@ -44,7 +44,7 @@ public final class BatchContext {
         this.previousBatchPerVms = previousBatchPerVms;
         this.numberOfTIDsPerVms = numberOfTIDsPerVms;
         // must be a modifiable hash set because the set will be modified upon BATCH_COMPLETE messages received
-        this.missingVotes.addAll(this.terminalVMSs);
+        this.missingVotes.addAll(this.terminalVMSes);
     }
 
 }

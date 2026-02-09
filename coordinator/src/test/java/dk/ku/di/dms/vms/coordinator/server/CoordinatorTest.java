@@ -440,6 +440,53 @@ public final class CoordinatorTest {
         Assert.assertTrue(txWorker1Tid == 10 && txWorker2Tid == 20);
     }
 
+    @Test
+    public void testTwoTxnWorkersOnlyOneProcessTxn() throws InterruptedException {
+        var vmsMetadataMap = buildTestVmsMetadataMap();
+        Map<String, TransactionDAG> transactionMap = buildTestTransactionDAGMap();
+        Map<String, VmsNode[]> vmsNodesPerDAG = buildTestVmsPerDagMap(transactionMap, vmsMetadataMap);
+        Map<String, IVmsWorker> workers = buildTestVmsWorker();
+
+        var txInputQueue1 = new ConcurrentLinkedDeque<TransactionInput>();
+        var precedenceMapQueue1 = new ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>>();
+
+        var txInputQueue2 = new ConcurrentLinkedDeque<TransactionInput>();
+        var precedenceMapQueue2 = new ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>>();
+
+        Queue<Object> coordinatorQueue = new ConcurrentLinkedDeque<>();
+
+        var txWorker1 = TransactionWorker.build(1, txInputQueue1, 1, MAX_NUM_TID_BATCH, 1000,
+                2, precedenceMapQueue1, precedenceMapQueue2, transactionMap, vmsNodesPerDAG, workers,
+                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+
+        var txWorker2 = TransactionWorker.build(2, txInputQueue2, 11, MAX_NUM_TID_BATCH, 1000,
+                2, precedenceMapQueue2, precedenceMapQueue1, transactionMap, vmsNodesPerDAG, workers,
+                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+
+        buildAndQueueStarterPrecedenceMap(precedenceMapQueue1);
+
+        var txWorkerThread1 = Thread.ofPlatform().factory().newThread(txWorker1);
+        txWorkerThread1.start();
+        var txWorkerThread2 = Thread.ofPlatform().factory().newThread(txWorker2);
+        txWorkerThread2.start();
+
+        var input = new TransactionInput("test", new TransactionInput.Event("test", ""));
+        txInputQueue2.add(input);
+
+        sleep(3000);
+
+        long txWorker1BatchId = safePoll(coordinatorQueue).batchOffset;
+        long txWorker2BatchId = safePoll(coordinatorQueue).batchOffset;
+
+        txWorker1.stop();
+        txWorker2.stop();
+
+        LOGGER.log(System.Logger.Level.INFO, " Tx worker #1 Batch ID: "+txWorker1BatchId);
+        LOGGER.log(System.Logger.Level.INFO, " Tx worker #2 Batch ID: "+txWorker2BatchId);
+
+        Assert.assertTrue(txWorker1BatchId == 1 && txWorker2BatchId == 2);
+    }
+
     private static void buildAndQueueStarterPrecedenceMap(ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>> precedenceMapQueue1) {
         Map<String, TransactionWorker.PrecedenceInfo> precedenceMap = new HashMap<>();
         precedenceMap.put("product", new TransactionWorker.PrecedenceInfo(0, 0, 0));

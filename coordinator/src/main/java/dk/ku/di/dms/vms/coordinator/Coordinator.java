@@ -333,11 +333,11 @@ public final class Coordinator extends ModbHttpServer {
         int numWorkers = this.options.getNumTransactionWorkers();
         long initTid = 1;
 
-        var firstPrecedenceInputQueue = new ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>>();
-        var precedenceMapInputQueue = firstPrecedenceInputQueue;
+        ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>> firstPrecedenceInputQueue = new ConcurrentLinkedDeque<>();
+        ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>> precedenceMapInputQueue = firstPrecedenceInputQueue;
         ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>> precedenceMapOutputQueue;
 
-        var starterPrecedenceMap = buildStarterPrecedenceMap();
+        Map<String, TransactionWorker.PrecedenceInfo> starterPrecedenceMap = buildStarterPrecedenceMap();
         firstPrecedenceInputQueue.add(starterPrecedenceMap);
 
         int idx = 1;
@@ -348,7 +348,7 @@ public final class Coordinator extends ModbHttpServer {
                 // complete the ring
                 precedenceMapOutputQueue = firstPrecedenceInputQueue;
             }
-            var txInputQueue = this.transactionInputDeques.get(idx-1);
+            ConcurrentLinkedDeque<TransactionInput> txInputQueue = this.transactionInputDeques.get(idx-1);
             TransactionWorker txWorker = TransactionWorker.build(idx, txInputQueue, initTid,
                     this.options.getMaxTransactionsPerBatch(), this.options.getBatchWindow(),
                     numWorkers, precedenceMapInputQueue, precedenceMapOutputQueue, this.transactionMap,
@@ -793,7 +793,7 @@ public final class Coordinator extends ModbHttpServer {
         this.batchContextMap.put(batchContext.batchOffset, batchContext);
         // LOGGER.log(DEBUG, "Sealing batch "+batchContext.batchOffset+" with "+batchContext.numTIDsOverall+" transactions.");
         // after storing batch context, send to vms workers
-        for(var entry : batchContext.terminalVMSs) {
+        for(var entry : batchContext.terminalVMSes) {
             this.vmsWorkerContainerMap.get(entry).queueMessage(
                     BatchCommitInfo.of(batchContext.batchOffset,
                             batchContext.previousBatchPerVms.get(entry),
@@ -858,7 +858,7 @@ public final class Coordinator extends ModbHttpServer {
      */
     private void sendCommitCommandToVMSs(BatchContext batchContext){
         for(VmsNode vms : this.vmsMetadataMap.values()){
-            if(batchContext.terminalVMSs.contains(vms.identifier)) {
+            if(batchContext.terminalVMSes.contains(vms.identifier)) {
                 LOGGER.log(DEBUG,"Leader: Batch ("+batchContext.batchOffset+") commit command not sent to "+ vms.identifier + " (terminal)");
                 continue;
             }
