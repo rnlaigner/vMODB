@@ -81,10 +81,10 @@ public final class DataLoadUtils {
             String host = properties.getProperty(vms.getKey() + "_host");
             try(MinimalHttpClient client = new MinimalHttpClient(host, vms.getValue())){
                 if(client.sendRequest("PATCH", "", param) != 200){
-                    System.out.println("Error on resetting "+vms+" state!");
+                    System.out.println("Error on "+param+" "+vms+" state!");
                 }
             } catch (IOException e) {
-                System.out.println("Exception on resetting "+vms+" state: \n"+e);
+                System.out.println("Exception on "+ param + " " +vms+" state: \n"+e);
             }
         }
     }

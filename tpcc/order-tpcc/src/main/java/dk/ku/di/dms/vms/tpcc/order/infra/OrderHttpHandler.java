@@ -49,11 +49,8 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
     }
 
     private static final SelectStatement selectStatementOrder = QueryBuilderFactory.select().project("*").from("orders").where("o_id", ExpressionTypeEnum.LESS_THAN_OR_EQUAL, 3000).build();
-
     private static final SelectStatement selectStatementNewOrder = QueryBuilderFactory.select().project("*").from("new_orders").where("no_o_id", ExpressionTypeEnum.LESS_THAN_OR_EQUAL, 3000).build();
-
     private static final SelectStatement selectStatementOrderLine = QueryBuilderFactory.select().project("*").from("order_line").where("ol_o_id", ExpressionTypeEnum.LESS_THAN_OR_EQUAL, 3000).build();
-
 
     @Override
     public void patch(String uri, String body) {
@@ -65,26 +62,26 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
             return;
         }
         // path: /order/cleanup
-        LOGGER.log(INFO, "Warehouse init cleanup");
+        LOGGER.log(INFO, "Order init cleanup");
 
         this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
-        List<Order> orders = this.orderRepository.query(selectStatementOrder);
-        List<NewOrder> newOrders = this.newOrderRepository.query(selectStatementNewOrder);
-        List<OrderLine> orderLines = this.orderLineRepository.query(selectStatementOrderLine);
+        List<Order> orders = this.orderRepository.fetchMany(selectStatementOrder, Order.class);
+        List<NewOrder> newOrders = this.newOrderRepository.fetchMany(selectStatementNewOrder, NewOrder.class);
+        List<OrderLine> orderLines = this.orderLineRepository.fetchMany(selectStatementOrderLine, OrderLine.class);
         this.transactionManager.reset();
 
-        LOGGER.log(INFO, "Warehouse GC triggered.");
+        LOGGER.log(INFO, "Order GC triggered.");
         System.gc();
-        LOGGER.log(INFO, "Warehouse GC finished.");
+        LOGGER.log(INFO, "Order GC finished.");
 
-        LOGGER.log(INFO, "Warehouse tables reset");
+        LOGGER.log(INFO, "Order tables reset");
 
         this.transactionManager.beginTransaction(0, 0, 0,false);
         this.orderRepository.insertAll(orders);
         this.newOrderRepository.insertAll(newOrders);
         this.orderLineRepository.insertAll(orderLines);
         // this.transactionManager.commit();
-        LOGGER.log(INFO, "Warehouse finished cleanup");
+        LOGGER.log(INFO, "Order finished cleanup");
     }
 
     @Override

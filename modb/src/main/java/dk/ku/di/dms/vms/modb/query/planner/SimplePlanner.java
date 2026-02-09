@@ -287,28 +287,31 @@ public final class SimplePlanner {
 
         final int[] columnsForIndexSelection = intStream.toArray();
 
+        if(columnsForIndexSelection.length == 0) {
+            return new IndexSelectionVerdict(false, table.primaryKeyIndex(), columnsForIndexSelection);
+        }
+
         final IIndexKey indexKey = KeyUtils.buildIndexKey(columnsForIndexSelection);
 
         // fast path (1): all columns are part of the primary index
-        if (table.underlyingPrimaryKeyIndex().key().equals(indexKey) ) {
+        if (table.underlyingPrimaryKeyIndex().key().equals(indexKey)) {
             return new IndexSelectionVerdict(true, table.primaryKeyIndex(), columnsForIndexSelection);
         }
 
         // fast path (2): all columns are part of a secondary index
-        if(table.secondaryIndexMap.containsKey(indexKey)){
+        if (table.secondaryIndexMap.containsKey(indexKey)) {
             return new IndexSelectionVerdict(
                     true,
                     table.secondaryIndexMap.get(indexKey),
                     columnsForIndexSelection);
         }
 
-        if(table.partialIndexMap.containsKey(indexKey)){
+        if (table.partialIndexMap.containsKey(indexKey)) {
             return new IndexSelectionVerdict(
                     true,
                     table.partialIndexMap.get(indexKey),
                     columnsForIndexSelection);
         }
-
         final ReadWriteIndex<IKey> indexSelected = this.getOptimalIndex(table, columnsForIndexSelection);
 
         // is the index completely covered by the columns in the filter?

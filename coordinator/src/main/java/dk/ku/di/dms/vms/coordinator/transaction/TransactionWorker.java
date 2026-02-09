@@ -205,7 +205,7 @@ public final class TransactionWorker extends StoppableRunnable {
         // we cannot submit this input
         Set<String> pendingVMSes = PENDING_VMSES_CACHE.pollFirst();
         if(pendingVMSes == null) pendingVMSes = new HashSet<>();
-        for (var vms_ : vmsList) {
+        for (VmsTracking vms_ : vmsList) {
             previousTidPerVms.put(vms_.identifier, vms_.lastTid);
             if(vms_.batch != this.currBatchContext.batchOffset){
                 // previous batch will be updated later, when precedence map is received from another worker
