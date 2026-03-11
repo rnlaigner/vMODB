@@ -6,8 +6,6 @@ import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 
-import java.util.Iterator;
-
 /**
  * This class is just a placeholder for obtaining schema information in main memory execution
  */

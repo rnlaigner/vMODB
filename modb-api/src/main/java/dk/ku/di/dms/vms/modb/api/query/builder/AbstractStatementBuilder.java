@@ -28,7 +28,7 @@ public abstract class AbstractStatementBuilder {
             WhereClauseElement element = new WhereClauseElement(param, expr, value);
             this.statement.whereClause.add(element);
             this.statement.SQL.append(param);
-            this.statement.SQL.append(expr.name);
+            this.statement.SQL.append(expr.value);
             this.statement.SQL.append('?');
             return new WhereClausePredicate<>(this.statement);
         }
@@ -50,9 +50,9 @@ public abstract class AbstractStatementBuilder {
         public WhereClausePredicate<T> and(String param, final ExpressionTypeEnum expr, final Object value) {
             WhereClauseElement element = new WhereClauseElement(param,expr,value);
             this.statement.whereClause.add( element );
-            this.statement.SQL.append(AND.name);
+            this.statement.SQL.append(AND.value);
             this.statement.SQL.append(param);
-            this.statement.SQL.append(expr.name);
+            this.statement.SQL.append(expr.value);
             this.statement.SQL.append('?');
             return this;
         }
@@ -60,9 +60,9 @@ public abstract class AbstractStatementBuilder {
         public WhereClausePredicate<T> or(String param, final ExpressionTypeEnum expr, final Object value) {
             WhereClauseElement element = new WhereClauseElement(param,expr,value);
             this.statement.whereClause.add( element );
-            this.statement.SQL.append(OR.name);
+            this.statement.SQL.append(OR.value);
             this.statement.SQL.append(param);
-            this.statement.SQL.append(expr.name);
+            this.statement.SQL.append(expr.value);
             this.statement.SQL.append('?');
             return this;
         }

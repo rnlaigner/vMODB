@@ -47,7 +47,7 @@ public final class Parser {
             // remove comma from all
             String left = tokens[i];
             i++;
-            ExpressionTypeEnum exp = getExpressionFromString(tokens[i]);
+            ExpressionTypeEnum exp = ExpressionTypeEnum.fromValue(tokens[i]);
 
             // skip the input
             whereClauseElements.add( new WhereClauseElement(left, exp, null) );
@@ -83,21 +83,6 @@ public final class Parser {
         } else {
             return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement, Integer.valueOf(tokens[i+1]));
         }
-    }
-
-    private static ExpressionTypeEnum getExpressionFromString(String exp){
-
-        if (ExpressionTypeEnum.EQUALS.name.equalsIgnoreCase(exp)) {
-            return ExpressionTypeEnum.EQUALS;
-        }
-
-        if (ExpressionTypeEnum.IN.name.equalsIgnoreCase(exp)) {
-            return ExpressionTypeEnum.IN;
-        }
-
-        // complete
-        return null;
-
     }
 
 }

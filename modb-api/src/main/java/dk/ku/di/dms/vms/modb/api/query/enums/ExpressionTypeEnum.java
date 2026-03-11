@@ -1,5 +1,9 @@
 package dk.ku.di.dms.vms.modb.api.query.enums;
 
+import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 public enum ExpressionTypeEnum {
 
     // value expression
@@ -17,38 +21,54 @@ public enum ExpressionTypeEnum {
     NOT_EQUALS("<>"),
 
     // only for string or char
-    LIKE("LIKE"),
+    LIKE("like"),
 
     // nullable expression
 
-    IS_NULL("IS NULL"),
+    IS_NULL("is null"),
 
-    IS_NOT_NULL("IS NOT NULL"),
+    IS_NOT_NULL("is not null"),
 
     // boolean expression
 
-    OR("OR"),
+    OR("or"),
 
-    AND("AND"),
+    AND("and"),
 
     // set expression
 
-    IN("IN"),
+    IN("in"),
 
-    NOT_IN("NOT IN"),
+    NOT_IN("not in"),
 
-    NOT("NOT"),
+    NOT("not"),
 
-    EXISTS("EXISTS");
+    EXISTS("exists");
 
-    public final String name;
+    public final String value;
 
-    ExpressionTypeEnum(String name) {
-        this.name = name;
+    ExpressionTypeEnum(String value) {
+        this.value = value;
+    }
+
+    public String value() {
+        return value;
     }
 
     public static boolean equality(ExpressionTypeEnum expressionType){
         return expressionType == EQUALS || expressionType == IN;
+    }
+
+    private static final Map<String, ExpressionTypeEnum> LOOKUP =
+            Arrays.stream(values())
+                    .collect(Collectors.toMap(ExpressionTypeEnum::value, c -> c));
+
+    public static ExpressionTypeEnum fromValue(String value) {
+        ExpressionTypeEnum cmd = LOOKUP.get(value.toLowerCase());
+        if (cmd == null) {
+            throw new IllegalArgumentException("Unknown command: " + value);
+        }
+        return cmd;
     }
 
 }

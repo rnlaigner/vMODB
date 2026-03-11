@@ -6,9 +6,10 @@ import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionInput;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.IdentifiableNode;
-import dk.ku.di.dms.vms.modb.transaction.internal.Entry;
-import dk.ku.di.dms.vms.tpcc.common.events.NewOrderWareIn;
-import dk.ku.di.dms.vms.tpcc.common.events.PaymentIn;
+import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareIn;
+import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusIn;
+import dk.ku.di.dms.vms.tpcc.common.events.payment.PaymentIn;
+import dk.ku.di.dms.vms.tpcc.common.events.stock_level.StockLevelWareIn;
 import dk.ku.di.dms.vms.tpcc.proxy.workload.WorkloadUtils;
 import dk.ku.di.dms.vms.web_common.IHttpHandler;
 
@@ -209,15 +210,24 @@ public final class ExperimentUtils {
         return input -> {
             TransactionInput.Event eventPayload;
             String txIdentifier;
-            if(input instanceof NewOrderWareIn newOrderInput){
-                txIdentifier = "new_order";
-                eventPayload = new TransactionInput.Event("new-order-ware-in", newOrderInput.toString());
-            } else if(input instanceof PaymentIn paymentInput){
-                txIdentifier = "payment";
-                eventPayload = new TransactionInput.Event("payment-in", paymentInput.toString());
-            } else {
-                txIdentifier = "order_status";
-                eventPayload = new TransactionInput.Event("order-status-in", input.toString());
+            switch (input) {
+                case NewOrderWareIn newOrderInput -> {
+                    txIdentifier = "new_order";
+                    eventPayload = new TransactionInput.Event("new-order-ware-in", newOrderInput.toString());
+                }
+                case PaymentIn paymentInput -> {
+                    txIdentifier = "payment";
+                    eventPayload = new TransactionInput.Event("payment-in", paymentInput.toString());
+                }
+                case OrderStatusIn orderStatusInput -> {
+                    txIdentifier = "order_status";
+                    eventPayload = new TransactionInput.Event("order-status-in", orderStatusInput.toString());
+                }
+                case StockLevelWareIn stockLevelWareInput -> {
+                    txIdentifier = "stock_level";
+                    eventPayload = new TransactionInput.Event("stock-level-ware-in", stockLevelWareInput.toString());
+                }
+                case null, default -> throw new RuntimeException("Invalid input type: " + input);
             }
             TransactionInput txInput = new TransactionInput(txIdentifier, eventPayload);
             coordinator.queueTransactionInput(txInput);
@@ -248,6 +258,14 @@ public final class ExperimentUtils {
                 .terminal("b", "order", "a")
                 .build();
         transactionMap.put(orderStatusDag.name, orderStatusDag);
+
+        // stock level
+        TransactionDAG stockLevelDag = TransactionBootstrap.name("stock_level")
+                .input("a", "warehouse", "stock-level-ware-in")
+                .internal("b", "order", "stock-level-ware-out", "a")
+                .terminal("c", "stock", "b")
+                .build();
+        transactionMap.put(stockLevelDag.name, stockLevelDag);
 
         Map<String, IdentifiableNode> starterVMSs = getVmsMap(properties);
         Coordinator coordinator = Coordinator.build(properties, starterVMSs, transactionMap, (ignored1) -> IHttpHandler.DEFAULT);
@@ -291,10 +309,9 @@ public final class ExperimentUtils {
 
         if (lowerIndex == upperIndex) {
             return data.get(lowerIndex);
-        } else {
-            double weight = rank - lowerIndex;
-            return data.get(lowerIndex) * (1 - weight) + data.get(upperIndex) * weight;
         }
+        double weight = rank - lowerIndex;
+        return data.get(lowerIndex) * (1 - weight) + data.get(upperIndex) * weight;
     }
 
 }

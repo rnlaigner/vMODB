@@ -263,7 +263,7 @@ public class SelectStatementBuilder extends AbstractStatementBuilder  {
                 this.firstWhere = false;
             }
             this.statement.SQL.append(param);
-            this.statement.SQL.append(expr.name);
+            this.statement.SQL.append(expr.value);
             this.statement.SQL.append('?');
             return this;
         }

@@ -1,14 +1,12 @@
-package dk.ku.di.dms.vms.tpcc.common.events;
+package dk.ku.di.dms.vms.tpcc.common.events.new_order;
 
 import dk.ku.di.dms.vms.modb.api.annotations.Event;
-import dk.ku.di.dms.vms.tpcc.common.etc.WareItemId;
+import dk.ku.di.dms.vms.tpcc.common.etc.WareDistId;
 
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
 
 @Event
-public final class NewOrderWareOut {
+public final class NewOrderWareIn {
 
     public int w_id;
     public int d_id;
@@ -17,15 +15,11 @@ public final class NewOrderWareOut {
     public int[] supWares;
     public int[] qty;
     public boolean allLocal;
-    // from warehouse
-    public double w_tax;
-    public int d_next_o_id;
-    public double d_tax;
-    public float c_discount;
 
-    public NewOrderWareOut(){}
+    @SuppressWarnings("unused")
+    public NewOrderWareIn(){}
 
-    public NewOrderWareOut(int w_id, int d_id, int c_id, int[] itemsIds, int[] supWares, int[] qty, boolean allLocal, double w_tax, int d_next_o_id, double d_tax, float c_discount) {
+    public NewOrderWareIn(int w_id, int d_id, int c_id, int[] itemsIds, int[] supWares, int[] qty, boolean allLocal) {
         this.w_id = w_id;
         this.d_id = d_id;
         this.c_id = c_id;
@@ -33,32 +27,29 @@ public final class NewOrderWareOut {
         this.supWares = supWares;
         this.qty = qty;
         this.allLocal = allLocal;
-        this.w_tax = w_tax;
-        this.d_next_o_id = d_next_o_id;
-        this.d_tax = d_tax;
-        this.c_discount = c_discount;
-    }
-
-    @SuppressWarnings("unused")
-    public Set<Integer> getId(){
-        if(this.allLocal) return Set.of(this.w_id);
-        Set<Integer> set = new HashSet<>(this.supWares.length);
-        for (int supWare : this.supWares) {
-            set.add(supWare);
-        }
-        return set;
     }
 
     /**
-     * Allows for finer-grained access to state
+     * In principle, it could be solely w_id. However, it is required that partition IDs from different transactions "match" in schema
+     * If this partition ID is only composed by w_id, processPayment would not be able to identify a conflict with a concurrent new order
+     * In other words, it is necessary to prevent concurrent access to warehouse records. We do so by using district ID 0 as a "lock" for this warehouse ID
      */
     @SuppressWarnings("unused")
-    public Set<WareItemId> getIds(){
-        Set<WareItemId> set = new HashSet<>(this.itemsIds.length);
-        for (int i = 0; i < this.itemsIds.length; i++) {
-            set.add(new WareItemId(this.supWares[i], this.itemsIds[i]));
-        }
-        return set;
+    public WareDistId getId(){
+        return new WareDistId(this.w_id, 0);
+    }
+
+    @Override
+    public String toString() {
+        return "{"
+                + "\"w_id\":" + w_id
+                + ",\"d_id\":" + d_id
+                + ",\"c_id\":" + c_id
+                + ",\"itemsIds\":" + Arrays.toString(itemsIds)
+                + ",\"supWares\":" + Arrays.toString(supWares)
+                + ",\"qty\":" + Arrays.toString(qty)
+                + ",\"allLocal\":" + allLocal
+                + "}";
     }
 
     @Override

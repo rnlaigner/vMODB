@@ -1,7 +1,14 @@
 package dk.ku.di.dms.vms.tpcc.warehouse;
 
 import dk.ku.di.dms.vms.modb.api.annotations.*;
-import dk.ku.di.dms.vms.tpcc.common.events.*;
+import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareIn;
+import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareOut;
+import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusIn;
+import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusOut;
+import dk.ku.di.dms.vms.tpcc.common.events.payment.PaymentIn;
+import dk.ku.di.dms.vms.tpcc.common.events.payment.PaymentOut;
+import dk.ku.di.dms.vms.tpcc.common.events.stock_level.StockLevelWareIn;
+import dk.ku.di.dms.vms.tpcc.common.events.stock_level.StockLevelWareOut;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Customer;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.District;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Warehouse;
@@ -29,6 +36,14 @@ public final class WarehouseService {
         this.warehouseRepository = warehouseRepository;
         this.districtRepository = districtRepository;
         this.customerRepository = customerRepository;
+    }
+
+    @Inbound(values = "stock-level-in")
+    @Outbound("stock-level-out")
+    @Transactional(type = R)
+    public StockLevelWareOut processStockLevel(StockLevelWareIn in) {
+        int d_next_o_id = this.districtRepository.getNextOid(in.w_id, in.d_id);
+        return new StockLevelWareOut(in.w_id, in.d_id, in.threshold, d_next_o_id);
     }
 
     @Inbound(values = "payment-in")

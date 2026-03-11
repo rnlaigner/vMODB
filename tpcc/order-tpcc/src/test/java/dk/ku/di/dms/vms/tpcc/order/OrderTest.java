@@ -6,7 +6,7 @@ import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
-import dk.ku.di.dms.vms.tpcc.common.events.OrderStatusOut;
+import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusOut;
 import dk.ku.di.dms.vms.tpcc.order.dto.OrderInfoDto;
 import dk.ku.di.dms.vms.tpcc.order.dto.OrderLineInfoDto;
 import dk.ku.di.dms.vms.tpcc.order.entities.Order;

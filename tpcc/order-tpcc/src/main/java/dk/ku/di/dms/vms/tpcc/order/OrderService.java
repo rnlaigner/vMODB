@@ -1,12 +1,11 @@
 package dk.ku.di.dms.vms.tpcc.order;
 
-import dk.ku.di.dms.vms.modb.api.annotations.Inbound;
-import dk.ku.di.dms.vms.modb.api.annotations.Microservice;
-import dk.ku.di.dms.vms.modb.api.annotations.Parallel;
-import dk.ku.di.dms.vms.modb.api.annotations.Transactional;
-import dk.ku.di.dms.vms.tpcc.common.events.NewOrderInvOut;
-import dk.ku.di.dms.vms.tpcc.common.events.OrderStatusOut;
-import dk.ku.di.dms.vms.tpcc.common.events.PaymentOut;
+import dk.ku.di.dms.vms.modb.api.annotations.*;
+import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderInvOut;
+import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusOut;
+import dk.ku.di.dms.vms.tpcc.common.events.payment.PaymentOut;
+import dk.ku.di.dms.vms.tpcc.common.events.stock_level.StockLevelOrdOut;
+import dk.ku.di.dms.vms.tpcc.common.events.stock_level.StockLevelWareOut;
 import dk.ku.di.dms.vms.tpcc.order.dto.OrderLineInfoDto;
 import dk.ku.di.dms.vms.tpcc.order.entities.History;
 import dk.ku.di.dms.vms.tpcc.order.entities.NewOrder;
@@ -20,6 +19,7 @@ import dk.ku.di.dms.vms.tpcc.order.repositories.IOrderRepository;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.W;
@@ -41,6 +41,16 @@ public final class OrderService {
         this.newOrderRepository = newOrderRepository;
         this.orderLineRepository = orderLineRepository;
         this.historyRepository = historyRepository;
+    }
+
+    @Inbound(values = "stock-level-ware-out")
+    @Outbound("stock-level-ord-out")
+    @Transactional(type = R)
+    public StockLevelOrdOut processStockLevel(StockLevelWareOut in) {
+        // TODO: make parser process distinct and push it to query execution
+        int[] orderIds = IntStream.range(in.next_o_id - 20, in.next_o_id - 1).distinct().toArray();
+        int[] itemIds = this.orderLineRepository.getAllItemsByOrderIds(orderIds, in.d_id, in.w_id);
+        return new StockLevelOrdOut(in.w_id, in.d_id, in.threshold, itemIds);
     }
 
     @Inbound(values = "payment-out")

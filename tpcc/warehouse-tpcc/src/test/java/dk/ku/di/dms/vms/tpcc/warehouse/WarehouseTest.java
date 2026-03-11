@@ -7,7 +7,7 @@ import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.sdk.core.operational.InboundEvent;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
-import dk.ku.di.dms.vms.tpcc.common.events.OrderStatusIn;
+import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusIn;
 import dk.ku.di.dms.vms.tpcc.warehouse.dto.CustomerInfoDTO;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.Customer;
 import dk.ku.di.dms.vms.tpcc.warehouse.entities.District;

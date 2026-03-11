@@ -1,4 +1,4 @@
-package dk.ku.di.dms.vms.tpcc.common.events;
+package dk.ku.di.dms.vms.tpcc.common.events.payment;
 
 import dk.ku.di.dms.vms.modb.api.annotations.Event;
 import dk.ku.di.dms.vms.tpcc.common.etc.WareDistId;
@@ -35,6 +35,10 @@ public final class PaymentIn {
         this.by_name = by_name;
     }
 
+    /**
+     * We need a composite partition key to achieve higher concurrency in querying customers,
+     * in particular where !(this.w_id == this.c_w_id && this.d_id == this.c_d_id)
+     */
     @SuppressWarnings("unused")
     public Set<WareDistId> getId(){
         if(this.w_id == this.c_w_id && this.d_id == this.c_d_id) return Set.of(new WareDistId(this.w_id, 0), new WareDistId(this.w_id, this.d_id));

@@ -1,4 +1,4 @@
-package dk.ku.di.dms.vms.tpcc.common.events;
+package dk.ku.di.dms.vms.tpcc.common.events.order_status;
 
 import dk.ku.di.dms.vms.modb.api.annotations.Event;
 

@@ -161,7 +161,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             // a simple mechanism to handle error is by re-executing, depending on the nature of the error
             // if constraint violation, it cannot be re-executed
             // in this case, the error must be informed to the event handler, so the event handler
-            // can forward the error to downstream VMSs. if input VMS, easier to handle, just send a noop to them
+            // can forward the error to downstream VMSes. If it is an input VMS, easier to handle, just send a noop to them
             LOGGER.log(WARNING, "Error captured during application execution: \n"+e.getCause().getMessage());
             // remove from map to avoid rescheduling? no, it will lead to null pointer in scheduler loop
             VmsTransactionTask task = transactionTaskMap.get(tid);
@@ -201,7 +201,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private void updateLastFinishedTid(final long tid){
         long v;
         do {
-            v =  this.lastTidFinished();
+            v = this.lastTidFinished();
         } while (v < tid && !U.weakCompareAndSetLong(this, L_TID_F_OFFSET, v, tid));
     }
 

@@ -1,8 +1,9 @@
 package dk.ku.di.dms.vms.tpcc.inventory;
 
 import dk.ku.di.dms.vms.modb.api.annotations.*;
-import dk.ku.di.dms.vms.tpcc.common.events.NewOrderInvOut;
-import dk.ku.di.dms.vms.tpcc.common.events.NewOrderWareOut;
+import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderInvOut;
+import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareOut;
+import dk.ku.di.dms.vms.tpcc.common.events.stock_level.StockLevelOrdOut;
 import dk.ku.di.dms.vms.tpcc.inventory.entities.Stock;
 import dk.ku.di.dms.vms.tpcc.inventory.repositories.IItemRepository;
 import dk.ku.di.dms.vms.tpcc.inventory.repositories.IStockRepository;
@@ -10,10 +11,14 @@ import dk.ku.di.dms.vms.tpcc.inventory.repositories.IStockRepository;
 import java.util.ArrayList;
 import java.util.List;
 
+import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
+import static java.lang.System.Logger.Level.ERROR;
 
 @Microservice("inventory")
 public final class InventoryService {
+
+    private static final System.Logger LOGGER = System.getLogger(InventoryService.class.getName());
 
     private final IItemRepository itemRepository;
     private final IStockRepository stockRepository;
@@ -21,6 +26,15 @@ public final class InventoryService {
     public InventoryService(IItemRepository itemRepository, IStockRepository stockRepository) {
         this.itemRepository = itemRepository;
         this.stockRepository = stockRepository;
+    }
+
+    @Inbound(values = "stock-level-ord-out")
+    @Transactional(type = R)
+    public void processStockLevel(StockLevelOrdOut in) {
+        int[] itemIds = this.stockRepository.getStockCount(in.itemsIds, in.threshold);
+        if(itemIds.length == 0){
+            LOGGER.log(ERROR, "Input event OrderStatusOut led to empty order lines info:\n"+in);
+        }
     }
 
     @Inbound(values = "new-order-ware-out")

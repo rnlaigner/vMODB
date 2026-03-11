@@ -18,7 +18,8 @@ import java.util.*;
 import java.util.stream.Stream;
 
 import static dk.ku.di.dms.vms.modb.common.memory.MemoryUtils.UNSAFE;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.ERROR;
 
 public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 

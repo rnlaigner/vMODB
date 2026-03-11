@@ -18,4 +18,7 @@ public interface IOrderLineRepository extends IRepository<OrderLine.OrderLineId,
     @Query("select * from order_line where ol_o_id = :o_id and ol_d_id = :d_id and ol_w_id = :w_id")
     List<OrderLine> getAllByOrderId(int o_id, int d_id, int w_id);
 
+    @Query("select ol_i_id from order_line where ol_o_id IN (:orderIds) and ol_d_id = :d_id and ol_w_id = :w_id")
+    int[] getAllItemsByOrderIds(int[] orderIds, int d_id, int w_id);
+
 }
