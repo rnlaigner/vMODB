@@ -49,6 +49,7 @@ public final class StockLevelOrdOut {
             for (int i = 0; i < this.itemsIds.length; i++){
                 if (!Objects.equals(this.itemsIds[i], that.itemsIds[i])) return false;
             }
+            return true;
         }
         return false;
     }

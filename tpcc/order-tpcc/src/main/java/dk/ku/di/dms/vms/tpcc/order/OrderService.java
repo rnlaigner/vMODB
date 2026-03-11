@@ -1,6 +1,9 @@
 package dk.ku.di.dms.vms.tpcc.order;
 
 import dk.ku.di.dms.vms.modb.api.annotations.*;
+import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
+import dk.ku.di.dms.vms.tpcc.common.events.delivery.DeliveryIn;
+import dk.ku.di.dms.vms.tpcc.common.events.delivery.DeliveryOut;
 import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderInvOut;
 import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusOut;
 import dk.ku.di.dms.vms.tpcc.common.events.payment.PaymentOut;
@@ -21,8 +24,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.IntStream;
 
-import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
-import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.W;
+import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.*;
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.ERROR;
 
@@ -43,12 +45,51 @@ public final class OrderService {
         this.historyRepository = historyRepository;
     }
 
+    @Inbound(values = "delivery-in")
+    @Outbound("delivery-out")
+    @Transactional(type = RW)
+    @PartitionBy(clazz = DeliveryOut.class, method = "getId")
+    public DeliveryOut processDelivery(DeliveryIn in) {
+        int no_o_id;
+        int[] customerIds = new int[10];
+        float[] amounts = new float[10];
+        for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id ++) {
+
+            // TODO: make sure selectivity is chosen appropriately in the query plan (i.e., district FK index is pick)
+            NewOrder newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+            no_o_id = newOrder.no_o_id;
+            this.newOrderRepository.delete(newOrder);
+
+            Order order = this.orderRepository.lookupByKey(new Order.OrderId(no_o_id, d_id, in.w_id));
+            // put carrier id in the input
+            order.o_carrier_id = in.carrier_id;
+
+            Date date = new Date();
+            List<OrderLine> orderLines = this.orderLineRepository.getAllByOrderId(no_o_id, d_id, in.w_id);
+
+            float ol_amount = 0;
+
+            for(OrderLine orderLine : orderLines) {
+                orderLine.ol_delivery_d = date;
+                ol_amount += orderLine.ol_amount;
+            }
+
+            this.orderLineRepository.updateAll(orderLines);
+
+            customerIds[d_id - 1] = order.o_c_id;
+            amounts[d_id - 1] = ol_amount;
+        }
+
+        return new DeliveryOut(in.w_id, customerIds, amounts);
+    }
+
     @Inbound(values = "stock-level-ware-out")
     @Outbound("stock-level-ord-out")
     @Transactional(type = R)
     public StockLevelOrdOut processStockLevel(StockLevelWareOut in) {
         // TODO: make parser process distinct and push it to query execution
         int[] orderIds = IntStream.range(in.next_o_id - 20, in.next_o_id - 1).distinct().toArray();
+        // TODO: make sure selectivity is chosen appropriately in the query plan (i.e., district FK index is pick)
         int[] itemIds = this.orderLineRepository.getAllItemsByOrderIds(orderIds, in.d_id, in.w_id);
         return new StockLevelOrdOut(in.w_id, in.d_id, in.threshold, itemIds);
     }

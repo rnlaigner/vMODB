@@ -26,15 +26,15 @@ public final class NewOrder implements IEntity<NewOrder.NewOrderId> {
     }
 
     @Id
-    @VmsForeignKey(table=Order.class,column = "o_id")
+    @VmsForeignKey(table=Order.class, column = "o_id")
     public int no_o_id;
 
     @Id
-    @VmsForeignKey(table=Order.class,column = "o_d_id")
+    @VmsForeignKey(table=Order.class, column = "o_d_id")
     public int no_d_id;
 
     @Id
-    @VmsForeignKey(table=Order.class,column = "o_w_id")
+    @VmsForeignKey(table=Order.class, column = "o_w_id")
     public int no_w_id;
 
     public NewOrder(){}
