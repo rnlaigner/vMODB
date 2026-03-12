@@ -10,6 +10,7 @@ import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyBoundedBuffer;
 import dk.ku.di.dms.vms.modb.storage.record.AppendOnlyUnboundedBuffer;
 import dk.ku.di.dms.vms.modb.utils.StorageUtils;
 import dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils;
+import dk.ku.di.dms.vms.tpcc.common.events.delivery.DeliveryIn;
 import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareIn;
 import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusIn;
 import dk.ku.di.dms.vms.tpcc.common.events.payment.PaymentIn;
@@ -41,8 +42,6 @@ public final class WorkloadUtils {
 
     private static final String ORDER_STATUS_INPUT_BASE_FILE_NAME = "order_status_input_";
 
-    private static final String STOCK_LEVEL_INPUT_BASE_FILE_NAME = "stock_level_input_";
-
     private static final Schema NEW_ORDER_SCHEMA = new Schema(
             new String[]{ "w_id", "d_id", "c_id", "itemIds", "supWares", "qty", "allLocal" },
             new DataType[]{
@@ -67,16 +66,6 @@ public final class WorkloadUtils {
             new String[]{ "w_id", "d_id", "c_id", "c_last", "by_name" },
             new DataType[]{
                     DataType.INT, DataType.INT, DataType.INT, DataType.STRING, DataType.BOOL
-            },
-            new int[]{},
-            new ConstraintReference[]{},
-            false
-    );
-
-    private static final Schema STOCK_LEVEL_SCHEMA = new Schema(
-            new String[]{ "w_id", "d_id", "threshold" },
-            new DataType[]{
-                    DataType.INT, DataType.INT, DataType.INT
             },
             new int[]{},
             new ConstraintReference[]{},
@@ -216,7 +205,7 @@ public final class WorkloadUtils {
         int numTransactions;
         for(int i = 0; i < numWare; i++){
 
-            Map<String, Iterator<Object>> wareInput = new HashMap<>(3);
+            Map<String, Iterator<Object>> wareInput = new HashMap<>(txRatioMap.size());
 
             // new order
             if(txRatioMap.containsKey("new_order")) {
@@ -242,9 +231,12 @@ public final class WorkloadUtils {
 
             // stock level
             if(txRatioMap.containsKey("stock_level")) {
-                AppendOnlyBoundedBuffer stockLevelBuffer = StorageUtils.loadAppendOnlyBuffer("proxy", STOCK_LEVEL_INPUT_BASE_FILE_NAME + (i + 1));
-                numTransactions = (int) stockLevelBuffer.size() / STOCK_LEVEL_SCHEMA.getRecordSize();
-                wareInput.put("stock_level", createStockLevelInputIterator(stockLevelBuffer, numTransactions));
+                wareInput.put("stock_level", createStockLevelInputIteratorD(numWare));
+            }
+
+            // delivery
+            if(txRatioMap.containsKey("delivery")) {
+                wareInput.put("stock_level", createDeliveryInputIteratorD(numWare));
             }
 
             input.add(wareInput);
@@ -254,19 +246,28 @@ public final class WorkloadUtils {
         return input;
     }
 
-    private static Iterator<Object> createStockLevelInputIterator(AppendOnlyBoundedBuffer buffer, int numTransactions){
+    private static Iterator<Object> createDeliveryInputIteratorD(final int numWare){
         return new Iterator<>() {
-            int txIdx = 1;
             @Override
             public boolean hasNext() {
-                return this.txIdx <= numTransactions;
+                return true;
+            }
+            @Override
+            public DeliveryIn next() {
+                return generateDelivery(randomNumber(1, numWare));
+            }
+        };
+    }
+
+    private static Iterator<Object> createStockLevelInputIteratorD(final int numWare){
+        return new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+                return true;
             }
             @Override
             public StockLevelWareIn next() {
-                Object[] stockLevelInput = readRecordFromMemoryPos(buffer.nextOffset(), STOCK_LEVEL_SCHEMA);
-                buffer.forwardOffset(STOCK_LEVEL_SCHEMA.getRecordSize());
-                this.txIdx++;
-                return parseStockLevelRecordIntoEntity(stockLevelInput);
+                return generateStockLevel(randomNumber(1, numWare));
             }
         };
     }
@@ -336,9 +337,6 @@ public final class WorkloadUtils {
         ByteBuffer orderStatusNativeBuffer = ByteBuffer.allocateDirect(ORDER_STATUS_SCHEMA.getRecordSize());
         long orderStatusBufferAddress = MemoryUtils.getByteBufferAddress(orderStatusNativeBuffer);
 
-        ByteBuffer stockLevelNativeBuffer = ByteBuffer.allocateDirect(STOCK_LEVEL_SCHEMA.getRecordSize());
-        long stockLevelBufferAddress = MemoryUtils.getByteBufferAddress(stockLevelNativeBuffer);
-
         for (int ware = 1; ware <= numWare; ware++) {
             LOGGER.log(INFO, "Warehouse "+ware+" started");
             for(var entry : numTxPerType.entrySet()) {
@@ -380,18 +378,7 @@ public final class WorkloadUtils {
                         orderStatusBuffer.force();
                         LOGGER.log(INFO, "Generated "+entry.getValue()+" order status inputs");
                     }
-                    case "stock_level" -> {
-                        String stockLevelInputFileName = STOCK_LEVEL_INPUT_BASE_FILE_NAME + ware;
-                        AppendOnlyUnboundedBuffer stockLevelBuffer = StorageUtils.loadAppendOnlyUnboundedBuffer("proxy", stockLevelInputFileName);
-                        for (int i = 1; i <= entry.getValue(); i++) {
-                            Object[] stockLevelInput = generateStockLevel(ware);
-                            writeRecordInMemoryPos(stockLevelBufferAddress, stockLevelInput, STOCK_LEVEL_SCHEMA);
-                            stockLevelBuffer.append(stockLevelNativeBuffer);
-                            stockLevelNativeBuffer.clear();
-                        }
-                        stockLevelBuffer.force();
-                        LOGGER.log(INFO, "Generated "+entry.getValue()+" order status inputs");
-                    }
+                    case null, default -> throw new IllegalStateException("Unexpected value: " + entry.getKey());
                 }
             }
             LOGGER.log(INFO, "Warehouse "+ware+" done");
@@ -460,14 +447,6 @@ public final class WorkloadUtils {
                 (int) orderStatusInput[2],
                 (String) orderStatusInput[3],
                 (boolean) orderStatusInput[4]
-        );
-    }
-
-    private static StockLevelWareIn parseStockLevelRecordIntoEntity(Object[] stockLevelInput) {
-        return new StockLevelWareIn(
-                (int) stockLevelInput[0],
-                (int) stockLevelInput[1],
-                (int) stockLevelInput[2]
         );
     }
 
@@ -549,10 +528,14 @@ public final class WorkloadUtils {
         return new Object[]{ w_id, d_id, c_id, c_last, by_name };
     }
 
-    private static Object[] generateStockLevel(int w_id){
+    private static StockLevelWareIn generateStockLevel(int w_id){
         int d_id = randomNumber(1, NUM_DIST_PER_WARE);
         int threshold = randomNumber(10, 20);
-        return new Object[]{ w_id, d_id, threshold };
+        return new StockLevelWareIn(w_id, d_id, threshold);
+    }
+
+    private static DeliveryIn generateDelivery(int w_id){
+        return new DeliveryIn(w_id, randomNumber(1, 10));
     }
 
     private static Object[] generatePayment(int w_id, int num_ware){

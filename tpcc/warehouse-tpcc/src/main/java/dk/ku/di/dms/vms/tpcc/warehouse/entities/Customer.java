@@ -76,15 +76,18 @@ public class Customer implements IEntity<Customer.CustomerId> {
     public int c_payment_cnt;
 
     @Column
+    public int c_delivery_cnt;
+
+    @Column
     public String c_data;
 
     public Customer(){}
 
     public Customer(int c_id, int c_d_id, int c_w_id,
                     String c_first, String c_middle, String c_last,
-                    String  C_STREET_1, String C_STREET_2, String C_CITY, String C_STATE, String C_ZIP, String C_PHONE,
+                    String  c_street_1, String c_street_2, String c_city, String c_state, String c_zip, String c_phone,
                     Date c_since, String c_credit, float c_credit_lim, float c_discount, float c_balance, int c_ytd_payment,
-                    int c_payment_cnt, int C_DELIVERY_CNT, String c_data) {
+                    int c_payment_cnt, int c_delivery_cnt, String c_data) {
         this.c_id = c_id;
         this.c_d_id = c_d_id;
         this.c_w_id = c_w_id;
@@ -98,6 +101,7 @@ public class Customer implements IEntity<Customer.CustomerId> {
         this.c_balance = c_balance;
         this.c_ytd_payment = c_ytd_payment;
         this.c_payment_cnt = c_payment_cnt;
+        this.c_delivery_cnt = c_delivery_cnt;
         this.c_data = c_data;
     }
 
@@ -117,6 +121,7 @@ public class Customer implements IEntity<Customer.CustomerId> {
                 + ",\"c_balance\":" + c_balance
                 + ",\"c_ytd_payment\":" + c_ytd_payment
                 + ",\"c_payment_cnt\":" + c_payment_cnt
+                + ",\"c_delivery_cnt\":" + c_delivery_cnt
                 + ",\"c_data\":\"" + c_data + "\""
                 + "}";
     }

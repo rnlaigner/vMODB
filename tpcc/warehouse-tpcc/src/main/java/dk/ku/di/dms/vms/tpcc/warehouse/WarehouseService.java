@@ -1,6 +1,8 @@
 package dk.ku.di.dms.vms.tpcc.warehouse;
 
 import dk.ku.di.dms.vms.modb.api.annotations.*;
+import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
+import dk.ku.di.dms.vms.tpcc.common.events.delivery.DeliveryOut;
 import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareIn;
 import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareOut;
 import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusIn;
@@ -16,6 +18,7 @@ import dk.ku.di.dms.vms.tpcc.warehouse.repositories.ICustomerRepository;
 import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IDistrictRepository;
 import dk.ku.di.dms.vms.tpcc.warehouse.repositories.IWarehouseRepository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -36,6 +39,26 @@ public final class WarehouseService {
         this.warehouseRepository = warehouseRepository;
         this.districtRepository = districtRepository;
         this.customerRepository = customerRepository;
+    }
+
+    @Inbound(values = "delivery-out")
+    @Transactional(type = RW)
+    public void processStockLevel(DeliveryOut in) {
+
+        List<Customer.CustomerId> customerIds = new ArrayList<>(TPCcConstants.NUM_DIST_PER_WARE);
+        for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id ++) {
+            customerIds.add(new Customer.CustomerId(in.customerIds[d_id-1], d_id, in.w_id));
+        }
+
+        List<Customer> customers = this.customerRepository.lookupByKeys(customerIds);
+
+        int idx = 0;
+        for(Customer customer : customers) {
+            customer.c_balance += in.amounts[idx++];
+            customer.c_delivery_cnt++;
+        }
+
+        this.customerRepository.updateAll(customers);
     }
 
     @Inbound(values = "stock-level-in")
