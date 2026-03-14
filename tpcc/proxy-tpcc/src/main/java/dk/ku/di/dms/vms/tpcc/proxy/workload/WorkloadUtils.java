@@ -172,12 +172,13 @@ public final class WorkloadUtils {
                     }
                     startTsMap.get(batchId).add(currentTs);
                     histogram.computeIfPresent(tx, (_, v)-> v+1);
-                    // only for local tests
-//                    if(histogram.get(tx) == 200_000) {
-//                        LOGGER.log(WARNING,"200K transaction inputs for: "+tx+" hit. Closing submission loop earlier...");
-//                        Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
-//                        break;
-//                    }
+                    /* only for local tests
+                    if(histogram.get(tx) == 200_000) {
+                        LOGGER.log(WARNING,"200K transaction inputs for: "+tx+" hit. Closing submission loop earlier...");
+                        Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
+                        break;
+                    }
+                     */
                 } catch (Exception e) {
                     LOGGER.log(ERROR,"Exception in Thread ID: " + (e.getMessage() == null ? "No message" : e.getMessage()));
                     throw new RuntimeException(e);
@@ -378,6 +379,7 @@ public final class WorkloadUtils {
                         orderStatusBuffer.force();
                         LOGGER.log(INFO, "Generated "+entry.getValue()+" order status inputs");
                     }
+                    case "stock_level", "delivery" -> {}
                     case null, default -> throw new IllegalStateException("Unexpected value: " + entry.getKey());
                 }
             }
@@ -406,7 +408,16 @@ public final class WorkloadUtils {
         String basePathStr = StorageUtils.getBasePath("proxy");
         Path basePath = Paths.get(basePathStr);
         try(Stream<Path> paths = Files.walk(basePath)){
-            final String fileName = numTxPerType.containsKey("new_order") ? NEW_ORDER_INPUT_BASE_FILE_NAME : ORDER_STATUS_INPUT_BASE_FILE_NAME;
+            final String fileName;
+            if(numTxPerType.containsKey("new_order")){
+                fileName = NEW_ORDER_INPUT_BASE_FILE_NAME;
+            } else if(numTxPerType.containsKey("payment")) {
+                fileName = PAYMENT_INPUT_BASE_FILE_NAME;
+            } else if(numTxPerType.containsKey("order_status")){
+                fileName = ORDER_STATUS_INPUT_BASE_FILE_NAME;
+            } else {
+                return 0;
+            }
             List<Path> workloadInputFiles = paths.filter(path -> path.toString().contains(fileName)).toList();
             return workloadInputFiles.size();
         } catch (IOException e){
@@ -530,8 +541,7 @@ public final class WorkloadUtils {
 
     private static StockLevelWareIn generateStockLevel(int w_id){
         int d_id = randomNumber(1, NUM_DIST_PER_WARE);
-        int threshold = randomNumber(10, 20);
-        return new StockLevelWareIn(w_id, d_id, threshold);
+        return new StockLevelWareIn(w_id, d_id);
     }
 
     private static DeliveryIn generateDelivery(int w_id){

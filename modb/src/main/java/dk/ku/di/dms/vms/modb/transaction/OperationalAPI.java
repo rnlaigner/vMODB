@@ -1,5 +1,6 @@
 package dk.ku.di.dms.vms.modb.transaction;
 
+import dk.ku.di.dms.vms.modb.api.query.clause.WhereClauseElement;
 import dk.ku.di.dms.vms.modb.api.query.statement.IStatement;
 import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryRefNode;
@@ -37,6 +38,8 @@ public sealed interface OperationalAPI permits TransactionManager {
     MemoryRefNode fetchMemoryReference(Table table, SelectStatement selectStatement);
 
     List<Object[]> fetch(Table table, SelectStatement selectStatement);
+
+    List<Object[]> fetch(Table table, SelectStatement selectStatement, List<WhereClauseElement> whereClauseElements);
 
     void updateAll(Table table, List<Object[]> parsedEntities);
 

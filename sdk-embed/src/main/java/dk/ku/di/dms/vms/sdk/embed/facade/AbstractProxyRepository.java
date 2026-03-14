@@ -79,11 +79,9 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
         for(int i = 0; i < args.length; i++) {
             whereClauseElements.add(selectStatement.whereClause.get(i).overwriteValue( args[i] ));
         }
-        // possible optimization: avoid copying class, just pass new where clause as parameter to method "fetch" below
-        selectStatement = selectStatement.clone(whereClauseElements);
-
+        // optimization is avoiding copying class, just passing the built where clause as parameter to method "fetch" below
         // submit for execution. could also see if it is possible to project only what is in the select clause
-        List<Object[]> records = this.operationalAPI.fetch(this.table, selectStatement);
+        List<Object[]> records = this.operationalAPI.fetch(this.table, selectStatement, whereClauseElements);
 
         if (List.class.isAssignableFrom(method.getReturnType())) {
             // this requires a fix. need to know whether the return type specified in the list is an entity

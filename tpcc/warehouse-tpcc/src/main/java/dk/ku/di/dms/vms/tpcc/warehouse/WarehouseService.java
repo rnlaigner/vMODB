@@ -43,30 +43,27 @@ public final class WarehouseService {
 
     @Inbound(values = "delivery-out")
     @Transactional(type = RW)
-    public void processStockLevel(DeliveryOut in) {
-
+    @PartitionBy(clazz = DeliveryOut.class, method = "getId")
+    public void processDelivery(DeliveryOut in) {
         List<Customer.CustomerId> customerIds = new ArrayList<>(TPCcConstants.NUM_DIST_PER_WARE);
         for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id ++) {
             customerIds.add(new Customer.CustomerId(in.customerIds[d_id-1], d_id, in.w_id));
         }
-
         List<Customer> customers = this.customerRepository.lookupByKeys(customerIds);
-
         int idx = 0;
         for(Customer customer : customers) {
             customer.c_balance += in.amounts[idx++];
             customer.c_delivery_cnt++;
         }
-
         this.customerRepository.updateAll(customers);
     }
 
-    @Inbound(values = "stock-level-in")
-    @Outbound("stock-level-out")
+    @Inbound(values = "stock-level-ware-in")
+    @Outbound("stock-level-ware-out")
     @Transactional(type = R)
     public StockLevelWareOut processStockLevel(StockLevelWareIn in) {
         int d_next_o_id = this.districtRepository.getNextOid(in.w_id, in.d_id);
-        return new StockLevelWareOut(in.w_id, in.d_id, in.threshold, d_next_o_id);
+        return new StockLevelWareOut(in.w_id, in.d_id, d_next_o_id);
     }
 
     @Inbound(values = "payment-in")

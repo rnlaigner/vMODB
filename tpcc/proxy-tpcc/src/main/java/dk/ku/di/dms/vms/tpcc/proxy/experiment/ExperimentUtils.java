@@ -267,6 +267,13 @@ public final class ExperimentUtils {
                 .build();
         transactionMap.put(stockLevelDag.name, stockLevelDag);
 
+        // delivery
+        TransactionDAG deliveryDag = TransactionBootstrap.name("delivery")
+                .input("a", "order", "delivery-in")
+                .terminal("b", "customer", "a")
+                .build();
+        transactionMap.put(deliveryDag.name, deliveryDag);
+
         Map<String, IdentifiableNode> starterVMSs = getVmsMap(properties);
         Coordinator coordinator = Coordinator.build(properties, starterVMSs, transactionMap, (ignored1) -> IHttpHandler.DEFAULT);
         Thread coordinatorThread = new Thread(coordinator);

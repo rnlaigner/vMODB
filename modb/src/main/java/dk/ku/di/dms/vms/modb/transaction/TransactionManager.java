@@ -1,5 +1,6 @@
 package dk.ku.di.dms.vms.modb.transaction;
 
+import dk.ku.di.dms.vms.modb.api.query.clause.WhereClauseElement;
 import dk.ku.di.dms.vms.modb.api.query.enums.ExpressionTypeEnum;
 import dk.ku.di.dms.vms.modb.api.query.statement.IStatement;
 import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
@@ -81,6 +82,14 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
 
     @Override
     public List<Object[]> fetch(final Table table, final SelectStatement selectStatement){
+        return this.fetch(table, selectStatement, Collections.emptyList());
+    }
+
+    /**
+     * Would be nice to store the decision of which method to call or the method call itself
+     */
+    @Override
+    public List<Object[]> fetch(final Table table, final SelectStatement selectStatement, List<WhereClauseElement> whereClauseElements) {
         String sqlAsKey = selectStatement.SQL.toString();
         AbstractSimpleOperator scanOperator = this.queryPlanCacheMap.computeIfAbsent(sqlAsKey,
                 (_) -> {
@@ -88,41 +97,46 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
                     return this.planner.plan(queryTree);
                 });
         List<WherePredicate> wherePredicates;
-        if(!selectStatement.whereClause.isEmpty()) {
-            wherePredicates = this.analyzer.analyzeWhere(table, selectStatement.whereClause);
-        } else {
+        if(whereClauseElements.isEmpty()) {
             wherePredicates = Collections.emptyList();
+        } else {
+            wherePredicates = this.analyzer.analyzeWhere(table, whereClauseElements);
         }
-        if(scanOperator.isIndexScan()){
+        if(scanOperator.isIndexScan()) {
             if(wherePredicates.get(0).expression == ExpressionTypeEnum.EQUALS) {
                 IKey key = this.getIndexedKeysFromWhereClause(wherePredicates, scanOperator.asIndexScan().index());
-                if(wherePredicates.size() == key.size()) {
-                    return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key);
-                } else {
+                if(containsNonIndexColumns(wherePredicates, scanOperator.asIndexScan().index())) {
                     List<WherePredicate> nonIdxClause = this.getNonIndexedColumnsWhereClause(wherePredicates, scanOperator.asIndexScan().index());
                     FilterContext filterContext = FilterContextBuilder.build(nonIdxClause);
                     return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key, filterContext);
+                } else {
+                    return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key);
                 }
             } else {
                 // can only be IN
-                IKey[] keys = this.getMultiKeysFromWhereClause(wherePredicates.get(0));
-                return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), keys);
+                IKey[] keys = this.getMultiKeysFromWhereClause(wherePredicates, scanOperator.asIndexScan().index());
+                if(containsNonIndexColumns(wherePredicates, scanOperator.asIndexScan().index())) {
+                    List<WherePredicate> nonIdxClause = this.getNonIndexedColumnsWhereClause(wherePredicates, scanOperator.asIndexScan().index());
+                    FilterContext filterContext = FilterContextBuilder.build(nonIdxClause);
+                    return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), keys, selectStatement.distinct, filterContext);
+                }
+                return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), keys, selectStatement.distinct);
             }
         } else if(scanOperator.isIndexScanWithOrder()) {
             IKey key = this.getIndexedKeysFromWhereClause(wherePredicates, scanOperator.asIndexScanWithOrder().index());
-            if(wherePredicates.size() == key.size()) {
-                return scanOperator.asIndexScanWithOrder().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key);
-            } else {
+            if(containsNonIndexColumns(wherePredicates, scanOperator.asIndexScan().index())) {
                 List<WherePredicate> nonIdxClause = this.getNonIndexedColumnsWhereClause(wherePredicates, scanOperator.asIndexScanWithOrder().index());
                 FilterContext filterContext = FilterContextBuilder.build(nonIdxClause);
-                return scanOperator.asIndexScanWithOrder().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key, filterContext);
+                return scanOperator.asIndexScanWithOrder().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key, filterContext, selectStatement.limit);
+            } else {
+                return scanOperator.asIndexScanWithOrder().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key, selectStatement.limit);
             }
-        } else if(scanOperator.isFullScanWithOrder()){
+        } else if(scanOperator.isFullScanWithOrder()) {
             FilterContext filterContext = FilterContextBuilder.build(wherePredicates);
-            return scanOperator.asFullScanWithOrder().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), filterContext);
-        } else if(scanOperator.isIndexAggregationScan()){
+            return scanOperator.asFullScanWithOrder().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), filterContext, selectStatement.limit);
+        } else if(scanOperator.isIndexAggregationScan()) {
             return scanOperator.asIndexAggregationScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()));
-        } else if(scanOperator.isIndexMultiAggregationScan()){
+        } else if(scanOperator.isIndexMultiAggregationScan()) {
             IKey key = this.getIndexedKeysFromWhereClause(wherePredicates, scanOperator.asIndexMultiAggregationScan().index());
             return scanOperator.asIndexMultiAggregationScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key);
         } else {
@@ -384,17 +398,40 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         return null; // operator.run();
     }
 
-    private IKey[] getMultiKeysFromWhereClause(WherePredicate wherePredicate){
-        if(wherePredicate.value instanceof int[] intArray){
+    /**
+     * Assumes IN always refers to the first column
+     */
+    private IKey[] getMultiKeysFromWhereClause(List<WherePredicate> wherePredicates, IMultiVersionIndex index){
+        if(!(wherePredicates.get(0).value instanceof int[] intArray)){
+            throw new RuntimeException("Do not support IN clause of types other than INT");
+        }
+        if(wherePredicates.size() == 1){
             SimpleKey[] keysToRet = new SimpleKey[intArray.length];
             int idx = 0;
             for(var key : intArray){
-               keysToRet[idx] = SimpleKey.of(key);
-               idx++;
+                keysToRet[idx] = SimpleKey.of(key);
+                idx++;
             }
             return keysToRet;
         }
-        throw new RuntimeException("Do not support IN clause of types other than INT");
+        IKey[] keys = new IKey[intArray.length];
+        for(int i = 0; i < intArray.length; i++){
+            Object[] keyList = new Object[index.indexColumns().length];
+            int j = 0;
+            for (WherePredicate wherePredicate : wherePredicates) {
+                if(j == 0){
+                    keyList[j] = intArray[i];
+                    j++;
+                } else {
+                    if (index.containsColumn(wherePredicate.columnReference.columnPosition)) {
+                        keyList[j] = wherePredicate.value;
+                        j++;
+                    }
+                }
+            }
+            keys[i] = KeyUtils.buildRecordKey(keyList);
+        }
+        return keys;
     }
 
     private IKey getIndexedKeysFromWhereClause(List<WherePredicate> wherePredicates, IMultiVersionIndex index){
@@ -421,6 +458,13 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             nonIdxWhereClause.add(wherePredicate);
         }
         return nonIdxWhereClause;
+    }
+
+    private boolean containsNonIndexColumns(List<WherePredicate> wherePredicates, IMultiVersionIndex index){
+        for(WherePredicate wherePredicate : wherePredicates){
+            if (!index.containsColumn(wherePredicate.columnReference.columnPosition)) { return true; }
+        }
+        return false;
     }
 
     public MemoryRefNode run(List<WherePredicate> wherePredicates,

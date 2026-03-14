@@ -11,20 +11,17 @@ import java.util.List;
 
 public final class IndexScanWithOrder extends AbstractScanWithOrder {
 
-    public final Integer limit;
-
     public IndexScanWithOrder(IMultiVersionIndex index, int[] projectionColumns, int orderByColumn, int entrySize, Integer limit) {
         super(index, projectionColumns, orderByColumn, entrySize);
-        this.limit = limit;
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key) {
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, Integer limit) {
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
         Object[] next;
         int pos;
         // prevent more projection than necessary
-        if(this.limit == null){
+        if(limit == null){
             while(iterator.hasNext()){
                 next = iterator.next();
                 pos = this.getPositionToInsert(result, next);
@@ -42,15 +39,15 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
 
         int i = 0;
         if(projectionColumns.length != result.get(0).length) {
-            while (i < this.limit) {
+            while (i < limit) {
                 result.set(i, this.getProjection(result.get(i)));
                 i++;
             }
         }
-        return result.subList(0, this.limit);
+        return result.subList(0, limit);
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext) {
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext, Integer limit) {
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
         while(iterator.hasNext()){
@@ -59,16 +56,22 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
                 this.insert(result, this.getProjection(record));
             }
         }
-        return result;
+        if(limit == null){
+            return result;
+        }
+        return result.subList(0, limit);
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey[] keys) {
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey[] keys, Integer limit) {
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, keys);
         while(iterator.hasNext()){
             this.insert(result, this.getProjection(iterator.next()));
         }
-        return result;
+        if(limit == null){
+            return result;
+        }
+        return result.subList(0, limit);
     }
 
     @Override

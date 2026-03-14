@@ -14,6 +14,8 @@ import java.util.List;
  */
 public final class SelectStatement extends AbstractStatement {
 
+    public boolean distinct;
+
     public List<String> selectClause;
 
     public List<GroupBySelectElement> groupBySelectClause;
@@ -39,33 +41,40 @@ public final class SelectStatement extends AbstractStatement {
         this.selectClause = selectClause;
         this.fromClause = fromClause;
         this.whereClause.addAll(whereClause);
+        this.limit = null;
+        this.distinct = false;
     }
 
-    public SelectStatement(StringBuilder sql, List<String> selectClause, String table, List<WhereClauseElement> whereClause) {
+    public SelectStatement(StringBuilder sql, List<String> selectClause, String table, List<WhereClauseElement> whereClause, boolean distinct) {
         super(sql);
         this.selectClause = selectClause;
         this.fromClause = List.of(table);
         this.whereClause.addAll(whereClause);
+        this.limit = null;
+        this.distinct = distinct;
     }
 
-    public SelectStatement(StringBuilder sql, List<String> selectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<OrderByClauseElement> orderByClause) {
-        super(sql);
-        this.selectClause = selectClause;
-        this.fromClause = fromClause;
-        this.whereClause.addAll(whereClause);
-        this.orderByClause = orderByClause;
-    }
-
-    public SelectStatement(StringBuilder sql, List<String> selectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<OrderByClauseElement> orderByClause, Integer limit) {
+    public SelectStatement(StringBuilder sql, List<String> selectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<OrderByClauseElement> orderByClause, int limit, boolean distinct) {
         super(sql);
         this.selectClause = selectClause;
         this.fromClause = fromClause;
         this.whereClause.addAll(whereClause);
         this.orderByClause = orderByClause;
         this.limit = limit;
+        this.distinct = distinct;
     }
 
-    public SelectStatement(StringBuilder sql, List<String> selectClause, List<GroupBySelectElement> groupBySelectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<String> groupByClause, List<OrderByClauseElement> orderByClause) {
+    public SelectStatement(StringBuilder sql, List<String> selectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<OrderByClauseElement> orderByClause, Integer limit, boolean distinct) {
+        super(sql);
+        this.selectClause = selectClause;
+        this.fromClause = fromClause;
+        this.whereClause.addAll(whereClause);
+        this.orderByClause = orderByClause;
+        this.limit = limit;
+        this.distinct = distinct;
+    }
+
+    public SelectStatement(StringBuilder sql, List<String> selectClause, List<GroupBySelectElement> groupBySelectClause, List<String> fromClause, List<WhereClauseElement> whereClause, List<String> groupByClause, List<OrderByClauseElement> orderByClause, int limit, boolean distinct) {
         super(sql);
         this.selectClause = selectClause;
         this.groupBySelectClause = groupBySelectClause;
@@ -73,6 +82,8 @@ public final class SelectStatement extends AbstractStatement {
         this.whereClause.addAll(whereClause);
         this.groupByClause = groupByClause;
         this.orderByClause = orderByClause;
+        this.limit = limit;
+        this.distinct = distinct;
     }
 
     @Override
@@ -86,7 +97,7 @@ public final class SelectStatement extends AbstractStatement {
     }
 
     public SelectStatement clone(List<WhereClauseElement> whereClause){
-        return new SelectStatement(this.SQL, this.selectClause, this.fromClause, whereClause, this.orderByClause, this.limit);
+        return new SelectStatement(this.SQL, this.selectClause, this.fromClause, whereClause, this.orderByClause, this.limit, this.distinct);
     }
 
     public SelectStatement setParam(Object... params) {
@@ -94,7 +105,7 @@ public final class SelectStatement extends AbstractStatement {
         for (int i = 0; i < this.whereClause.size(); i++) {
             whereClause_.add(this.whereClause.get(i).overwriteValue(params[i]));
         }
-        return new SelectStatement(this.SQL, this.selectClause, this.groupBySelectClause, this.fromClause, whereClause_, this.groupByClause, this.orderByClause);
+        return new SelectStatement(this.SQL, this.selectClause, this.groupBySelectClause, this.fromClause, whereClause_, this.groupByClause, this.orderByClause, this.limit, this.distinct);
     }
 
 }

@@ -21,6 +21,11 @@ public final class DeliveryOut {
         this.amounts = amounts;
     }
 
+    @SuppressWarnings("unused")
+    public Integer getId(){
+        return this.w_id;
+    }
+
     @Override
     public String toString() {
         return "{"

@@ -31,13 +31,15 @@ public final class Order implements IEntity<Order.OrderId> {
     public int o_id;
 
     @Id
+    @VmsIndex(name = "customer_idx")
     public int o_d_id;
 
     @Id
+    @VmsIndex(name = "customer_idx")
     public int o_w_id;
 
-    @VmsIndex(name = "customer_idx")
     @Column
+    @VmsIndex(name = "customer_idx")
     public int o_c_id;
 
     @Column

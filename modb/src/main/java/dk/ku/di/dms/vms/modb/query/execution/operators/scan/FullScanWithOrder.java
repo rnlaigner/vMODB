@@ -17,16 +17,19 @@ public class FullScanWithOrder extends AbstractScanWithOrder {
         super(index, projectionColumns, orderByColumn, entrySize);
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx){
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, Integer limit){
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx);
         while(iterator.hasNext()){
             this.insert(result, this.getProjection(iterator.next()));
         }
-        return result;
+        if(limit == null){
+            return result;
+        }
+        return result.subList(0, limit);
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, FilterContext filterContext){
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, FilterContext filterContext, Integer limit){
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx);
         while(iterator.hasNext()){
@@ -35,7 +38,10 @@ public class FullScanWithOrder extends AbstractScanWithOrder {
                 this.insert(result, this.getProjection(record));
             }
         }
-        return result;
+        if(limit == null){
+            return result;
+        }
+        return result.subList(0, limit);
     }
 
     @Override

@@ -94,14 +94,15 @@ public final class Main {
                     System.out.println("Option 4: \"Submit workload\" selected.");
 
                     // check if workload files exist
-                    int numFiles = WorkloadUtils.getNumWorkloadInputFiles(numTxInputPerType);
-
-                    if(numWare != numFiles){
-                        System.out.println("Number of warehouses ("+numWare+") != Number of input files ("+numFiles+")");
-                        System.out.println("Do you want to proceed? [y/n]");
-                        String resp = scanner.nextLine();
-                        if(resp.equalsIgnoreCase("n")){
-                            break;
+                    if(numTxInputPerType.containsKey("new_order") || numTxInputPerType.containsKey("payment") ||  numTxInputPerType.containsKey("order_status")) {
+                        int numFiles = WorkloadUtils.getNumWorkloadInputFiles(numTxInputPerType);
+                        if(numWare != numFiles){
+                            System.out.println("Number of warehouses ("+numWare+") != Number of input files ("+numFiles+")");
+                            System.out.println("Do you want to proceed? [y/n]");
+                            String resp = scanner.nextLine();
+                            if(resp.equalsIgnoreCase("n")){
+                                break;
+                            }
                         }
                     }
 
@@ -230,6 +231,14 @@ public final class Main {
         if(!PROPERTIES.get("order_status").toString().equals("0")) {
             txRatioMap.put("order_status", Integer.valueOf(PROPERTIES.get("order_status").toString()));
             if(txRatioMap.get("order_status") == 100) seen_100 = true;
+        }
+        if(!PROPERTIES.get("stock_level").toString().equals("0")) {
+            txRatioMap.put("stock_level", Integer.valueOf(PROPERTIES.get("stock_level").toString()));
+            if(txRatioMap.get("stock_level") == 100) seen_100 = true;
+        }
+        if(!PROPERTIES.get("delivery").toString().equals("0")) {
+            txRatioMap.put("delivery", Integer.valueOf(PROPERTIES.get("delivery").toString()));
+            if(txRatioMap.get("delivery") == 100) seen_100 = true;
         }
         if(!seen_100) throw new RuntimeException("No transaction defined as 100 in app.properties!");
         return txRatioMap;

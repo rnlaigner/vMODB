@@ -55,7 +55,6 @@ public final class OrderService {
         float[] amounts = new float[10];
         for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id ++) {
 
-            // TODO: make sure selectivity is chosen appropriately in the query plan (i.e., district FK index is pick)
             NewOrder newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
             no_o_id = newOrder.no_o_id;
             this.newOrderRepository.delete(newOrder);
@@ -87,11 +86,9 @@ public final class OrderService {
     @Outbound("stock-level-ord-out")
     @Transactional(type = R)
     public StockLevelOrdOut processStockLevel(StockLevelWareOut in) {
-        // TODO: make parser process distinct and push it to query execution
-        int[] orderIds = IntStream.range(in.next_o_id - 20, in.next_o_id - 1).distinct().toArray();
-        // TODO: make sure selectivity is chosen appropriately in the query plan (i.e., district FK index is pick)
+        int[] orderIds = IntStream.range(in.next_o_id - 20, in.next_o_id).toArray();
         int[] itemIds = this.orderLineRepository.getAllItemsByOrderIds(orderIds, in.d_id, in.w_id);
-        return new StockLevelOrdOut(in.w_id, in.d_id, in.threshold, itemIds);
+        return new StockLevelOrdOut(in.w_id, itemIds);
     }
 
     @Inbound(values = "payment-out")
@@ -104,8 +101,8 @@ public final class OrderService {
 
     @Inbound(values = "order-status-out")
     @Transactional(type = R)
-    public void processOrderStatus(OrderStatusOut in){
-        Order order = this.orderRepository.getLastOrderByCustomerId(in.c_id);
+    public void processOrderStatus(OrderStatusOut in) {
+        Order order = this.orderRepository.getLastOrderByCustomerId(in.c_id, in.d_id, in.w_id);
         if(order == null){
             LOGGER.log(DEBUG, "No order found for customer "+in.c_id+"\n"+in);
             return;

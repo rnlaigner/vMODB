@@ -5,9 +5,7 @@ import dk.ku.di.dms.vms.modb.query.execution.filter.FilterContext;
 import dk.ku.di.dms.vms.modb.transaction.TransactionContext;
 import dk.ku.di.dms.vms.modb.transaction.multiversion.index.IMultiVersionIndex;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 /**
  * On-flight scanning, filtering, and projection in a single operator.
@@ -42,18 +40,64 @@ public final class IndexScan extends AbstractScan {
             if(this.index.checkCondition(filterContext, record)) {
                 res.add(this.getProjection(record));
             }
-
         }
         return res;
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey[] keys) {
-        List<Object[]> res = new ArrayList<>();
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey[] keys, boolean distinct) {
         Iterator<Object[]> iterator = this.index.iterator(txCtx, keys);
-        while(iterator.hasNext()){
-            res.add(this.getProjection(iterator.next()));
+        if(distinct) {
+            Set<Object[]> res = new TreeSet<>((o1, o2) -> {
+                for(int i = 0; i < o1.length; i++) {
+                    if(!o1[i].equals(o2[i])) {
+                        return ((Comparable)o1[i]).compareTo(o2[i]);
+                    }
+                }
+                return 0;
+            });
+            while(iterator.hasNext()) {
+                res.add(this.getProjection(iterator.next()));
+            }
+            return new ArrayList<>(res);
+        } else {
+            List<Object[]> res = new ArrayList<>();
+            while(iterator.hasNext()) {
+                res.add(this.getProjection(iterator.next()));
+            }
+            return res;
         }
-        return res;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey[] keys, boolean distinct, FilterContext filterContext) {
+        Iterator<Object[]> iterator = this.index.iterator(txCtx, keys);
+        if(distinct) {
+            Set<Object[]> res = new TreeSet<>((o1, o2) -> {
+                for(int i = 0; i < o1.length; i++) {
+                    if(!o1[i].equals(o2[i])) {
+                        return ((Comparable)o1[i]).compareTo(o2[i]);
+                    }
+                }
+                return 0;
+            });
+            while(iterator.hasNext()) {
+                Object[] record = iterator.next();
+                if(this.index.checkCondition(filterContext, record)) {
+                    res.add(this.getProjection(record));
+                }
+            }
+            return new ArrayList<>(res);
+        } else {
+            List<Object[]> res = new ArrayList<>();
+            while(iterator.hasNext()){
+                Object[] record = iterator.next();
+                if(this.index.checkCondition(filterContext, record)) {
+                    res.add(this.getProjection(record));
+                }
+            }
+            return res;
+        }
     }
 
     @Override

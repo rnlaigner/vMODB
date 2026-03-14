@@ -66,7 +66,10 @@ public final class VmsApplicationOptions {
             truncating = Boolean.parseBoolean(truncatingStr);
         }
 
-        int maxRecords = Integer.parseInt(properties.getProperty("max_records"));
+        int maxRecords = 0;
+        if (properties.containsKey("max_records")) {
+            maxRecords = Integer.parseInt(properties.getProperty("max_records"));
+        }
 
         return new VmsApplicationOptions(
                 host,

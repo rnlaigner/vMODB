@@ -14,6 +14,8 @@ import java.util.*;
   */
 public final class QueryTree {
 
+    public Optional<Boolean> distinct;
+
     // projection
     public final List<ColumnReference> projections;
 
@@ -43,6 +45,7 @@ public final class QueryTree {
         this.groupByProjections = Collections.emptyList();
         this.groupByColumns = Collections.emptyList();
         this.orderByPredicates = Collections.emptyList();
+        this.distinct = Optional.empty();
         this.limit = Optional.empty();
     }
 

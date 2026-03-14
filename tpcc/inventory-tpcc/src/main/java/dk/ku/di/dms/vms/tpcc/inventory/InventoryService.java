@@ -13,6 +13,7 @@ import java.util.List;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
+import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
 import static java.lang.System.Logger.Level.ERROR;
 
 @Microservice("inventory")
@@ -31,7 +32,8 @@ public final class InventoryService {
     @Inbound(values = "stock-level-ord-out")
     @Transactional(type = R)
     public void processStockLevel(StockLevelOrdOut in) {
-        int[] itemIds = this.stockRepository.getStockCount(in.itemsIds, in.threshold);
+        int threshold = randomNumber(10, 20);
+        int[] itemIds = this.stockRepository.getStockCount(in.itemsIds, in.w_id, threshold);
         if(itemIds.length == 0){
             LOGGER.log(ERROR, "Input event OrderStatusOut led to empty order lines info:\n"+in);
         }

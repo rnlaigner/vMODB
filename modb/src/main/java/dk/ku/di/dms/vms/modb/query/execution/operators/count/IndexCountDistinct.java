@@ -49,7 +49,6 @@ public class IndexCountDistinct extends AbstractCount {
         }
         this.append(state.count);
         return memoryRefNode;
-
     }
 
 }

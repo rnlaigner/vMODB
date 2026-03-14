@@ -30,6 +30,8 @@ import java.util.Optional;
  */
 public final class Analyzer {
 
+    private static final System.Logger LOGGER = System.getLogger(Analyzer.class.getName());
+
     private final Map<String, Table> catalog;
 
     public Analyzer(final Map<String, Table> catalog){
@@ -44,7 +46,6 @@ public final class Analyzer {
      * @throws AnalyzerException Unexpected statement type
      */
     public QueryTree analyze(final IStatement statement) throws AnalyzerException {
-
         switch (statement.getType()){
             case SELECT -> { return this.analyzeSelectStatement( statement.asSelectStatement() ); }
             // case INSERT -> { return null; }
@@ -52,7 +53,6 @@ public final class Analyzer {
             case DELETE -> { return this.analyzeDeleteStatement( statement.asDeleteStatement()); }
             default -> throw new IllegalStateException("No statement type identified.");
         }
-
     }
 
     private QueryTree analyzeSelectStatement(final SelectStatement statement) throws AnalyzerException {
@@ -159,9 +159,6 @@ public final class Analyzer {
         //  e.g., numeric comparisons between numbers and string/characters
         // where
         for (WhereClauseElement currWhere : statement.whereClause) {
-            if (currWhere.value() == null) {
-                throw new AnalyzerException("Parameter of where clause cannot be null value");
-            }
             ColumnReference columnReference;
             String tableName;
             String columnName;
@@ -178,30 +175,35 @@ public final class Analyzer {
             } else {
                 columnReference = this.findColumnReference(currWhere.column(), queryTree.tables);
             }
-            // 1. is it a reference to a table or a char? e.g., "'something'"
-            // 2. check if there is some inner join. i.e., the object is a literal?
-            if (currWhere.value() instanceof String value) {
-                ColumnReference columnReference1;
-                if (value.contains(".")) {
-                    // <table>.<column>
-                    String[] split = value.split("\\.");
-                    tableName = split[0];
-                    columnName = split[1];
-                    Table table = queryTree.tables.get(tableName);
-                    if (table != null) {
-                        columnReference1 = new ColumnReference(columnName, table);
-                        // build typed join clause
-                        JoinPredicate joinClause = new JoinPredicate(columnReference, columnReference1, currWhere.expression(), JoinTypeEnum.INNER_JOIN);
-                        queryTree.joinPredicates.add(joinClause);
-                        continue;
-                    }  // table is null, so no table, it is a literal
+            if (currWhere.value() == null) {
+                // throw new AnalyzerException("Parameter of where clause cannot be null value");
+                LOGGER.log(System.Logger.Level.DEBUG, "Query: "+statement.SQL+" \nParameter "+currWhere.column()+"\n Value in the where clause is null.");
+            } else {
+                // 1. is it a reference to a table or a char? e.g., "'something'"
+                // 2. check if there is some inner join. i.e., the object is a literal?
+                if (currWhere.value() instanceof String value) {
+                    ColumnReference columnReference1;
+                    if (value.contains(".")) {
+                        // <table>.<column>
+                        String[] split = value.split("\\.");
+                        tableName = split[0];
+                        columnName = split[1];
+                        Table table = queryTree.tables.get(tableName);
+                        if (table != null) {
+                            columnReference1 = new ColumnReference(columnName, table);
+                            // build typed join clause
+                            JoinPredicate joinClause = new JoinPredicate(columnReference, columnReference1, currWhere.expression(), JoinTypeEnum.INNER_JOIN);
+                            queryTree.joinPredicates.add(joinClause);
+                            continue;
+                        }  // table is null, so no table, it is a literal
+                    }
                 }
-            }
-            // check if the type is correct
-            if(CHECK_PARAM_TYPE) {
-                DataType dataType = DataTypeUtils.getColumnDataTypeFromAttributeType(currWhere.value().getClass());
-                if (dataType != columnReference.dataType) {
-                    throw new AnalyzerException("Incompatible data types. Expected: " + columnReference.dataType + " Provided: " + dataType + "\nQuery:\n" + statement.SQL);
+                // check if the type is correct
+                if (CHECK_PARAM_TYPE) {
+                    DataType dataType = DataTypeUtils.getColumnDataTypeFromAttributeType(currWhere.value().getClass());
+                    if (dataType != columnReference.dataType) {
+                        throw new AnalyzerException("Incompatible data types. Expected: " + columnReference.dataType + " Provided: " + dataType + "\nQuery:\n" + statement.SQL);
+                    }
                 }
             }
             WherePredicate whereClause = new WherePredicate(columnReference, currWhere.expression(), currWhere.value());
@@ -216,6 +218,11 @@ public final class Analyzer {
             queryTree.limit = Optional.of( statement.limit );
         } else {
             queryTree.limit = Optional.empty();
+        }
+        if(statement.distinct){
+            queryTree.distinct = Optional.of(true);
+        } else {
+            queryTree.distinct = Optional.empty();
         }
         return queryTree;
     }

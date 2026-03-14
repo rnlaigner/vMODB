@@ -25,11 +25,17 @@ public final class Parser {
 
         int i = 1;
 
-        List<String> projection = new ArrayList<>(2);
+        List<String> projection = new ArrayList<>();
+
+        boolean distinct = false;
 
         while(i < tokens.length && !tokens[i].equalsIgnoreCase("from")){
-            // remove comma from all
-            projection.add(tokens[i].replace(',',' ').trim());
+            if(tokens[i].equalsIgnoreCase("distinct")){
+                distinct = true;
+            } else {
+                // remove comma from all
+                projection.add(tokens[i].replace(',', ' ').trim());
+            }
             i++;
         }
 
@@ -60,7 +66,7 @@ public final class Parser {
         }
 
         if(i == tokens.length) {
-            return new SelectStatement(new StringBuilder(sql), projection, table, whereClauseElements);
+            return new SelectStatement(new StringBuilder(sql), projection, table, whereClauseElements, distinct);
         }
 
         // ORDER BY
@@ -70,7 +76,7 @@ public final class Parser {
         i++;
         if(i == tokens.length){
             orderByClauseElement = List.of(new OrderByClauseElement(orderByColumn));
-            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
+            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement, null, distinct);
         } else {
             String sortOrder = tokens[i];
             orderByClauseElement = List.of(new OrderByClauseElement(orderByColumn, sortOrder));
@@ -79,9 +85,9 @@ public final class Parser {
         i++;
         // limit
         if(i == tokens.length) {
-            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement);
+            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement, null, distinct);
         } else {
-            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement, Integer.valueOf(tokens[i+1]));
+            return new SelectStatement(new StringBuilder(sql), projection, List.of(table), whereClauseElements, orderByClauseElement, Integer.valueOf(tokens[i+1]), distinct);
         }
     }
 
