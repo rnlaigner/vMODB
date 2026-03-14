@@ -6,6 +6,7 @@ import dk.ku.di.dms.vms.coordinator.transaction.TransactionDAG;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionInput;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.IdentifiableNode;
+import dk.ku.di.dms.vms.tpcc.common.events.delivery.DeliveryIn;
 import dk.ku.di.dms.vms.tpcc.common.events.new_order.NewOrderWareIn;
 import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusIn;
 import dk.ku.di.dms.vms.tpcc.common.events.payment.PaymentIn;
@@ -223,11 +224,15 @@ public final class ExperimentUtils {
                     txIdentifier = "order_status";
                     eventPayload = new TransactionInput.Event("order-status-in", orderStatusInput.toString());
                 }
+                case DeliveryIn deliveryInput -> {
+                    txIdentifier = "delivery";
+                    eventPayload = new TransactionInput.Event("delivery-in", deliveryInput.toString());
+                }
                 case StockLevelWareIn stockLevelWareInput -> {
                     txIdentifier = "stock_level";
                     eventPayload = new TransactionInput.Event("stock-level-ware-in", stockLevelWareInput.toString());
                 }
-                case null, default -> throw new RuntimeException("Invalid input type: " + input);
+                case null, default -> throw new IllegalStateException("Invalid input type: " + input);
             }
             TransactionInput txInput = new TransactionInput(txIdentifier, eventPayload);
             coordinator.queueTransactionInput(txInput);
@@ -263,14 +268,14 @@ public final class ExperimentUtils {
         TransactionDAG stockLevelDag = TransactionBootstrap.name("stock_level")
                 .input("a", "warehouse", "stock-level-ware-in")
                 .internal("b", "order", "stock-level-ware-out", "a")
-                .terminal("c", "stock", "b")
+                .terminal("c", "inventory", "b")
                 .build();
         transactionMap.put(stockLevelDag.name, stockLevelDag);
 
         // delivery
         TransactionDAG deliveryDag = TransactionBootstrap.name("delivery")
                 .input("a", "order", "delivery-in")
-                .terminal("b", "customer", "a")
+                .terminal("b", "warehouse", "a")
                 .build();
         transactionMap.put(deliveryDag.name, deliveryDag);
 

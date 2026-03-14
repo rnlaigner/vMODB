@@ -13,8 +13,9 @@ public class FullScanWithOrder extends AbstractScanWithOrder {
     public FullScanWithOrder(IMultiVersionIndex index,
                              int[] projectionColumns,
                              int orderByColumn,
+                             boolean descending,
                              int entrySize) {
-        super(index, projectionColumns, orderByColumn, entrySize);
+        super(index, projectionColumns, orderByColumn, descending, entrySize);
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, Integer limit){
@@ -23,7 +24,7 @@ public class FullScanWithOrder extends AbstractScanWithOrder {
         while(iterator.hasNext()){
             this.insert(result, this.getProjection(iterator.next()));
         }
-        if(limit == null){
+        if(limit == null || result.isEmpty()){
             return result;
         }
         return result.subList(0, limit);
@@ -38,7 +39,7 @@ public class FullScanWithOrder extends AbstractScanWithOrder {
                 this.insert(result, this.getProjection(record));
             }
         }
-        if(limit == null){
+        if(limit == null || result.isEmpty()){
             return result;
         }
         return result.subList(0, limit);

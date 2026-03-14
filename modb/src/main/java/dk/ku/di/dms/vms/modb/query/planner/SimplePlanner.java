@@ -2,6 +2,7 @@ package dk.ku.di.dms.vms.modb.query.planner;
 
 import dk.ku.di.dms.vms.modb.api.query.enums.ExpressionTypeEnum;
 import dk.ku.di.dms.vms.modb.api.query.enums.GroupByOperationEnum;
+import dk.ku.di.dms.vms.modb.api.query.enums.OrderBySortOrderEnum;
 import dk.ku.di.dms.vms.modb.definition.ColumnReference;
 import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.Table;
@@ -236,12 +237,13 @@ public final class SimplePlanner {
             idxCol++;
         }
         int entrySize = calculateQueryResultEntrySize(tb.schema(), queryTree.projections.size(), projectionColumns);
+        var orderByPredicate = queryTree.orderByPredicates.getFirst();
         if(indexSelectionVerdict.indexIsUsedGivenWhereClause()) {
             return new IndexScanWithOrder(indexSelectionVerdict.index(), projectionColumns,
-                    queryTree.orderByPredicates.getFirst().columnReference.columnPosition, entrySize, queryTree.limit.orElse(null));
+                    orderByPredicate.columnReference.columnPosition, orderByPredicate.sortOperation == OrderBySortOrderEnum.DESC, entrySize);
         } else {
             return new FullScanWithOrder(tb.primaryKeyIndex(), projectionColumns,
-                    queryTree.orderByPredicates.getFirst().columnReference.columnPosition, entrySize);
+                    orderByPredicate.columnReference.columnPosition, orderByPredicate.sortOperation == OrderBySortOrderEnum.DESC, entrySize);
         }
     }
 

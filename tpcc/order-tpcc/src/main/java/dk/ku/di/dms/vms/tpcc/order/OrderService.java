@@ -25,8 +25,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.*;
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.ERROR;
+import static java.lang.System.Logger.Level.*;
 
 @Microservice("order")
 public final class OrderService {
@@ -53,9 +52,14 @@ public final class OrderService {
         int no_o_id;
         int[] customerIds = new int[10];
         float[] amounts = new float[10];
-        for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id ++) {
+        for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
 
             NewOrder newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+            if(newOrder == null) {
+                LOGGER.log(ERROR, "New Order Not Found");
+                newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+                continue;
+            }
             no_o_id = newOrder.no_o_id;
             this.newOrderRepository.delete(newOrder);
 
@@ -106,6 +110,7 @@ public final class OrderService {
         Order order = this.orderRepository.getLastOrderByCustomerId(in.c_id, in.d_id, in.w_id);
         if(order == null){
             LOGGER.log(DEBUG, "No order found for customer "+in.c_id+"\n"+in);
+            // order = this.orderRepository.getLastOrderByCustomerId(in.c_id, in.d_id, in.w_id);
             return;
         }
         List<OrderLineInfoDto> orderLinesInfo = this.orderLineRepository.getOrderLinesInfo(order.o_id, order.o_d_id, order.o_w_id);

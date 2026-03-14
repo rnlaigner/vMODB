@@ -131,7 +131,12 @@ public final class Main {
                     int warmUp;
                     while(true) {
                         System.out.println("Enter warm up period (ms): [press 0 for 2s] ");
-                        warmUp = Integer.parseInt(scanner.nextLine());
+                        String warmUpStr = scanner.nextLine();
+                        if(warmUpStr.equalsIgnoreCase("")){
+                            warmUp = 2000;
+                            break;
+                        }
+                        warmUp = Integer.parseInt(warmUpStr);
                         if (warmUp <= 0) warmUp = 2000;
                         if(warmUp > runTime){
                             System.out.print("Warm up must be lower than run time "+runTime+" (ms)\n");
@@ -218,27 +223,27 @@ public final class Main {
     }
 
     public static Map<String, Integer> buildTransactionRatioMap(){
-        Map<String, Integer> txRatioMap = new TreeMap<>();
+        Map<String, Integer> txRatioMap = new HashMap<>();
         boolean seen_100 = false;
-        if(!PROPERTIES.get("new_order").toString().equals("0")) {
+        if(PROPERTIES.containsKey("new_order") && !PROPERTIES.get("new_order").toString().equals("0")) {
             txRatioMap.put("new_order", Integer.valueOf(PROPERTIES.get("new_order").toString()));
             if(txRatioMap.get("new_order") == 100) seen_100 = true;
         }
-        if(!PROPERTIES.get("payment").toString().equals("0")) {
+        if(PROPERTIES.containsKey("payment") && !PROPERTIES.get("payment").toString().equals("0")) {
             txRatioMap.put("payment", Integer.valueOf(PROPERTIES.get("payment").toString()));
             if(txRatioMap.get("payment") == 100) seen_100 = true;
         }
-        if(!PROPERTIES.get("order_status").toString().equals("0")) {
+        if(PROPERTIES.containsKey("order_status") && !PROPERTIES.get("order_status").toString().equals("0")) {
             txRatioMap.put("order_status", Integer.valueOf(PROPERTIES.get("order_status").toString()));
             if(txRatioMap.get("order_status") == 100) seen_100 = true;
         }
-        if(!PROPERTIES.get("stock_level").toString().equals("0")) {
-            txRatioMap.put("stock_level", Integer.valueOf(PROPERTIES.get("stock_level").toString()));
-            if(txRatioMap.get("stock_level") == 100) seen_100 = true;
-        }
-        if(!PROPERTIES.get("delivery").toString().equals("0")) {
+        if(PROPERTIES.containsKey("delivery") && !PROPERTIES.get("delivery").toString().equals("0")) {
             txRatioMap.put("delivery", Integer.valueOf(PROPERTIES.get("delivery").toString()));
             if(txRatioMap.get("delivery") == 100) seen_100 = true;
+        }
+        if(PROPERTIES.containsKey("stock_level") && !PROPERTIES.get("stock_level").toString().equals("0")) {
+            txRatioMap.put("stock_level", Integer.valueOf(PROPERTIES.get("stock_level").toString()));
+            if(txRatioMap.get("stock_level") == 100) seen_100 = true;
         }
         if(!seen_100) throw new RuntimeException("No transaction defined as 100 in app.properties!");
         return txRatioMap;
@@ -246,10 +251,14 @@ public final class Main {
 
     @SuppressWarnings("unchecked")
     private static Tuple<Integer, String>[] buildTransactionRatio(Map<String, Integer> txRatioMap) {
+        Map<Integer, String> inverted = new TreeMap<>();
+        for(Map.Entry<String, Integer> entry : txRatioMap.entrySet()) {
+            inverted.put(entry.getValue(), entry.getKey());
+        }
         Tuple<Integer, String>[] txRatio = new Tuple[txRatioMap.size()];
         int i = 0;
-        for(var entry : txRatioMap.entrySet()) {
-            txRatio[i] = Tuple.of(entry.getValue(), entry.getKey());
+        for(var entry : inverted.entrySet()) {
+            txRatio[i] = Tuple.of(entry.getKey(), entry.getValue());
             i++;
         }
         return txRatio;

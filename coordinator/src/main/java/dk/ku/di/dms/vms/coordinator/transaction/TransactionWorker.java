@@ -77,9 +77,15 @@ public final class TransactionWorker extends StoppableRunnable {
                                           IVmsSerdesProxy serdesProxy){
         Map<String, VmsTracking> vmsTrackingMap = new HashMap<>();
         Map<String, VmsTracking[]> vmsPerTransactionMap = new HashMap<>(vmsIdentifiersPerDAG.size());
-        for(var txEntry : vmsIdentifiersPerDAG.entrySet()){
+        for(var txEntry : vmsIdentifiersPerDAG.entrySet()) {
+            if(txEntry.getValue() == null){
+                throw new IllegalStateException("Null transaction entry for transaction id " + txEntry.getKey());
+            }
             var list = new ArrayList<VmsTracking>();
-            for(VmsNode vmsNode : txEntry.getValue()){
+            for(VmsNode vmsNode : txEntry.getValue()) {
+                if(vmsNode == null) {
+                    throw new IllegalStateException("Null transaction entry for transaction id " + txEntry.getKey());
+                }
                 if(!vmsTrackingMap.containsKey(vmsNode.identifier)){
                     vmsTrackingMap.put(vmsNode.identifier, new VmsTracking(vmsNode));
                 }
@@ -147,7 +153,9 @@ public final class TransactionWorker extends StoppableRunnable {
                 }
             } while (this.tid <= lastTidBatch && System.currentTimeMillis() < end);
 
-            if (this.noProgress()) continue;
+            if (this.noProgress()) {
+                continue;
+            }
 
             do {
                 this.processPendingInput();

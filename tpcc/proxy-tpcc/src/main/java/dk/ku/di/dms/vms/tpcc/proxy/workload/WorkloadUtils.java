@@ -230,14 +230,14 @@ public final class WorkloadUtils {
                 wareInput.put("order_status", createOrderStatusInputIterator(orderStatusBuffer, numTransactions));
             }
 
+            // delivery
+            if(txRatioMap.containsKey("delivery")) {
+                wareInput.put("delivery", createDeliveryInputIteratorD(numWare));
+            }
+
             // stock level
             if(txRatioMap.containsKey("stock_level")) {
                 wareInput.put("stock_level", createStockLevelInputIteratorD(numWare));
-            }
-
-            // delivery
-            if(txRatioMap.containsKey("delivery")) {
-                wareInput.put("stock_level", createDeliveryInputIteratorD(numWare));
             }
 
             input.add(wareInput);

@@ -11,8 +11,8 @@ import java.util.List;
 
 public final class IndexScanWithOrder extends AbstractScanWithOrder {
 
-    public IndexScanWithOrder(IMultiVersionIndex index, int[] projectionColumns, int orderByColumn, int entrySize, Integer limit) {
-        super(index, projectionColumns, orderByColumn, entrySize);
+    public IndexScanWithOrder(IMultiVersionIndex index, int[] projectionColumns, int orderByColumn, boolean descending, int entrySize) {
+        super(index, projectionColumns, orderByColumn, descending, entrySize);
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, Integer limit) {

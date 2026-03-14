@@ -385,12 +385,12 @@ public final class Coordinator extends ModbHttpServer {
         LOGGER.log(DEBUG,"Leader: Preprocessing transaction DAGs");
         Set<String> inputVMSsSeen = new HashSet<>();
         // build list of VmsIdentifier per transaction DAG
-        for(var dag : this.transactionMap.entrySet()){
+        for(Map.Entry<String, TransactionDAG> dag : this.transactionMap.entrySet()){
             this.vmsIdentifiersPerDAG.put(dag.getKey(), BatchAlgo.buildTransactionDagVmsList( dag.getValue(), this.vmsMetadataMap ));
 
             // set up additional connection with vms that start transactions
             for(var inputVms : dag.getValue().inputEvents.entrySet()){
-                var vmsNode = this.vmsMetadataMap.get(inputVms.getValue().targetVms);
+                VmsNode vmsNode = this.vmsMetadataMap.get(inputVms.getValue().targetVms);
                 if(vmsNode == null || inputVMSsSeen.contains(vmsNode.identifier)){
                     continue;
                 }

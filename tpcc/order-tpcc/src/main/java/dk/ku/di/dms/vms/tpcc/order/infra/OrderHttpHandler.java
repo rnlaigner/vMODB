@@ -145,6 +145,9 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         final var orderRepo = ((AbstractProxyRepository<Order.OrderId, Order>) orderRepository);
         final var orderIndex = orderRepo.getTable().underlyingPrimaryKeyIndex();
 
+        final var newOrderRepo = ((AbstractProxyRepository<NewOrder.NewOrderId, NewOrder>) newOrderRepository);
+        final var newOrderIndex = newOrderRepo.getTable().underlyingPrimaryKeyIndex();
+
         final var orderLineRepo = ((AbstractProxyRepository<OrderLine.OrderLineId, OrderLine>) orderLineRepository);
         final var orderLineIndex = orderLineRepo.getTable().underlyingPrimaryKeyIndex();
 
@@ -157,12 +160,23 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
                         int carrier_id = o_id < 2101 ? randomNumber(1, 10) : -1;
                         int ol_count = randomNumber(5, 15);
+
+                        // order
                         Order order = new Order(o_id, d_id, f_w_id, randomNumber(1, 3000), new Date(), carrier_id, ol_count, 1);
                         Object[] orderObj = orderRepo.extractFieldValuesFromEntityObject(order);
                         IKey orderKey = KeyUtils.buildRecordKey( orderIndex.schema().getPrimaryKeyColumns(), orderObj );
                         synchronized (orderIndex) {
                             orderIndex.insert(orderKey, orderObj);
                         }
+
+                        // new order
+                        NewOrder newOrder = new NewOrder(o_id, d_id, f_w_id);
+                        Object[] newOrderObj = newOrderRepo.extractFieldValuesFromEntityObject(newOrder);
+                        IKey newOrderKey = KeyUtils.buildRecordKey( newOrderIndex.schema().getPrimaryKeyColumns(), orderObj );
+                        synchronized (newOrderIndex) {
+                            newOrderIndex.insert(newOrderKey, newOrderObj);
+                        }
+
                         Date ol_delivery_d = o_id < 2101 ? new Date() : null;
                         float ol_amount = o_id < 2101 ? 0 : (float) (Math.floor((ThreadLocalRandom.current().nextDouble() * 9999.99) * 100) / 100.0);
                         for (int ol_id = 1; ol_id <= ol_count; ol_id++) {
@@ -198,25 +212,32 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
-                LOGGER.log(DEBUG, "Started creating 30_000 customer records for warehouse " + f_w_id);
-                transactionManager.beginTransaction(-f_w_id, 0, -numWare, false);
+                LOGGER.log(DEBUG, "Started creating 30_000 order records for warehouse " + f_w_id);
+                this.transactionManager.beginTransaction(-f_w_id, 0, -numWare, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
                         int carrier_id = o_id < 2101 ? randomNumber(1, 10) : -1;
                         int ol_count = randomNumber(5, 15);
+
+                        // order
                         Order order = new Order(o_id, d_id, f_w_id, randomNumber(1, 3000), new Date(), carrier_id, ol_count, 1);
-                        orderRepository.insert(order);
+                        this.orderRepository.insert(order);
+
+                        // new order
+                        NewOrder newOrder = new NewOrder(o_id, d_id, f_w_id);
+                        this.newOrderRepository.insert(newOrder);
+
                         Date ol_delivery_d = o_id < 2101 ? new Date() : null;
                         float ol_amount = o_id < 2101 ? 0 : (float) (Math.floor((ThreadLocalRandom.current().nextDouble() * 9999.99) * 100) / 100.0);
                         for (int ol_id = 1; ol_id <= ol_count; ol_id++) {
                             OrderLine orderLine = new OrderLine(o_id, d_id, f_w_id, ol_id, randomNumber(1, TPCcConstants.NUM_ITEMS), f_w_id, ol_delivery_d, 5, ol_amount, makeAlphaString(26, 50));
-                            orderLineRepository.insert(orderLine);
+                            this.orderLineRepository.insert(orderLine);
                         }
                     }
                 }
                 // transactionManager.commit();
-                LOGGER.log(DEBUG, "Finished creating 30_000 customer records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
+                LOGGER.log(DEBUG, "Finished creating 30_000 order records for warehouse " + f_w_id + " in " + (System.currentTimeMillis() - internalInitTs) + " ms");
             });
         }
         try {
