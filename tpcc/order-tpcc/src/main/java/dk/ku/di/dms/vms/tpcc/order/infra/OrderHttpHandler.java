@@ -7,6 +7,7 @@ import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
 import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
+import dk.ku.di.dms.vms.modb.definition.key.composite.PairCompositeKey;
 import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
 import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
 import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
@@ -20,6 +21,7 @@ import dk.ku.di.dms.vms.tpcc.order.repositories.IOrderRepository;
 
 import java.util.Date;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Future;
@@ -216,6 +218,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
                 this.transactionManager.beginTransaction(-f_w_id, 0, -numWare, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
+                    var pairCompositeKey = PairCompositeKey.of(d_id, f_w_id);
                     for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
                         int carrier_id = o_id < 2101 ? randomNumber(1, 10) : -1;
                         int ol_count = randomNumber(5, 15);
@@ -226,7 +229,14 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
 
                         // new order
                         NewOrder newOrder = new NewOrder(o_id, d_id, f_w_id);
-                        this.newOrderRepository.insert(newOrder);
+                        // this.newOrderRepository.insert(newOrder);
+                        synchronized ( INewOrderRepository.NEW_ORDERS) {
+                            try {
+                                INewOrderRepository.NEW_ORDERS.computeIfAbsent(pairCompositeKey, _ -> new TreeMap<>()).put(newOrder.getId(), newOrder);
+                            } catch (Exception e) {
+                                LOGGER.log(ERROR, "Error:\n"+e);
+                            }
+                        }
 
                         Date ol_delivery_d = o_id < 2101 ? new Date() : null;
                         float ol_amount = o_id < 2101 ? 0 : (float) (Math.floor((ThreadLocalRandom.current().nextDouble() * 9999.99) * 100) / 100.0);

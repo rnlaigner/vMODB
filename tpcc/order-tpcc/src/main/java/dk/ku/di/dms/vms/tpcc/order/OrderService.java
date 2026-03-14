@@ -54,14 +54,21 @@ public final class OrderService {
         float[] amounts = new float[10];
         for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
 
-            NewOrder newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+            //NewOrder newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+            NewOrder newOrder;
+            try {
+                newOrder = INewOrderRepository.getFirstInTree(d_id, in.w_id);
+            } catch (Exception e){
+                LOGGER.log(WARNING, "Could not find New Order Hack for did " + d_id, e);
+                continue;
+            }
             if(newOrder == null) {
-                LOGGER.log(ERROR, "New Order Not Found");
-                newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+                LOGGER.log(WARNING, "New Order Not Found");
+                // newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
                 continue;
             }
             no_o_id = newOrder.no_o_id;
-            this.newOrderRepository.delete(newOrder);
+            //this.newOrderRepository.delete(newOrder);
 
             Order order = this.orderRepository.lookupByKey(new Order.OrderId(no_o_id, d_id, in.w_id));
             // put carrier id in the input
@@ -134,10 +141,11 @@ public final class OrderService {
                 in.itemsIds.length,
                 in.allLocal ? 1 : 0
         );
-        NewOrder newOrder = new NewOrder(in.d_next_o_id, in.d_id, in.w_id);
-
         this.orderRepository.insert(order);
-        this.newOrderRepository.insert(newOrder);
+
+        NewOrder newOrder = new NewOrder(in.d_next_o_id, in.d_id, in.w_id);
+        // this.newOrderRepository.insert(newOrder);
+        INewOrderRepository.insertToTree(newOrder);
 
         List<OrderLine> orderLinesToInsert = new ArrayList<>(in.itemsIds.length);
 

@@ -159,12 +159,7 @@ public final class ExperimentUtils {
             writer.newLine();
             writer.write("Number of warehouses: " + numWare);
             writer.newLine();
-            writer.write("Transaction ratio: ");
-            writer.newLine();
-            for(Tuple<Integer, String> tx : txRatio){
-                writer.write("  "+tx.t2+"=" + tx.t1);
-                writer.newLine();
-            }
+
             writer.write("Transaction input size: ");
             writer.newLine();
             for(Map.Entry<String, Integer> tx : numTxInputPerType.entrySet()){
@@ -172,6 +167,15 @@ public final class ExperimentUtils {
                 writer.write("  "+tx.getKey()+"=" + tx.getValue());
                 writer.newLine();
             }
+
+            writer.write("Transaction ratio: ");
+            writer.newLine();
+            for(Tuple<Integer, String> tx : txRatio){
+                writer.write("  "+tx.t2+"=" + tx.t1);
+                writer.newLine();
+            }
+
+            writer.newLine();
             writer.write("Logging: "+logging);
             writer.newLine();
             writer.write("Checkpointing: "+checkpointing);

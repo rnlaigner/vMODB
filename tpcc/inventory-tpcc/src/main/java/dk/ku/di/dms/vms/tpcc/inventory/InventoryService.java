@@ -33,9 +33,13 @@ public final class InventoryService {
     @Transactional(type = R)
     public void processStockLevel(StockLevelOrdOut in) {
         int threshold = randomNumber(10, 20);
+        if(in.itemsIds.length == 0){
+            LOGGER.log(ERROR, "Input event StockLevelOrdOut has empty item IDs:\n"+in);
+            return;
+        }
         int[] itemIds = this.stockRepository.getStockCount(in.itemsIds, in.w_id, threshold);
         if(itemIds.length == 0){
-            LOGGER.log(ERROR, "Input event OrderStatusOut led to empty order lines info:\n"+in);
+            LOGGER.log(ERROR, "Input event StockLevelOrdOut led to empty stock items:\n"+in);
         }
     }
 

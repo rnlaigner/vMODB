@@ -94,7 +94,7 @@ public final class VmsTransactionTaskBuilder {
         }
 
         private void handleErrorOnTask(ReflectiveOperationException e, Object input) {
-            LOGGER.log(ERROR, "Error during invoking task "+this.toString()+"\n Input event: "+input+"\n"+ e);
+            LOGGER.log(ERROR, "Error during invoking task\n TID info:"+this.toString()+"\n Input event: "+input+"\n"+ e);
             e.printStackTrace(System.out);
             schedulerCallback.error(signature.executionMode(), this.tid, e);
         }
