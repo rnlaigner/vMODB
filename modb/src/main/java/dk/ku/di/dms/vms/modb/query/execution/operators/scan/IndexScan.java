@@ -23,6 +23,16 @@ public final class IndexScan extends AbstractScan {
         super(entrySize, index, projectionColumns);
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static final Comparator<Object[]> COMPARATOR = (o1, o2) -> {
+        for (int i = 0; i < o1.length; i++) {
+            if (!o1[i].equals(o2[i])) {
+                return ((Comparable) o1[i]).compareTo(o2[i]);
+            }
+        }
+        return 0;
+    };
+
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key) {
         List<Object[]> res = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
@@ -44,18 +54,10 @@ public final class IndexScan extends AbstractScan {
         return res;
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey[] keys, boolean distinct) {
         Iterator<Object[]> iterator = this.index.iterator(txCtx, keys);
         if(distinct) {
-            Set<Object[]> res = new TreeSet<>((o1, o2) -> {
-                for(int i = 0; i < o1.length; i++) {
-                    if(!o1[i].equals(o2[i])) {
-                        return ((Comparable)o1[i]).compareTo(o2[i]);
-                    }
-                }
-                return 0;
-            });
+            Set<Object[]> res = new TreeSet<>(COMPARATOR);
             while(iterator.hasNext()) {
                 res.add(this.getProjection(iterator.next()));
             }
@@ -69,18 +71,10 @@ public final class IndexScan extends AbstractScan {
         }
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey[] keys, boolean distinct, FilterContext filterContext) {
         Iterator<Object[]> iterator = this.index.iterator(txCtx, keys);
         if(distinct) {
-            Set<Object[]> res = new TreeSet<>((o1, o2) -> {
-                for(int i = 0; i < o1.length; i++) {
-                    if(!o1[i].equals(o2[i])) {
-                        return ((Comparable)o1[i]).compareTo(o2[i]);
-                    }
-                }
-                return 0;
-            });
+            Set<Object[]> res = new TreeSet<>(COMPARATOR);
             while(iterator.hasNext()) {
                 Object[] record = iterator.next();
                 if(this.index.checkCondition(filterContext, record)) {

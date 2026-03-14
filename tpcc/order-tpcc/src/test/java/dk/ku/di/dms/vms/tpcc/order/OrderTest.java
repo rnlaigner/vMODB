@@ -6,6 +6,9 @@ import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
+import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
+import dk.ku.di.dms.vms.tpcc.common.events.delivery.DeliveryIn;
+import dk.ku.di.dms.vms.tpcc.common.events.delivery.DeliveryOut;
 import dk.ku.di.dms.vms.tpcc.common.events.order_status.OrderStatusOut;
 import dk.ku.di.dms.vms.tpcc.order.dto.OrderInfoDto;
 import dk.ku.di.dms.vms.tpcc.order.dto.OrderLineInfoDto;
@@ -28,6 +31,8 @@ import java.util.stream.IntStream;
  */
 public class OrderTest {
 
+    private static final int NUM_ORDERS = 10;
+
     public static final SelectStatement ORDER_BASE_QUERY = QueryBuilderFactory.select()
             .project("*")
             .from("orders")
@@ -49,41 +54,45 @@ public class OrderTest {
     public static void setUp() throws Exception {
         VMS = getVmsApplication();
         VMS.start();
-        insertOrders(VMS);
+        insertOrders();
     }
 
     @SuppressWarnings("unchecked")
-    private static void insertOrders(VmsApplication vms) {
-        var orderRepository = (AbstractProxyRepository<Order.OrderId, Order>) vms.getRepositoryProxy("orders");
-        var newOrderRepository = (AbstractProxyRepository<NewOrder.NewOrderId, NewOrder>) vms.getRepositoryProxy("new_orders");
-        var orderLineRepository = (IOrderLineRepository) vms.getRepositoryProxy("order_line");
-        for(int i = 1; i <= 10; i++){
-            Order order = new Order(i, 1, 1, 1, new Date(), 1, 1, 1);
-            NewOrder newOrder = new NewOrder(i, 1, 1);
-            VMS.getTransactionManager().beginTransaction(0, 0, 0, false);
-            orderRepository.insert(order);
-            newOrderRepository.insert(newOrder);
-            orderLineRepository.insert(new OrderLine(
-                i, 1, 1, 1, 1, 1, new Date(), 1, 1, "test"
-            ));
-            orderLineRepository.insert(new OrderLine(
-                i, 1, 1, 2, 2, 1, new Date(), 1, 1, "test"
-            ));
-            Assert.assertTrue(orderRepository.exists(new Order.OrderId(i, 1 , 1)));
-            Assert.assertTrue(newOrderRepository.exists(new NewOrder.NewOrderId(i, 1 , 1)));
-            Assert.assertEquals(2, orderLineRepository.getAllByOrderId(i, 1, 1).size());
+    private static void insertOrders() {
+        var orderRepository = (AbstractProxyRepository<Order.OrderId, Order>) VMS.getRepositoryProxy("orders");
+        var newOrderRepository = (AbstractProxyRepository<NewOrder.NewOrderId, NewOrder>) VMS.getRepositoryProxy("new_orders");
+        var orderLineRepository = (IOrderLineRepository) VMS.getRepositoryProxy("order_line");
+        VMS.getTransactionManager().beginTransaction(0, 0, 0, false);
+        for (int i = 1; i <= TPCcConstants.NUM_DIST_PER_WARE; i++) {
+            for (int j = 1; j <= NUM_ORDERS; j++) {
+                Order order = new Order(j, i, 1, i, new Date(), 1, 1, 1);
+                NewOrder newOrder = new NewOrder(j, i, 1);
+                orderRepository.insert(order);
+                newOrderRepository.insert(newOrder);
+                orderLineRepository.insert(new OrderLine(
+                        j, i, 1, 1, 1, 1, new Date(), 1, 1, "test"
+                ));
+                orderLineRepository.insert(new OrderLine(
+                        j, i, 1, 2, 2, 1, new Date(), 1, 1, "test"
+                ));
+                Assert.assertTrue(orderRepository.exists(new Order.OrderId(j, i, 1)));
+                Assert.assertTrue(newOrderRepository.exists(new NewOrder.NewOrderId(j, i, 1)));
+                Assert.assertEquals(2, orderLineRepository.getAllByOrderId(j, i, 1).size());
+            }
         }
+        VMS.getTransactionManager().commit();
     }
 
     @Test
     public void testOrderStatusQueryByName() {
+        VMS.getTransactionManager().beginTransaction(0, 0, 0, true);
         IOrderRepository orderRepository = (IOrderRepository) VMS.getRepositoryProxy("orders");
         OrderStatusOut orderStatusOut = new OrderStatusOut(1, 1, 1);
         int max_o_id = orderRepository.fetchOne(ORDER_BASE_QUERY, int.class);
-        Assert.assertEquals(10, max_o_id);
+        Assert.assertEquals(NUM_ORDERS, max_o_id);
         OrderInfoDto orderInfoDto = orderRepository.getOrderInfo(max_o_id, orderStatusOut.d_id, orderStatusOut.w_id, orderStatusOut.c_id);
         Assert.assertNotNull(orderInfoDto);
-        Assert.assertEquals(10, orderInfoDto.o_id);
+        Assert.assertEquals(NUM_ORDERS, orderInfoDto.o_id);
         var orderLineRepository = (IOrderLineRepository) VMS.getRepositoryProxy("order_line");
         List<OrderLineInfoDto> orderLinesInfo = orderLineRepository.getOrderLinesInfo(max_o_id, orderStatusOut.d_id, orderStatusOut.w_id);
         Assert.assertNotNull(orderLinesInfo);
@@ -92,6 +101,7 @@ public class OrderTest {
 
     @Test
     public void testStockLevel() {
+        VMS.getTransactionManager().beginTransaction(0, 0, 0, true);
         IOrderLineRepository orderLineRepository = (IOrderLineRepository) VMS.getRepositoryProxy("order_line");
         int[] orderIds = IntStream.range(1, 11).toArray();
         int[] itemIds = orderLineRepository.getAllItemsByOrderIds(orderIds, 1, 1);
@@ -99,11 +109,23 @@ public class OrderTest {
     }
 
     @Test
-    public void testDelivery() {
+    public void testDeliveryQuery() {
+        VMS.getTransactionManager().beginTransaction(0, 0, 0, true);
         INewOrderRepository newOrderRepository = (INewOrderRepository) VMS.getRepositoryProxy("new_orders");
         NewOrder newOrder = newOrderRepository.getFirstNewOrder(1, 1);
         Assert.assertNotNull(newOrder);
         Assert.assertEquals(1, newOrder.no_o_id);
+    }
+
+    @Test
+    public void testProcessDelivery() {
+        VMS.getTransactionManager().beginTransaction(0, 0, 0, false);
+        OrderService orderService = VMS.getService("dk.ku.di.dms.vms.tpcc.order.OrderService");
+        DeliveryOut out = orderService.processDelivery(new DeliveryIn(1, 1));
+        Assert.assertNotNull(out);
+        Assert.assertEquals(1, out.w_id);
+        Assert.assertArrayEquals( new int[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, out.customerIds );
+        Assert.assertArrayEquals( new float[]{ 2, 2, 2, 2, 2, 2, 2, 2, 2, 2}, out.amounts, 0 );
     }
 
 }

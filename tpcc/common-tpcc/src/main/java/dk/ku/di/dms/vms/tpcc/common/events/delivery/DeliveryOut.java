@@ -1,6 +1,7 @@
 package dk.ku.di.dms.vms.tpcc.common.events.delivery;
 
 import dk.ku.di.dms.vms.modb.api.annotations.Event;
+import dk.ku.di.dms.vms.tpcc.common.etc.WareDistId;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -22,8 +23,8 @@ public final class DeliveryOut {
     }
 
     @SuppressWarnings("unused")
-    public Integer getId(){
-        return this.w_id;
+    public WareDistId getId(){
+        return new WareDistId(this.w_id, 0);
     }
 
     @Override

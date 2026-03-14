@@ -48,7 +48,7 @@ public final class OrderService {
     @Inbound(values = "delivery-in")
     @Outbound("delivery-out")
     @Transactional(type = RW)
-    @PartitionBy(clazz = DeliveryOut.class, method = "getId")
+    @PartitionBy(clazz = DeliveryIn.class, method = "getId")
     public DeliveryOut processDelivery(DeliveryIn in) {
         int no_o_id;
         int[] customerIds = new int[10];
@@ -62,6 +62,7 @@ public final class OrderService {
             Order order = this.orderRepository.lookupByKey(new Order.OrderId(no_o_id, d_id, in.w_id));
             // put carrier id in the input
             order.o_carrier_id = in.carrier_id;
+            this.orderRepository.update(order);
 
             Date date = new Date();
             List<OrderLine> orderLines = this.orderLineRepository.getAllByOrderId(no_o_id, d_id, in.w_id);
