@@ -41,7 +41,7 @@ public final class SelectStatement extends AbstractStatement {
         this.selectClause = selectClause;
         this.fromClause = fromClause;
         this.whereClause.addAll(whereClause);
-        this.limit = null;
+        this.limit = Integer.MAX_VALUE;
         this.distinct = false;
     }
 
@@ -50,7 +50,7 @@ public final class SelectStatement extends AbstractStatement {
         this.selectClause = selectClause;
         this.fromClause = List.of(table);
         this.whereClause.addAll(whereClause);
-        this.limit = null;
+        this.limit = Integer.MAX_VALUE;
         this.distinct = distinct;
     }
 

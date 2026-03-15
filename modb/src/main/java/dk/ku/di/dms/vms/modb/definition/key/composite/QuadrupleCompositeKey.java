@@ -52,4 +52,25 @@ public final class QuadrupleCompositeKey extends BaseComposite implements IKey {
         return 4;
     }
 
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public int compareTo(IKey key) {
+        if (key instanceof QuadrupleCompositeKey o){
+            int firstResult = ((Comparable)this.value0).compareTo(o.value0);
+            if (firstResult != 0) {
+                return firstResult;
+            }
+            int secondResult = ((Comparable)this.value1).compareTo(o.value1);
+            if (secondResult != 0) {
+                return secondResult;
+            }
+            int thirdResult = ((Comparable)this.value2).compareTo(o.value2);
+            if (thirdResult != 0) {
+                return thirdResult;
+            }
+            return ((Comparable) this.value3).compareTo(o.value3);
+        }
+        return 0;
+    }
+
 }

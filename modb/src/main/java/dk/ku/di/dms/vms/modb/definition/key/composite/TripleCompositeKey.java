@@ -47,4 +47,21 @@ public final class TripleCompositeKey extends BaseComposite implements IKey {
         return 3;
     }
 
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public int compareTo(IKey key) {
+        if (key instanceof TripleCompositeKey o){
+            int firstResult = ((Comparable)this.value0).compareTo(o.value0);
+            if (firstResult != 0) {
+                return firstResult;
+            }
+            int secondResult = ((Comparable)this.value1).compareTo(o.value1);
+            if (secondResult != 0) {
+                return secondResult;
+            }
+            return ((Comparable) this.value2).compareTo(o.value2);
+        }
+        return 0;
+    }
+
 }

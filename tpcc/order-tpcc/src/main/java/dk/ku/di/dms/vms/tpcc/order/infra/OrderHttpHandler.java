@@ -11,6 +11,7 @@ import dk.ku.di.dms.vms.modb.definition.key.composite.PairCompositeKey;
 import dk.ku.di.dms.vms.sdk.embed.client.DefaultHttpHandler;
 import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
 import dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants;
+import dk.ku.di.dms.vms.tpcc.order.OrderService;
 import dk.ku.di.dms.vms.tpcc.order.entities.NewOrder;
 import dk.ku.di.dms.vms.tpcc.order.entities.Order;
 import dk.ku.di.dms.vms.tpcc.order.entities.OrderLine;
@@ -229,13 +230,16 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
 
                         // new order
                         NewOrder newOrder = new NewOrder(o_id, d_id, f_w_id);
-                        // this.newOrderRepository.insert(newOrder);
-                        synchronized ( INewOrderRepository.NEW_ORDERS) {
-                            try {
-                                INewOrderRepository.NEW_ORDERS.computeIfAbsent(pairCompositeKey, _ -> new TreeMap<>()).put(newOrder.getId(), newOrder);
-                            } catch (Exception e) {
-                                LOGGER.log(ERROR, "Error:\n"+e);
+                        if(OrderService.EXT_NEW_ORDER) {
+                            synchronized (INewOrderRepository.NEW_ORDERS) {
+                                try {
+                                    INewOrderRepository.NEW_ORDERS.computeIfAbsent(pairCompositeKey, _ -> new TreeMap<>()).put(newOrder.getId(), newOrder);
+                                } catch (Exception e) {
+                                    LOGGER.log(ERROR, "Error:\n" + e);
+                                }
                             }
+                        } else {
+                             this.newOrderRepository.insert(newOrder);
                         }
 
                         Date ol_delivery_d = o_id < 2101 ? new Date() : null;

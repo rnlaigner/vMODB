@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class FullScan extends AbstractScan {
+public final class FullScan extends AbstractScan {
 
     public FullScan(IMultiVersionIndex index,
                     int[] projectionColumns,
@@ -16,22 +16,48 @@ public class FullScan extends AbstractScan {
         super(entrySize, index, projectionColumns);
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx){
-        List<Object[]> res = new ArrayList<>();
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, Integer limit) {
+        if(limit == Integer.MAX_VALUE) {
+            List<Object[]> res = new ArrayList<>();
+            Iterator<Object[]> iterator = this.index.iterator(txCtx);
+            while(iterator.hasNext()) {
+                res.add(this.getProjection(iterator.next()));
+            }
+            return res;
+        }
+        List<Object[]> res = new ArrayList<>(limit);
         Iterator<Object[]> iterator = this.index.iterator(txCtx);
-        while(iterator.hasNext()){
+        while(iterator.hasNext()) {
             res.add(this.getProjection(iterator.next()));
+            if(res.size() == limit){
+                return res;
+            }
         }
         return res;
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, FilterContext filterContext){
-        List<Object[]> res = new ArrayList<>();
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, FilterContext filterContext, Integer limit) {
+        if(limit == Integer.MAX_VALUE) {
+            List<Object[]> res = new ArrayList<>();
+            Iterator<Object[]> iterator = this.index.iterator(txCtx);
+            while(iterator.hasNext()) {
+                Object[] obj = iterator.next();
+                if(this.index.checkCondition(filterContext, obj)) {
+                    res.add(this.getProjection(obj));
+                }
+            }
+            return res;
+        }
+        List<Object[]> res = new ArrayList<>(limit);
         Iterator<Object[]> iterator = this.index.iterator(txCtx);
-        while(iterator.hasNext()){
+        while(iterator.hasNext()) {
             Object[] obj = iterator.next();
-            if(this.index.checkCondition(filterContext, obj))
+            if(this.index.checkCondition(filterContext, obj)) {
                 res.add(this.getProjection(obj));
+                if(res.size() == limit){
+                    return res;
+                }
+            }
         }
         return res;
     }

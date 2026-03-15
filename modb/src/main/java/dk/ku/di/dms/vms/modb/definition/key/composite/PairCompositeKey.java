@@ -42,4 +42,18 @@ public final class PairCompositeKey extends BaseComposite implements IKey {
         return 2;
     }
 
+
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public int compareTo(IKey key) {
+        if (key instanceof PairCompositeKey o){
+            int firstResult = ((Comparable)this.value0).compareTo(o.value0);
+            if (firstResult != 0) {
+                return firstResult;
+            }
+            return ((Comparable) this.value1).compareTo(o.value1);
+        }
+        return 0;
+    }
+
 }

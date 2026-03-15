@@ -3,6 +3,7 @@ package dk.ku.di.dms.vms.tpcc.order;
 import dk.ku.di.dms.vms.modb.api.query.builder.QueryBuilderFactory;
 import dk.ku.di.dms.vms.modb.api.query.enums.ExpressionTypeEnum;
 import dk.ku.di.dms.vms.modb.api.query.statement.SelectStatement;
+import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplication;
 import dk.ku.di.dms.vms.sdk.embed.client.VmsApplicationOptions;
 import dk.ku.di.dms.vms.sdk.embed.facade.AbstractProxyRepository;
@@ -24,6 +25,7 @@ import org.junit.Test;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Properties;
 import java.util.stream.IntStream;
 
 /**
@@ -52,6 +54,8 @@ public class OrderTest {
 
     @BeforeClass
     public static void setUp() throws Exception {
+        Properties prop = ConfigUtils.loadProperties();
+        prop.setProperty("table.new_orders.sorted", "true");
         VMS = getVmsApplication();
         VMS.start();
         insertOrders();

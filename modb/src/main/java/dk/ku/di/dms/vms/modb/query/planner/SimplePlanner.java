@@ -242,6 +242,9 @@ public final class SimplePlanner {
             return new IndexScanWithOrder(indexSelectionVerdict.index(), projectionColumns,
                     orderByPredicate.columnReference.columnPosition, orderByPredicate.sortOperation == OrderBySortOrderEnum.DESC, entrySize);
         } else {
+            if(orderByPredicate.sortOperation == OrderBySortOrderEnum.ASC && tb.primaryKeyIndex().isSorted()) {
+                return new FullScan(tb.primaryKeyIndex(), projectionColumns, entrySize);
+            }
             return new FullScanWithOrder(tb.primaryKeyIndex(), projectionColumns,
                     orderByPredicate.columnReference.columnPosition, orderByPredicate.sortOperation == OrderBySortOrderEnum.DESC, entrySize);
         }

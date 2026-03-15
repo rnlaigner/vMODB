@@ -39,6 +39,8 @@ public final class Main {
         prop.setProperty("table.order_line.chaining", "true");
         prop.setProperty("table.history.chaining", "true");
 
+        prop.setProperty("table.new_orders.sorted", "true");
+
         VmsApplicationOptions options = VmsApplicationOptions.build(
                 "0.0.0.0",
                 8003, new String[]{

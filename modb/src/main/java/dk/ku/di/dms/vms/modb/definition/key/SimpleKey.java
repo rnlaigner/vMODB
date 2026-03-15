@@ -47,4 +47,12 @@ public final class SimpleKey implements IKey, IIndexKey {
     public int getValue() {
         return this.value;
     }
+
+    @Override
+    public int compareTo(IKey o) {
+        if (o instanceof IntKey other) {
+            return Integer.compare(value, other.value);
+        }
+        return 0;
+    }
 }

@@ -24,10 +24,15 @@ public final class GroupByKey implements IKey {
 
     @Override
     public boolean equals(Object key){
-        return this.hashCode() == key.hashCode();
+        return this.hashKey == key.hashCode();
     }
 
     public IKey getPk() {
         return pk;
+    }
+
+    @Override
+    public int compareTo(IKey o) {
+        return pk.compareTo(o);
     }
 }

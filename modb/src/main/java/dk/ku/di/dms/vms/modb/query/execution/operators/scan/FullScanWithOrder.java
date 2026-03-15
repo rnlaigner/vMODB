@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class FullScanWithOrder extends AbstractScanWithOrder {
+public final class FullScanWithOrder extends AbstractScanWithOrder {
 
     public FullScanWithOrder(IMultiVersionIndex index,
                              int[] projectionColumns,
@@ -21,25 +21,31 @@ public class FullScanWithOrder extends AbstractScanWithOrder {
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, Integer limit){
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx);
-        while(iterator.hasNext()){
+        while(iterator.hasNext()) {
             this.insert(result, this.getProjection(iterator.next()));
         }
-        if(limit == null || result.isEmpty()){
+        if(result.isEmpty()) {
+            return result;
+        }
+        if(limit == Integer.MAX_VALUE) {
             return result;
         }
         return result.subList(0, limit);
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, FilterContext filterContext, Integer limit){
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, FilterContext filterContext, Integer limit) {
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx);
-        while(iterator.hasNext()){
+        while(iterator.hasNext()) {
             Object[] record = iterator.next();
             if(this.index.checkCondition(filterContext, record)) {
                 this.insert(result, this.getProjection(record));
             }
         }
-        if(limit == null || result.isEmpty()){
+        if(result.isEmpty()) {
+            return result;
+        }
+        if(limit == Integer.MAX_VALUE) {
             return result;
         }
         return result.subList(0, limit);

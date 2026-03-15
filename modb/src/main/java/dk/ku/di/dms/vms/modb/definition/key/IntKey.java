@@ -38,4 +38,12 @@ public class IntKey implements IKey {
                 + "\"value\":" + value
                 + "}";
     }
+
+    @Override
+    public int compareTo(IKey o) {
+        if (o instanceof IntKey other) {
+            return Integer.compare(value, other.value);
+        }
+        return 0;
+    }
 }

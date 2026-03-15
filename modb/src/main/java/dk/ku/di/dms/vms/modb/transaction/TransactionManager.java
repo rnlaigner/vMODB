@@ -144,7 +144,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
         } else {
             // future optimization is filter not including the columns of partial or non-unique index
             FilterContext filterContext = FilterContextBuilder.build(wherePredicates);
-            return scanOperator.asFullScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), filterContext);
+            return scanOperator.asFullScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), filterContext, selectStatement.limit);
         }
     }
 

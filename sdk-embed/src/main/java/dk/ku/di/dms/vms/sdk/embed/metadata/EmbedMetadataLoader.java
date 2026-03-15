@@ -229,7 +229,12 @@ public final class EmbedMetadataLoader {
                 chaining = Boolean.parseBoolean( properties.getProperty("table."+tableName+".chaining") );
             }
 
-            PrimaryIndex primaryIndex = StorageUtils.createPrimaryIndex(vmsIdentifier, tableName, schema, isCheckpointing, isTruncating, chaining, maxRecords_);
+            boolean sorted = false;
+            if(properties.getProperty("table."+tableName+".sorted") != null){
+                sorted = Boolean.parseBoolean( properties.getProperty("table."+tableName+".sorted") );
+            }
+
+            PrimaryIndex primaryIndex = StorageUtils.createPrimaryIndex(vmsIdentifier, tableName, schema, isCheckpointing, isTruncating, chaining, maxRecords_, sorted);
             tableToPrimaryIndexMap.put(tableName, primaryIndex);
 
             // normal indexes (i.e., non-partial) and foreign key indexes go here?

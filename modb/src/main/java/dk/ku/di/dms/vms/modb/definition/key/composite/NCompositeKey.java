@@ -49,4 +49,18 @@ public final class NCompositeKey extends BaseComposite implements IKey, IIndexKe
         return this.values.length;
     }
 
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public int compareTo(IKey key) {
+        if (key instanceof NCompositeKey o){
+            for(int i = 0; i < this.values.length; i++) {
+                int result = ((Comparable)this.values[i]).compareTo(o.values[i]);
+                if(result != 0){
+                    return result;
+                }
+            }
+        }
+        return 0;
+    }
+
 }

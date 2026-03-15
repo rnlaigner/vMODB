@@ -20,6 +20,7 @@ import dk.ku.di.dms.vms.modb.transaction.multiversion.WriteType;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 import static dk.ku.di.dms.vms.modb.common.constraint.ConstraintConstants.*;
 import static java.lang.System.Logger.Level.WARNING;
@@ -61,17 +62,17 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     // write set of transactions
     private final Map<Long, Set<IKey>> writeSetMap;
 
-    public static PrimaryIndex build(ReadWriteIndex<IKey> primaryKeyIndex) {
-        return new PrimaryIndex(primaryKeyIndex, null);
+    public static PrimaryIndex build(ReadWriteIndex<IKey> primaryKeyIndex, IPrimaryKeyGenerator<?> primaryKeyGenerator, boolean sorted){
+        return new PrimaryIndex(primaryKeyIndex, primaryKeyGenerator, sorted);
     }
 
-    public static PrimaryIndex build(ReadWriteIndex<IKey> primaryKeyIndex, IPrimaryKeyGenerator<?> primaryKeyGenerator){
-        return new PrimaryIndex(primaryKeyIndex, primaryKeyGenerator);
-    }
-
-    private PrimaryIndex(ReadWriteIndex<IKey> rawIndex, IPrimaryKeyGenerator<?> primaryKeyGenerator) {
+    private PrimaryIndex(ReadWriteIndex<IKey> rawIndex, IPrimaryKeyGenerator<?> primaryKeyGenerator, boolean sorted) {
         this.rawIndex = rawIndex;
-        this.updatesPerKeyMap = new ConcurrentHashMap<>(1024*100);
+        if(sorted) {
+            this.updatesPerKeyMap = new ConcurrentSkipListMap<>();
+        } else {
+            this.updatesPerKeyMap = new ConcurrentHashMap<>(1024 * 100);
+        }
         this.primaryKeyGenerator = Optional.ofNullable(primaryKeyGenerator);
         this.writeSetMap = new ConcurrentHashMap<>(2048*10);
         if(rawIndex instanceof UniqueHashBufferIndex){
@@ -658,6 +659,11 @@ public final class PrimaryIndex implements IMultiVersionIndex {
             return this.currRecord;
         }
 
+    }
+
+    @Override
+    public boolean isSorted(){
+        return this.updatesPerKeyMap instanceof SortedMap;
     }
 
 }

@@ -68,4 +68,8 @@ public interface IMultiVersionIndex {
 
     void reset();
 
+    default boolean isSorted() {
+        return false;
+    }
+
 }
