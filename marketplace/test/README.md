@@ -2,8 +2,19 @@
 
 ## Running the project
 
-And then run the project with the command as follows:
+Order of parameters:
+
 ```
-java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar target/test-1.0-SNAPSHOT-jar-with-dependencies.jar
+1. benchmark [tpcc/marketplace]
+2. num_vms_workers [N]
+3. num_transaction_workers [N]
+4. num_max_transactions_batch [N]
+5. batch_window_ms [N]
+6. max_time [N]
+```
+
+And then run the project with the command as follows (parameters are used as example):
+```
+java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar target/test-1.0-SNAPSHOT.jar tpcc 1 1 100000 50000000 10000
 ```
 

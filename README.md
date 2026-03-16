@@ -32,11 +32,18 @@ vMODB departs from traditional EDMAs by providing a programming model (VMS) and 
 
 #### <a name="prerequisites"></a>Prerequisites
 
-- Java Runtime Environment 21 to execute; JDK 21 to modify and compile the source code
-- Maven to assemble the dependencies and compile the project: [Maven install](https://www.hostinger.com/tutorials/how-to-install-maven-on-ubuntu)
-- Curl to play with the HTTP APIs
+- Java Development Kit (JDK) 21 by any distributor, such as [OpenJDK](https://jdk.java.net/archive/)
+- Maven to assemble the dependencies and compile the project: [Maven](https://www.hostinger.com/tutorials/how-to-install-maven-on-ubuntu)
+- Curl to play with the HTTP APIs (Optional)
 
 #### <a name="build"></a>Build
+
+Before building the project, clone the source code repository:
+
+```
+git clone --depth 1 https://github.com/rnlaigner/vMODB
+cd vMODB
+```
 
 It is necessary to generate the dependencies required to compile the microservice.
 This can be accomplished via running the following command in the root folder:

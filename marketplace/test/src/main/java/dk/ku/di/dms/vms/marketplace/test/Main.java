@@ -12,11 +12,10 @@ import dk.ku.di.dms.vms.modb.common.serdes.VmsSerdesProxyBuilder;
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
 
 import static dk.ku.di.dms.vms.marketplace.common.Constants.*;
+import static java.lang.System.Logger.Level.ERROR;
 import static java.lang.Thread.sleep;
 
 /**
@@ -27,37 +26,67 @@ import static java.lang.Thread.sleep;
  */
 public final class Main {
 
+    private static final System.Logger LOGGER = System.getLogger(Main.class.getName());
+
     private static final List<String> OM_VMSes = Arrays.asList("cart","product","stock","order","payment","shipment","seller");
     private static final List<String> TPCC_VMSes = Arrays.asList("warehouse","inventory","order");
 
     private static final int NUM_QUEUED_TRANSACTIONS = 5000000;
 
-    public static void main(String[] ignoredArgs) throws Exception {
-        Properties properties = ConfigUtils.loadProperties();
+    public static void main(String[] args) throws Exception {
 
-        String app = properties.getProperty("application");
-        boolean isTpcc = app.equalsIgnoreCase("tpcc");
-        if(!isTpcc && !app.equalsIgnoreCase("online_marketplace")){
-            throw new Exception("Application type not recognized: "+app);
+        boolean isTpcc;
+        int num_vms_workers;
+        int num_transaction_workers;
+        int num_max_transactions_batch;
+        int max_time;
+        int batch_window_ms;
+
+        if(args.length == 0) {
+            Properties properties = ConfigUtils.loadProperties();
+            System.out.println("Properties: \n" + properties);
+            String app = properties.getProperty("benchmark");
+            if(app == null) {
+                throw new Exception("Missing benchmark property");
+            }
+            isTpcc = app.equalsIgnoreCase("tpcc");
+            if(!isTpcc && !app.equalsIgnoreCase("online_marketplace")) {
+                throw new Exception("Benchmark type not recognized: "+app);
+            }
+            // must ideally scale together
+            num_vms_workers = Integer.parseInt( properties.getProperty("num_vms_workers") );
+            num_transaction_workers = Integer.parseInt( properties.getProperty("num_transaction_workers") );
+            // can potentially hide the wait time introduced by the "ring"
+            num_max_transactions_batch = Integer.parseInt( properties.getProperty("num_max_transactions_batch") );
+            batch_window_ms = Integer.parseInt( properties.getProperty("batch_window_ms"));
+            max_time = Integer.parseInt( properties.getProperty("max_time") );
+        } else {
+            String app = args[0];
+            isTpcc = app.equalsIgnoreCase("tpcc");
+            if(!isTpcc && !app.equalsIgnoreCase("online_marketplace")) {
+                throw new Exception("Benchmark type not recognized: "+app);
+            }
+            num_vms_workers = Integer.parseInt( args[1] );
+            num_transaction_workers = Integer.parseInt( args[2] );
+            num_max_transactions_batch = Integer.parseInt( args[3] );
+            batch_window_ms = Integer.parseInt( args[4] );
+            max_time = Integer.parseInt( args[5] );
         }
 
-        // must ideally scale together
-        int num_vms_workers = Integer.parseInt( properties.getProperty("num_vms_workers") );
-        int num_transaction_workers = Integer.parseInt( properties.getProperty("num_transaction_workers") );
-        // can potentially hide the wait time introduced by the "ring"
-        int num_max_transactions_batch = Integer.parseInt( properties.getProperty("num_max_transactions_batch") );
-        int max_time = Integer.parseInt( properties.getProperty("max_time") );
-        int batch_windows_ms = Integer.parseInt( properties.getProperty("batch_window_ms"));
+        if(batch_window_ms > max_time) {
+            throw new Exception("Batch window time is larger than max time");
+        }
 
         System.out.println("Experiment config: \n"+
+                " Benchmark = "+(isTpcc ? "tpcc" : "online_marketplace") +"\n"+
                 " Num vms workers = "+ (num_transaction_workers)+"\n"+
                 " Num transaction workers = "+ (num_transaction_workers)+"\n"+
                 " Num max transaction batch = "+ (num_max_transactions_batch)+"\n"+
-                " Batch window (ms) = "+batch_windows_ms+"\n"+
+                " Batch window (ms) = "+batch_window_ms+"\n"+
                 " Max time (ms) = "+ (max_time)+"\n"
         );
 
-        List<ConcurrentLinkedDeque<TransactionInput>> txInputQueues = generateTransactionInputs(isTpcc, num_transaction_workers);
+        List<Deque<TransactionInput>> txInputQueues = generateTransactionInputs(isTpcc, num_transaction_workers);
 
         List<String> VMSes;
         Map<String, TransactionDAG> transactionMap;
@@ -82,14 +111,14 @@ public final class Main {
 
         Deque<Object> coordinatorQueue = new ConcurrentLinkedDeque<>();
         System.out.println("Setting up "+num_transaction_workers+" worker threads");
-        List<TransactionWorker> workers = setupTransactionWorkers(num_transaction_workers, num_max_transactions_batch, batch_windows_ms,
+        List<TransactionWorker> workers = setupTransactionWorkers(num_transaction_workers, num_max_transactions_batch, batch_window_ms,
                 VMSes, transactionMap, vmsWorkers, coordinatorQueue, txInputQueues);
 
         System.out.println("Initializing "+num_transaction_workers+" worker threads");
         ThreadFactory threadFactory = Thread.ofPlatform().factory();
         List<Thread> threads = new ArrayList<>();
         for (TransactionWorker worker : workers) {
-            var thread = threadFactory.newThread(worker);
+            Thread thread = threadFactory.newThread(worker);
             threads.add(thread);
             thread.start();
         }
@@ -116,42 +145,58 @@ public final class Main {
         System.exit(0);
     }
 
-    private static List<ConcurrentLinkedDeque<TransactionInput>> generateTransactionInputs(boolean tpcc, int num_transaction_workers) {
-        List<ConcurrentLinkedDeque<TransactionInput>> txInputQueues = new ArrayList<>(num_transaction_workers);
+    private static List<Deque<TransactionInput>> generateTransactionInputs(final boolean tpcc, final int num_transaction_workers) {
+        List<Deque<TransactionInput>> txInputQueues = new ArrayList<>(num_transaction_workers);
         // fill each queue with proper number of transaction inputs
         String defaultPayload = String.valueOf(0);
+
+        ForkJoinPool pool = ForkJoinPool.commonPool();
+        Future<?>[] futures = new Future[num_transaction_workers];
+
         for (int i = 1; i <= num_transaction_workers; i++) {
-           var inputQueue = new ConcurrentLinkedDeque<TransactionInput>();
+           final Deque<TransactionInput> inputQueue = new ConcurrentLinkedDeque<>();
            txInputQueues.add(inputQueue);
-           System.out.println("Generating "+NUM_QUEUED_TRANSACTIONS+" transactions for worker # "+i);
-           for(int j = 1; j <= NUM_QUEUED_TRANSACTIONS; j++) {
-               if(tpcc){
-                   inputQueue.add(
-                           new TransactionInput("new_order",
-                                   new TransactionInput.Event("new-order-ware-in",
-                                           defaultPayload)));
-                   continue;
-               }
-               int idx = ThreadLocalRandom.current().nextInt(1, 101);
-               if(idx <= 73){
-                   inputQueue.add(
-                           new TransactionInput(CUSTOMER_CHECKOUT,
-                                   new TransactionInput.Event(CUSTOMER_CHECKOUT,
-                                           defaultPayload)));
-               } else if(idx <= 86) {
-                   inputQueue.add(
-                           new TransactionInput(UPDATE_PRODUCT,
-                                   new TransactionInput.Event(UPDATE_PRODUCT,
-                                           defaultPayload)));
-               } else {
-                   inputQueue.add(
-                           new TransactionInput(UPDATE_PRICE,
-                                   new TransactionInput.Event(UPDATE_PRICE,
-                                           defaultPayload)));
-               }
-           }
+            int finalI = i;
+            futures[i-1] = pool.submit(() -> {
+                System.out.println("Generating " + NUM_QUEUED_TRANSACTIONS + " transactions for worker # " + finalI);
+                for (int j = 1; j <= NUM_QUEUED_TRANSACTIONS; j++) {
+                    if (tpcc) {
+                        inputQueue.add(
+                                new TransactionInput("new_order",
+                                        new TransactionInput.Event("new-order-ware-in",
+                                                defaultPayload)));
+                        continue;
+                    }
+                    int idx = ThreadLocalRandom.current().nextInt(1, 101);
+                    if (idx <= 73) {
+                        inputQueue.add(
+                                new TransactionInput(CUSTOMER_CHECKOUT,
+                                        new TransactionInput.Event(CUSTOMER_CHECKOUT,
+                                                defaultPayload)));
+                    } else if (idx <= 86) {
+                        inputQueue.add(
+                                new TransactionInput(UPDATE_PRODUCT,
+                                        new TransactionInput.Event(UPDATE_PRODUCT,
+                                                defaultPayload)));
+                    } else {
+                        inputQueue.add(
+                                new TransactionInput(UPDATE_PRICE,
+                                        new TransactionInput.Event(UPDATE_PRICE,
+                                                defaultPayload)));
+                    }
+                }
+            });
            System.out.println(NUM_QUEUED_TRANSACTIONS+" transactions generated for worker # "+i);
         }
+
+        try {
+            for (int i = 1; i <= num_transaction_workers; i++) {
+                futures[i-1].get();
+            }
+        } catch(ExecutionException | InterruptedException e){
+            LOGGER.log(ERROR, "Error:\n"+e);
+        }
+
         return txInputQueues;
     }
 
@@ -225,7 +270,7 @@ public final class Main {
                                                                    Map<String, TransactionDAG> transactionMap,
                                                                    Map<String,IVmsWorker> workers,
                                                                    Queue<Object> coordinatorQueue,
-                                                                   List<ConcurrentLinkedDeque<TransactionInput>> txInputQueues){
+                                                                   List<Deque<TransactionInput>> txInputQueues){
         List<TransactionWorker> txWorkers = new ArrayList<>();
         var vmsMetadataMap = new HashMap<String, VmsNode>();
         int i = 0;
