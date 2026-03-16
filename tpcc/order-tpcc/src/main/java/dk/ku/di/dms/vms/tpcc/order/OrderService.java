@@ -32,7 +32,7 @@ public final class OrderService {
 
     private static final System.Logger LOGGER = System.getLogger(OrderService.class.getName());
 
-    public static final boolean EXT_NEW_ORDER = false;
+    public static final boolean EXT_NEW_ORDER_IDX = false;
 
     private final IOrderRepository orderRepository;
     private final INewOrderRepository newOrderRepository;
@@ -56,29 +56,12 @@ public final class OrderService {
         float[] amounts = new float[10];
         for(int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
 
-            NewOrder newOrder;
-            if(EXT_NEW_ORDER) {
-                try {
-                    newOrder = INewOrderRepository.getFirstInTree(d_id, in.w_id);
-                } catch (Exception e){
-                    LOGGER.log(WARNING, "Error finding New Order in tree for did " + d_id, e);
-                    continue;
-                }
-                if(newOrder == null) {
-                    LOGGER.log(WARNING, "New Order Not Found in tree for did " + d_id);
-                    continue;
-                }
-            } else {
-                newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
-                if(newOrder == null) {
-                    LOGGER.log(WARNING, "New Order Not Found in tree for did " + d_id);
-                    // newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
-                    continue;
-                }
-                no_o_id = newOrder.no_o_id;
-                this.newOrderRepository.delete(newOrder);
+            NewOrder newOrder = this.getFirstNewOrder(d_id, in.w_id);
+            if(newOrder == null) {
+                continue;
             }
 
+            no_o_id = newOrder.no_o_id;
             Order order = this.orderRepository.lookupByKey(new Order.OrderId(no_o_id, d_id, in.w_id));
             // put carrier id in the input
             order.o_carrier_id = in.carrier_id;
@@ -101,6 +84,31 @@ public final class OrderService {
         }
 
         return new DeliveryOut(in.w_id, customerIds, amounts);
+    }
+
+    private NewOrder getFirstNewOrder(int d_id, int w_id) {
+        NewOrder newOrder;
+        if(EXT_NEW_ORDER_IDX) {
+            try {
+                newOrder = INewOrderRepository.getFirstInTree(d_id, w_id);
+            } catch (Exception e){
+                LOGGER.log(WARNING, "Error finding New Order in tree for did " + d_id, e);
+                return null;
+            }
+            if(newOrder == null) {
+                LOGGER.log(WARNING, "New Order Not Found in tree for did " + d_id);
+                return null;
+            }
+        } else {
+            newOrder = this.newOrderRepository.getFirstNewOrder(d_id, w_id);
+            if(newOrder == null) {
+                LOGGER.log(WARNING, "New Order Not Found for did " + d_id);
+                // newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+                return null;
+            }
+            this.newOrderRepository.delete(newOrder);
+        }
+        return newOrder;
     }
 
     @Inbound(values = "stock-level-ware-out")
@@ -153,7 +161,7 @@ public final class OrderService {
         this.orderRepository.insert(order);
 
         NewOrder newOrder = new NewOrder(in.d_next_o_id, in.d_id, in.w_id);
-        if(EXT_NEW_ORDER) {
+        if(EXT_NEW_ORDER_IDX) {
             INewOrderRepository.insertToTree(newOrder);
         } else {
              this.newOrderRepository.insert(newOrder);

@@ -1,4 +1,4 @@
-package dk.ku.di.dms.vms.marketplace.proxy;
+package dk.ku.di.dms.vms.marketplace.test;
 
 import dk.ku.di.dms.vms.coordinator.batch.BatchAlgo;
 import dk.ku.di.dms.vms.coordinator.transaction.TransactionBootstrap;

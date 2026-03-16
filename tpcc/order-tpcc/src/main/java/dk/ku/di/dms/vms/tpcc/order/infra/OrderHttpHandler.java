@@ -230,7 +230,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
 
                         // new order
                         NewOrder newOrder = new NewOrder(o_id, d_id, f_w_id);
-                        if(OrderService.EXT_NEW_ORDER) {
+                        if(OrderService.EXT_NEW_ORDER_IDX) {
                             synchronized (INewOrderRepository.NEW_ORDERS) {
                                 try {
                                     INewOrderRepository.NEW_ORDERS.computeIfAbsent(pairCompositeKey, _ -> new TreeMap<>()).put(newOrder.getId(), newOrder);
