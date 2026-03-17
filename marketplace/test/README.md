@@ -15,6 +15,9 @@ Order of parameters:
 
 And then run the project with the command as follows (parameters are used as example):
 ```
-java --enable-preview --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED -jar target/test-1.0-SNAPSHOT.jar tpcc 1 1 100000 50000000 10000
+java -XX:+UseParallelGC -XX:ParallelGCThreads=1 -Xms16g -Xmx16g -jar target/test-1.0-SNAPSHOT.jar tpcc 1 1 100000 50000000 10000
 ```
 
+```
+java -XX:+AlwaysPreTouch -Xms16g -Xmx16g -Xlog:gc -jar target/test-1.0-SNAPSHOT.jar tpcc 1 1 100000 50000000 10000
+```

@@ -26,6 +26,14 @@ public final class TransactionInput {
             this.name = name;
             this.payload = payload;
         }
+
+        @Override
+        public String toString() {
+            return "{"
+                    + "\"name\":\"" + name + "\""
+                    + ",\"payload\":" + payload
+                    + "}";
+        }
     }
 
     // for stream operations

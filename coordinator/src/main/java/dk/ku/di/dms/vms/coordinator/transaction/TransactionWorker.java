@@ -384,4 +384,8 @@ public final class TransactionWorker extends StoppableRunnable {
         return true;
     }
 
+    public void clearInputQueue() {
+        this.inputQueue.clear();
+    }
+
 }
