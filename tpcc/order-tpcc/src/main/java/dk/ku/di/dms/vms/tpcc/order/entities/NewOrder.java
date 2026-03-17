@@ -1,6 +1,7 @@
 package dk.ku.di.dms.vms.tpcc.order.entities;
 
 import dk.ku.di.dms.vms.modb.api.annotations.VmsForeignKey;
+import dk.ku.di.dms.vms.modb.api.annotations.VmsIndex;
 import dk.ku.di.dms.vms.modb.api.annotations.VmsTable;
 import dk.ku.di.dms.vms.modb.api.interfaces.IEntity;
 
@@ -58,10 +59,12 @@ public final class NewOrder implements IEntity<NewOrder.NewOrderId> {
 
     @Id
     @VmsForeignKey(table=Order.class, column = "o_d_id")
+    @VmsIndex(name = "dist_ware_idx")
     public int no_d_id;
 
     @Id
     @VmsForeignKey(table=Order.class, column = "o_w_id")
+    @VmsIndex(name = "dist_ware_idx")
     public int no_w_id;
 
     public NewOrder(){}

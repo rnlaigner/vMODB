@@ -150,9 +150,7 @@ public final class NonUniqueSecondaryIndex implements IMultiVersionIndex {
         private final long tid;
         private final BiFunction<Long,IKey,Object[]> getRecordFunc;
 
-        public SecondaryIndexIterator(long tid,
-                                      Iterator<IKey> iterator,
-                                      BiFunction<Long,IKey,Object[]> getRecordFunc){
+        public SecondaryIndexIterator(long tid, Iterator<IKey> iterator, BiFunction<Long,IKey,Object[]> getRecordFunc){
             this.tid = tid;
             this.iterator = iterator;
             this.getRecordFunc = getRecordFunc;

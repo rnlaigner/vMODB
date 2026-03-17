@@ -13,6 +13,7 @@ import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.query.analyzer.QueryTree;
 import dk.ku.di.dms.vms.modb.query.analyzer.predicate.GroupByPredicate;
 import dk.ku.di.dms.vms.modb.query.analyzer.predicate.JoinPredicate;
+import dk.ku.di.dms.vms.modb.query.analyzer.predicate.OrderByPredicate;
 import dk.ku.di.dms.vms.modb.query.analyzer.predicate.WherePredicate;
 import dk.ku.di.dms.vms.modb.query.execution.operators.AbstractSimpleOperator;
 import dk.ku.di.dms.vms.modb.query.execution.operators.IndexMultiAggregateScan;
@@ -232,12 +233,12 @@ public final class SimplePlanner {
         IndexSelectionVerdict indexSelectionVerdict = this.getOptimalIndex(tb, queryTree.wherePredicates);
         int[] projectionColumns = new int[queryTree.projections.size()];
         int idxCol = 0;
-        for(ColumnReference column : queryTree.projections){
+        for(ColumnReference column : queryTree.projections) {
             projectionColumns[idxCol] = column.getColumnPosition();
             idxCol++;
         }
         int entrySize = calculateQueryResultEntrySize(tb.schema(), queryTree.projections.size(), projectionColumns);
-        var orderByPredicate = queryTree.orderByPredicates.getFirst();
+        OrderByPredicate orderByPredicate = queryTree.orderByPredicates.getFirst();
         if(indexSelectionVerdict.indexIsUsedGivenWhereClause()) {
             return new IndexScanWithOrder(indexSelectionVerdict.index(), projectionColumns,
                     orderByPredicate.columnReference.columnPosition, orderByPredicate.sortOperation == OrderBySortOrderEnum.DESC, entrySize);

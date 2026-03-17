@@ -178,19 +178,19 @@ public final class EmbedMetadataLoader {
             // partial indexes
             final List<Field> partialIndexList = Arrays.stream(entityClazz.getFields()).filter(f->f.getAnnotation(VmsPartialIndex.class)!=null).toList();
             List<PartialIndexMetadata> partialIndexMetadataList = new ArrayList<>();
-            for(Field field : partialIndexList){
+            for(Field field : partialIndexList) {
                 VmsPartialIndex ann = field.getAnnotation(VmsPartialIndex.class);
                 Integer pos = vmsDataModel.findColumnPosition(field.getName());
                 partialIndexMetadataList.add( new PartialIndexMetadata(pos, ann.name(), ann.value()) );
             }
 
             // indexes for foreign keys
-            if(vmsDataModel.foreignKeyReferences != null && vmsDataModel.foreignKeyReferences.length > 0){
+            if(vmsDataModel.foreignKeyReferences != null && vmsDataModel.foreignKeyReferences.length > 0) {
                 // build
                 Map<String, List<ForeignKeyReference>> fksPerTable = Stream.of( vmsDataModel.foreignKeyReferences )
                                 .collect( Collectors.groupingBy(ForeignKeyReference::parentTableName) );
                 // table name, fields
-                Map<String, Tuple<int[],int[]>> secondaryIndexMap = buildSchemaForeignKeyMap(vmsDataModel, fksPerTable, vmsDataModelMap);
+                Map<String, Tuple<int[], int[]>> secondaryIndexMap = buildSchemaForeignKeyMap(vmsDataModel, fksPerTable, vmsDataModelMap);
                 dataSchemaToPkMap.put(vmsDataModel, new SchemaMapping(schema, secondaryIndexMap, indexMetadataList, partialIndexMetadataList));
             } else {
                 dataSchemaToPkMap.put(vmsDataModel, new SchemaMapping(schema, Map.of(), indexMetadataList, partialIndexMetadataList));
@@ -245,9 +245,20 @@ public final class EmbedMetadataLoader {
             tableToPartialIndexMap.put(tableName, listPartialIndexes);
 
             // secondary indexes based on foreign keys
-            if(!entry.getValue().secondaryIndexMap().isEmpty()) {
-                // now create the secondary index (a - based on foreign keys and b - based on non-foreign keys)
-                for (var secIdx : entry.getValue().secondaryIndexMap().entrySet()) {
+            // now create the secondary index (a - based on foreign keys and b - based on non-foreign keys)
+            for (var secIdx : entry.getValue().secondaryIndexMap().entrySet()) {
+                // check if secondary index columns are the same as primary key columns
+                int[] secIdxColumns = secIdx.getValue().t1();
+                boolean equals = true;
+                if(secIdxColumns.length == schema.getPrimaryKeyColumns().length) {
+                    for(int i = 0; i <  schema.getPrimaryKeyColumns().length; i++) {
+                        if(secIdxColumns[i] != schema.getPrimaryKeyColumns()[i]) {
+                            equals = false;
+                            break;
+                        }
+                    }
+                }
+                if(!equals) {
                     ReadWriteIndex<IKey> nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, secIdx.getValue().t1(), "FK_"+secIdx.getKey() );
                     listSecondaryIndexes.add(nuhi);
                 }
@@ -269,14 +280,13 @@ public final class EmbedMetadataLoader {
             }
 
             // secondary indexes based on annotation
-            if(!entry.getValue().partialIndexMetadataList().isEmpty()) {
-                for (PartialIndexMetadata partialIdx : entry.getValue().partialIndexMetadataList()) {
-                    // not all partial indexes are unique.... how is it working?
-                    ReadWriteIndex<IKey> uniquePartialIndex = StorageUtils.createUniqueIndex(vmsIdentifier, schema, new int[]{ partialIdx.columnPos() }, partialIdx.indexName() );
-                    partialIndexMetaMap.put( uniquePartialIndex.key(), new Tuple<>(partialIdx.columnPos(), partialIdx.value() ) );
-                    listPartialIndexes.add(uniquePartialIndex);
-                }
+            for (PartialIndexMetadata partialIdx : entry.getValue().partialIndexMetadataList()) {
+                // not all partial indexes are unique.... how is it working?
+                ReadWriteIndex<IKey> uniquePartialIndex = StorageUtils.createUniqueIndex(vmsIdentifier, schema, new int[]{ partialIdx.columnPos() }, partialIdx.indexName() );
+                partialIndexMetaMap.put( uniquePartialIndex.key(), new Tuple<>(partialIdx.columnPos(), partialIdx.value() ) );
+                listPartialIndexes.add(uniquePartialIndex);
             }
+
         }
 
         // now I have the primary key indexes, foreign-key indexes, and other secondary indexes

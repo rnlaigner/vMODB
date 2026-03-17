@@ -84,6 +84,9 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
         List<Object[]> records = this.operationalAPI.fetch(this.table, selectStatement, whereClauseElements);
 
         if (List.class.isAssignableFrom(method.getReturnType())) {
+            if(records.isEmpty()) {
+                return List.of();
+            }
             // this requires a fix. need to know whether the return type specified in the list is an entity
             if(selectStatement.selectClause.get(0).equals("*")) {
                 List<T> result = new ArrayList<>(records.size());
@@ -102,6 +105,16 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
                 }
                 return result;
             }
+        }
+
+        if(this.entityConstructor.getDeclaringClass().equals(method.getReturnType())) {
+            if(records.isEmpty()) {
+                return null;
+            }
+            if(records.size() == 1) {
+                return this.parseObjectIntoEntity(records.get(0));
+            }
+            throw new IllegalStateException("Should not return more than a single record");
         }
 
         if(method.getReturnType().isPrimitive() || Number.class.isAssignableFrom(method.getReturnType())) {
