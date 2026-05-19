@@ -100,14 +100,13 @@ public final class WorkloadUtils {
     public record WorkloadStats(long initTs, long actualEndTs, Map<Long, List<Long>>[] submitted){}
 
     @SuppressWarnings("unchecked")
-    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> inputResolverFunc, int runTime) {
-        int numWorkers = input.size();
-        LOGGER.log(INFO, "Submitting transactions through "+numWorkers+" worker(s)");
-        CountDownLatch allThreadsStart = new CountDownLatch(numWorkers+1);
-        CountDownLatch allThreadsAreDone = new CountDownLatch(numWorkers);
-        Map<Long, List<Long>>[] submittedArray = new Map[numWorkers];
+    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> inputResolverFunc, int runTime, int numTerminals) {
+        LOGGER.log(INFO, "Submitting transactions through "+ numTerminals +" worker(s)");
+        CountDownLatch allThreadsStart = new CountDownLatch(numTerminals +1);
+        CountDownLatch allThreadsAreDone = new CountDownLatch(numTerminals);
+        Map<Long, List<Long>>[] submittedArray = new Map[numTerminals];
 
-        for(int i = 0; i < numWorkers; i++) {
+        for(int i = 0; i < numTerminals; i++) {
             final Map<String, Iterator<Object>> workerInput = input.get(i);
             int finalI = i;
             Thread thread = new Thread(()-> submittedArray[finalI] =

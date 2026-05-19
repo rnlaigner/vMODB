@@ -92,17 +92,17 @@ public final class OrderService {
             try {
                 newOrder = INewOrderRepository.getFirstInTree(d_id, w_id);
             } catch (Exception e){
-                LOGGER.log(WARNING, "Error finding New Order in tree for did " + d_id, e);
+                LOGGER.log(WARNING, "Error finding New Order in tree for d_id " + d_id, e);
                 return null;
             }
             if(newOrder == null) {
-                LOGGER.log(WARNING, "New Order Not Found in tree for did " + d_id);
+                LOGGER.log(WARNING, "New Order not found in tree for d_id " + d_id);
                 return null;
             }
         } else {
             newOrder = this.newOrderRepository.getFirstNewOrder(d_id, w_id);
             if(newOrder == null) {
-                LOGGER.log(WARNING, "New Order Not Found for did " + d_id);
+                LOGGER.log(DEBUG, "No order found for d_id "+ d_id +" w_id " + w_id);
                 // newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
                 return null;
             }

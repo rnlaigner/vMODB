@@ -114,12 +114,15 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
             if(records.size() == 1) {
                 return this.parseObjectIntoEntity(records.get(0));
             }
-            throw new IllegalStateException("Should not return more than a single record");
+            throw new IllegalStateException("Should not return more than a single record!");
         }
 
         if(method.getReturnType().isPrimitive() || Number.class.isAssignableFrom(method.getReturnType())) {
             // String column = selectStatement.selectClause.get(0);
             // this.table.schema().columnPosition(column)
+            if(records.isEmpty()) {
+                throw new IllegalStateException("Should not return empty record!");
+            }
             return records.get(0)[0];
         }
 
@@ -182,6 +185,7 @@ public abstract class AbstractProxyRepository<PK extends Serializable, T extends
         for(PK obj : keys){
             Object[] valuesOfKey = this.extractFieldValuesFromKeyObject(obj);
             Object[] object = this.operationalAPI.lookupByKey(this.table.primaryKeyIndex(), valuesOfKey);
+            if (object == null) continue;
             resultList.add( this.parseObjectIntoEntity(object) );
         }
         return resultList;

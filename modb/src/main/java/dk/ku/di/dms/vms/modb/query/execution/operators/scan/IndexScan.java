@@ -37,7 +37,6 @@ public final class IndexScan extends AbstractScan {
         List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
         Object[] next;
-
         // prevent more projection than necessary
         if(limit == null){
             while(iterator.hasNext()){
@@ -48,19 +47,12 @@ public final class IndexScan extends AbstractScan {
         }
         while(iterator.hasNext() && result.size() < limit){
             next = iterator.next();
-            result.add(next);
+            result.add(this.getProjection(next));
         }
-
-        if(result.isEmpty()) return result;
-
-        int min = Math.min(limit, result.size());
-        if(this.projectionColumns.length != result.get(0).length) {
-            for(int i = 0; i < min; i++) {
-                result.set(i, this.getProjection(result.get(i)));
-                i++;
-            }
+        if(result.size() < limit){
+            return result;
         }
-        return result.subList(0, min);
+        return result.subList(0, limit);
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext, Integer limit) {

@@ -30,9 +30,9 @@ public final class DeliveryOut {
     @Override
     public String toString() {
         return "{"
-                + "\"w_id\":" + w_id
-                + ",\"customerIds\":" + Arrays.toString(customerIds)
-                + ",\"amounts\":" + Arrays.toString(amounts)
+                + "\"w_id\":" + this.w_id
+                + ",\"customerIds\":" + Arrays.toString(this.customerIds)
+                + ",\"amounts\":" + Arrays.toString(this.amounts)
                 + "}";
     }
 

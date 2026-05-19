@@ -112,16 +112,15 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         this.transactionManager.reset();
 
         ForkJoinPool pool = ForkJoinPool.commonPool();
-        Future<?>[] futures = new Future[numWare+1];
 
-        LOGGER.log(INFO, "Populating inventory VMS...");
+        LOGGER.log(INFO, "Populating inventory VMS ("+numWare+" warehouses)...");
         long initTs = System.currentTimeMillis();
 
         if(checkpointing) {
             // bypass default interfaces
-            this.populateDisk(numWare, futures, pool);
+            this.populateDisk(numWare, pool);
         } else {
-            this.populateInMemory(numWare, futures, pool);
+            this.populateInMemory(numWare, pool);
         }
 
         long endTs = System.currentTimeMillis();
@@ -129,7 +128,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+    private void populateDisk(int numWare, ForkJoinPool pool) {
 
         final var itemRepo = ((AbstractProxyRepository<Integer, Item>) itemRepository);
         final var itemIndex = itemRepo.getTable().underlyingPrimaryKeyIndex();
@@ -137,8 +136,10 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         final var stockRepo = ((AbstractProxyRepository<Stock.StockId, Stock>) stockRepository);
         final var stockIndex = stockRepo.getTable().underlyingPrimaryKeyIndex();
 
+        Future<?>[] numWareFts = new Future[numWare+1];
+
         // item
-        futures[0] = pool.submit(() -> {
+        numWareFts[0] = pool.submit(() -> {
             LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
             long internalInitTs = System.currentTimeMillis();
             for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
@@ -153,7 +154,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         // stock
         for(int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
-            futures[w_id] = pool.submit(() -> {
+            numWareFts[w_id] = pool.submit(() -> {
                 LOGGER.log(INFO, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
@@ -169,20 +170,26 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         }
         try {
             for (int w_id = 0; w_id <= numWare; w_id++) {
-                futures[w_id].get();
+                numWareFts[w_id].get();
             }
-            futures[0] = pool.submit(itemIndex::flush);
-            futures[1] = pool.submit(stockIndex::flush);
+
+            Future<?>[] flushFts = new Future[2];
+            flushFts[0] = pool.submit(itemIndex::flush);
+            flushFts[1] = pool.submit(stockIndex::flush);
             for (int i = 0; i < 2; i++) {
-                futures[i].get();
+                flushFts[i].get();
             }
+
             this.transactionManager.rebuildIndexes();
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
         }
     }
 
-    private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+    private void populateInMemory(int numWare, ForkJoinPool pool) {
+
+        Future<?>[] numWareFts = new Future[numWare];
+
         LOGGER.log(DEBUG, "Creating "+TPCcConstants.NUM_ITEMS+" item records...");
         long initTs = System.currentTimeMillis();
         long lastTid = -numWare-1;
@@ -201,7 +208,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
         // stock
         for(int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
-            futures[w_id-1] = pool.submit(() -> {
+            numWareFts[w_id-1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
                 this.transactionManager.beginTransaction(-f_w_id, 0, lastTid, false);
                 long internalInitTs = System.currentTimeMillis();
@@ -216,7 +223,7 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
 
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
+                numWareFts[w_id-1].get();
             }
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);

@@ -246,7 +246,8 @@ public final class EmbedMetadataLoader {
 
             // create the secondary index based on foreign keys
             for (var secIdx : entry.getValue().secondaryIndexMap().entrySet()) {
-                // check if secondary index columns are the same as primary key columns
+                // check if the set of secondary index columns is the same as primary key columns (e.g., new order).
+                // if so, no need to create additional index, can just use primary key index
                 int[] secIdxColumns = secIdx.getValue().t1();
                 boolean equals = true;
                 if(secIdxColumns.length == schema.getPrimaryKeyColumns().length) {
@@ -256,6 +257,8 @@ public final class EmbedMetadataLoader {
                             break;
                         }
                     }
+                } else {
+                    equals = false;
                 }
                 if(!equals) {
                     ReadWriteIndex<IKey> nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, secIdx.getValue().t1(), "FK_"+secIdx.getKey(), false);

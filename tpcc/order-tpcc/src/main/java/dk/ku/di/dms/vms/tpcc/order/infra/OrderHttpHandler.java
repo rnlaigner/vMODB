@@ -126,16 +126,15 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         this.transactionManager.reset();
 
         ForkJoinPool pool = ForkJoinPool.commonPool();
-        Future<?>[] futures = new Future[numWare];
 
-        LOGGER.log(INFO, "Populating order VMS...");
+        LOGGER.log(INFO, "Populating order VMS ("+numWare+" warehouses)...");
         long initTs = System.currentTimeMillis();
 
         if(checkpointing) {
             // bypass default interfaces
-            this.populateDisk(numWare, futures, pool);
+            this.populateDisk(numWare, pool);
         } else {
-            this.populateInMemory(numWare, futures, pool);
+            this.populateInMemory(numWare, pool);
         }
 
         long endTs = System.currentTimeMillis();
@@ -143,7 +142,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+    private void populateDisk(int numWare, ForkJoinPool pool) {
 
         final var orderRepo = ((AbstractProxyRepository<Order.OrderId, Order>) orderRepository);
         final var orderIndex = orderRepo.getTable().underlyingPrimaryKeyIndex();
@@ -154,9 +153,11 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         final var orderLineRepo = ((AbstractProxyRepository<OrderLine.OrderLineId, OrderLine>) orderLineRepository);
         final var orderLineIndex = orderLineRepo.getTable().underlyingPrimaryKeyIndex();
 
+        Future<?>[] numWareFts = new Future[numWare];
+
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
-            futures[w_id-1] = pool.submit(() -> {
+            numWareFts[w_id-1] = pool.submit(() -> {
                 LOGGER.log(INFO, "Started creating 30_000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
@@ -197,24 +198,28 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         }
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
+                numWareFts[w_id-1].get();
             }
-            futures[0] = pool.submit(orderIndex::flush);
-            futures[1] = pool.submit(orderLineIndex::flush);
+
+            Future<?>[] flushFts = new Future[2];
+            flushFts[0] = pool.submit(orderIndex::flush);
+            flushFts[1] = pool.submit(orderLineIndex::flush);
             for (int i = 0; i < 2; i++) {
-                futures[i].get();
+                flushFts[i].get();
             }
+
             this.transactionManager.rebuildIndexes();
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
         }
     }
 
-    private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+    private void populateInMemory(int numWare, ForkJoinPool pool) {
+        Future<?>[] numWareFts = new Future[numWare];
         // order and order line
         for(int w_id = 1; w_id <= numWare; w_id++){
             final int f_w_id = w_id;
-            futures[w_id-1] = pool.submit(() -> {
+            numWareFts[w_id-1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating 30_000 order records for warehouse " + f_w_id);
                 this.transactionManager.beginTransaction(-f_w_id, 0, -numWare, false);
                 long internalInitTs = System.currentTimeMillis();
@@ -256,7 +261,7 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
         }
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
+                numWareFts[w_id-1].get();
             }
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);

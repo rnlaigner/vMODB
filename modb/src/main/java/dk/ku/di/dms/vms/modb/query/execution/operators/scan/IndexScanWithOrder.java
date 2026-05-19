@@ -32,20 +32,12 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
         while(iterator.hasNext()){
             next = iterator.next();
             pos = this.getPositionToInsert(result, next);
-            result.add(pos, next);
+            result.add(pos, this.getProjection(next));
         }
-
-        if(result.isEmpty()) return result;
-
-        int min = Math.min(limit, result.size());
-        int i = 0;
-        if(this.projectionColumns.length != result.get(0).length) {
-            while (i < min) {
-                result.set(i, this.getProjection(result.get(i)));
-                i++;
-            }
+        if(result.size() < limit){
+            return result;
         }
-        return result.subList(0, min);
+        return result.subList(0, limit);
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext, Integer limit) {

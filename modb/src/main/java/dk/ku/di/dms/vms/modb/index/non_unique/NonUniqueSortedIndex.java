@@ -7,17 +7,14 @@ import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NavigableSet;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 public final class NonUniqueSortedIndex extends ReadWriteIndex<IKey> {
 
     // queue to allow concurrent inserts
-    private final Map<IKey, NavigableSet<Object[]>> store;
+    private final Map<IKey, Set<Object[]>> store;
 
     private final Comparator<Object[]> comparator;
 
@@ -67,9 +64,10 @@ public final class NonUniqueSortedIndex extends ReadWriteIndex<IKey> {
         return this.store.get(key).toArray();
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public IRecordIterator<IKey> iterator(IKey key) {
-        final Iterator<Object[]> rr = this.store.get(key).iterator();
+        final Iterator<Object[]> rr = this.store.getOrDefault(key, Collections.EMPTY_SET).iterator();
         return new IRecordIterator<>() {
             @Override
             public boolean hasNext() {

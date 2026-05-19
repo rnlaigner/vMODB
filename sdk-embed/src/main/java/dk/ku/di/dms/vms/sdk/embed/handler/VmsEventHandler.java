@@ -331,6 +331,10 @@ public final class VmsEventHandler extends ModbHttpServer {
             LOGGER.log(DEBUG,this.me.identifier+": An output event (queue: "+outputEvent.outputQueue()+") has no target virtual microservices.");
             return;
         }
+        // only for tests
+//        if(outputEvent.outputQueue().equals("delivery-out")){
+//            System.out.println("TESTE");
+//        }
         TransactionEvent.PayloadRaw payload = TransactionEvent.of(outputEvent.tid(), outputEvent.batch(), outputEvent.outputQueue(), objStr, precedenceMap);
         for(IVmsContainer consumerVmsContainer : consumerVMSs) {
             LOGGER.log(DEBUG,this.me.identifier+": An output event (queue: " + outputEvent.outputQueue() + ") will be queued to VMS: " + consumerVmsContainer.identifier());
@@ -797,6 +801,10 @@ public final class VmsEventHandler extends ModbHttpServer {
     private InboundEvent buildInboundEvent(TransactionEvent.Payload payload){
         Class<?> clazz = this.vmsMetadata.queueToEventMap().get(payload.event());
         Object input = this.serdesProxy.deserialize(payload.payload(), clazz);
+        // for testing
+//        if(payload.event().equalsIgnoreCase("delivery-out")){
+//            System.out.println("TESTE!");
+//        }
         Map<String, Long> precedenceMap = this.serdesProxy.deserializeDependenceMap(payload.precedenceMap());
         if(precedenceMap == null){
             throw new IllegalStateException("Precedence map is null.");

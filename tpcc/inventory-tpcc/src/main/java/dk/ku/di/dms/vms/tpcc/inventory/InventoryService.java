@@ -14,6 +14,7 @@ import java.util.List;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.ERROR;
 
 @Microservice("inventory")
@@ -39,7 +40,7 @@ public final class InventoryService {
         }
         int[] itemIds = this.stockRepository.getStockCount(in.itemsIds, in.w_id, threshold);
         if(itemIds.length == 0){
-            LOGGER.log(ERROR, "Input event StockLevelOrdOut led to empty stock items:\n"+in);
+            LOGGER.log(DEBUG, "Input event StockLevelOrdOut led to empty stock items:\n"+in);
         }
     }
 

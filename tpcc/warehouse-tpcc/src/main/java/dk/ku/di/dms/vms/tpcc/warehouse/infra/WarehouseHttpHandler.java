@@ -127,28 +127,28 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         this.transactionManager.reset();
 
         // warehouse
-        LOGGER.log(INFO, "Populating warehouse VMS...");
+        LOGGER.log(INFO, "Populating warehouse VMS ("+numWare+" warehouses)...");
 
         ForkJoinPool pool = ForkJoinPool.commonPool();
-        Future<?>[] futures = new Future[numWare];
 
         long initTs = System.currentTimeMillis();
 
         if(checkpointing) {
             // bypass default interfaces
-            this.populateDisk(numWare, futures, pool);
+            this.populateDisk(numWare, pool);
         } else {
-            this.populateInMemory(numWare, futures, pool);
+            this.populateInMemory(numWare, pool);
         }
 
         long endTs = System.currentTimeMillis();
         LOGGER.log(INFO, "Finished populating warehouse VMS in "+(endTs-initTs)+" ms");
     }
 
-    private void populateInMemory(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+    private void populateInMemory(int numWare, ForkJoinPool pool) {
+        Future<?>[] numWareFts = new Future[numWare];
         for (int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
-            futures[w_id - 1] = pool.submit(() -> {
+            numWareFts[w_id - 1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating 30_000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 transactionManager.beginTransaction(-f_w_id, 0, 0, false);
@@ -169,7 +169,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         }
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
+                numWareFts[w_id-1].get();
             }
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
@@ -177,7 +177,7 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private void populateDisk(int numWare, Future<?>[] futures, ForkJoinPool pool) {
+    private void populateDisk(int numWare, ForkJoinPool pool) {
 
         final var wareRepo = ((AbstractProxyRepository<Integer, Warehouse>) warehouseRepository);
         final var wareIndex = wareRepo.getTable().underlyingPrimaryKeyIndex();
@@ -188,10 +188,12 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         final var custRepo = ((AbstractProxyRepository<Customer.CustomerId, Customer>) customerRepository);
         final var custIndex = custRepo.getTable().underlyingPrimaryKeyIndex();
 
+        Future<?>[] numWareFts = new Future[numWare];
+
         for (int w_id = 1; w_id <= numWare; w_id++) {
             final int f_w_id = w_id;
             // coordinate accesses to primary index given it is designed for single-thread access
-            futures[w_id - 1] = pool.submit(() -> {
+            numWareFts[w_id - 1] = pool.submit(() -> {
                 LOGGER.log(INFO, "Started creating 30_000 customer records for warehouse " + f_w_id);
                 long internalInitTs = System.currentTimeMillis();
                 Warehouse warehouse = generateWarehouse(f_w_id);
@@ -221,14 +223,17 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
         }
         try {
             for (int w_id = 1; w_id <= numWare; w_id++) {
-                futures[w_id-1].get();
+                numWareFts[w_id-1].get();
             }
-            futures[0] = pool.submit(wareIndex::flush);
-            futures[1] = pool.submit(distIndex::flush);
-            futures[2] = pool.submit(custIndex::flush);
+
+            Future<?>[] flushFts = new Future[3];
+            flushFts[0] = pool.submit(wareIndex::flush);
+            flushFts[1] = pool.submit(distIndex::flush);
+            flushFts[2] = pool.submit(custIndex::flush);
             for (int i = 0; i < 3; i++) {
-                futures[i].get();
+                flushFts[i].get();
             }
+
             this.transactionManager.rebuildIndexes();
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);

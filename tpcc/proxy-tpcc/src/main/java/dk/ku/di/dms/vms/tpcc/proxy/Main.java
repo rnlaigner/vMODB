@@ -43,6 +43,10 @@ public final class Main {
     private static void loadMenu(String menuType) {
         Coordinator coordinator = null;
         final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
+        int numTerminals = Integer.parseInt(PROPERTIES.get("num_terminals").toString());
+        if(numTerminals == 0 || numTerminals > numWare) {
+            numTerminals = numWare;
+        }
         final boolean truncate = Boolean.parseBoolean(PROPERTIES.getProperty("checkpointing_truncate"));
         List<Map<String, Iterator<Object>>> input;
 
@@ -166,7 +170,7 @@ public final class Main {
                     // prevent log pollution, i.e., interleaving of handshaking and experiment messages
                     try { Thread.sleep(100); } catch (InterruptedException _) { }
 
-                    ExperimentUtils.ExperimentStats expStats = ExperimentUtils.runExperiment(coordinator, txRatio, input, runTime, warmUp);
+                    ExperimentUtils.ExperimentStats expStats = ExperimentUtils.runExperiment(coordinator, txRatio, input, runTime, warmUp, numTerminals);
                     ExperimentUtils.writeResultsToFile(numWare, expStats, runTime, warmUp,
                             coordinator.getOptions().getNumTransactionWorkers(), coordinator.getOptions().getBatchWindow(), coordinator.getOptions().getMaxTransactionsPerBatch(), txRatio, numTxInputPerType, PROPERTIES.getProperty("logging"), PROPERTIES.getProperty("checkpointing"));
                     break;

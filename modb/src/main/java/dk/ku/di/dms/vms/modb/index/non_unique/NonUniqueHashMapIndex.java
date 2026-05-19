@@ -8,6 +8,7 @@ import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,9 +64,10 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
         return this.store.get(key).toArray();
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public IRecordIterator<IKey> iterator(IKey key) {
-        final Iterator<Object[]> rr = this.store.get(key).iterator();
+        final Iterator<Object[]> rr = this.store.getOrDefault(key, Collections.EMPTY_LIST).iterator();
         return new IRecordIterator<>() {
             @Override
             public boolean hasNext() {

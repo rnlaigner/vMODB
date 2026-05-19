@@ -27,8 +27,8 @@ public final class DeliveryIn {
     @Override
     public String toString() {
         return "{"
-                + "\"w_id\":" + w_id
-                + ",\"carrier_id\":" + carrier_id
+                + "\"w_id\":" + this.w_id
+                + ",\"carrier_id\":" + this.carrier_id
                 + "}";
     }
 

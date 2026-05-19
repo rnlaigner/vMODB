@@ -24,6 +24,7 @@ import java.util.Objects;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;
 
 @Microservice("warehouse")
@@ -50,6 +51,11 @@ public final class WarehouseService {
             customerIds.add(new Customer.CustomerId(in.customerIds[d_id-1], d_id, in.w_id));
         }
         List<Customer> customers = this.customerRepository.lookupByKeys(customerIds);
+        if(customers.isEmpty()) {
+            LOGGER.log(DEBUG, "No customers found for w_id "+ in.w_id);
+            // customers = this.customerRepository.lookupByKeys(customerIds);
+            return;
+        }
         int idx = 0;
         for(Customer customer : customers) {
             customer.c_balance += in.amounts[idx++];
@@ -123,13 +129,13 @@ public final class WarehouseService {
             Objects.requireNonNull(customers);
             if(customers.isEmpty()){
                 LOGGER.log(WARNING, "No customers retrieved by last name with input:\n"+in);
-                customers = this.customerRepository.getCustomerByLastName(in.d_id, in.w_id, in.c_last);
+                // customers = this.customerRepository.getCustomerByLastName(in.d_id, in.w_id, in.c_last);
             }
         } else {
             Customer customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
             if(customer == null){
                 LOGGER.log(WARNING, "No customer retrieved with input:\n"+in);
-                customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
+                // customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.d_id, in.w_id));
             }
         }
         return new OrderStatusOut(in.w_id, in.d_id, in.c_id);
