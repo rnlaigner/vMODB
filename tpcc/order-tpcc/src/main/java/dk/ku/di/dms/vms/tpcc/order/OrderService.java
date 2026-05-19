@@ -102,8 +102,8 @@ public final class OrderService {
         } else {
             newOrder = this.newOrderRepository.getFirstNewOrder(d_id, w_id);
             if(newOrder == null) {
-                LOGGER.log(DEBUG, "No order found for d_id "+ d_id +" w_id " + w_id);
-                // newOrder = this.newOrderRepository.getFirstNewOrder(d_id, in.w_id);
+                LOGGER.log(WARNING, "No order found for d_id "+ d_id +" w_id " + w_id);
+                // newOrder = this.newOrderRepository.getFirstNewOrder(d_id, w_id);
                 return null;
             }
             this.newOrderRepository.delete(newOrder);
@@ -132,13 +132,13 @@ public final class OrderService {
     @Transactional(type = R)
     public void processOrderStatus(OrderStatusOut in) {
         Order order = this.orderRepository.getLastOrderByCustomerId(in.c_id, in.d_id, in.w_id);
-        if(order == null){
+        if(order == null) {
             LOGGER.log(DEBUG, "No order found for customer "+in.c_id+"\n"+in);
             // order = this.orderRepository.getLastOrderByCustomerId(in.c_id, in.d_id, in.w_id);
             return;
         }
         List<OrderLineInfoDto> orderLinesInfo = this.orderLineRepository.getOrderLinesInfo(order.o_id, order.o_d_id, order.o_w_id);
-        if(orderLinesInfo.isEmpty()){
+        if(orderLinesInfo.isEmpty()) {
             LOGGER.log(ERROR, "Input event OrderStatusOut led to empty order lines info:\n"+in);
         }
     }

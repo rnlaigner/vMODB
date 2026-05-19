@@ -15,6 +15,10 @@ public abstract class ReadWriteIndex<K> extends AbstractIndex<K> {
 
     public abstract void delete(K key);
 
+    public void delete(K key, Object[] record) {
+        throw new RuntimeException("Not supported.");
+    }
+
     public abstract Object[] lookupByKey(K key);
 
     public abstract void upsert(K key, Object[] record);

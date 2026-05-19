@@ -46,12 +46,12 @@ public final class NonUniqueSortedIndex extends ReadWriteIndex<IKey> {
 
     @Override
     public void update(IKey key, Object[] record) {
-        this.store.get(key).add(record);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public void upsert(IKey key, Object[] record) {
-        this.store.computeIfAbsent(key, _ -> new ConcurrentSkipListSet<>(this.comparator)).add(record);
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -60,8 +60,14 @@ public final class NonUniqueSortedIndex extends ReadWriteIndex<IKey> {
     }
 
     @Override
+    public void delete(IKey key, Object[] record) {
+        this.store.get(key).remove(record);
+    }
+
+    @Override
     public Object[] lookupByKey(IKey key) {
-        return this.store.get(key).toArray();
+        // return this.store.get(key).toArray();
+        throw new UnsupportedOperationException();
     }
 
     @SuppressWarnings("unchecked")

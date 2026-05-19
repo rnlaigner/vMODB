@@ -103,7 +103,7 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             wherePredicates = this.analyzer.analyzeWhere(table, whereClauseElements);
         }
         if(scanOperator.isIndexScan()) {
-            var indexScan = scanOperator.asIndexScan();
+            IndexScan indexScan = scanOperator.asIndexScan();
             if(wherePredicates.get(0).expression == ExpressionTypeEnum.EQUALS) {
                 IKey key = this.getIndexedKeysFromWhereClause(wherePredicates, indexScan.index());
                 if(containsNonIndexColumns(wherePredicates, indexScan.index())) {

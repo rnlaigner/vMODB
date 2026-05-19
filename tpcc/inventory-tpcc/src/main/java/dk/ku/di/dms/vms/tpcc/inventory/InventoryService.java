@@ -14,8 +14,7 @@ import java.util.List;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.ERROR;
+import static java.lang.System.Logger.Level.*;
 
 @Microservice("inventory")
 public final class InventoryService {
@@ -30,6 +29,8 @@ public final class InventoryService {
         this.stockRepository = stockRepository;
     }
 
+    private static final boolean STOCK_LEVEL_CORRECTNESS_CHECKING = false;
+
     @Inbound(values = "stock-level-ord-out")
     @Transactional(type = R)
     public void processStockLevel(StockLevelOrdOut in) {
@@ -39,8 +40,21 @@ public final class InventoryService {
             return;
         }
         int[] itemIds = this.stockRepository.getStockCount(in.itemsIds, in.w_id, threshold);
-        if(itemIds.length == 0){
-            LOGGER.log(DEBUG, "Input event StockLevelOrdOut led to empty stock items:\n"+in);
+        if(itemIds.length == 0) {
+            LOGGER.log(WARNING, "Input event StockLevelOrdOut led to empty stock items:\n"+in);
+            if(STOCK_LEVEL_CORRECTNESS_CHECKING) {
+                // check if they can be queried and whether the filter is correct
+                for(int i = 0; i < in.itemsIds.length; i++){
+                    var stockItem = this.stockRepository.lookupByKey(new Stock.StockId(in.itemsIds[i], in.w_id));
+                    if(stockItem == null) {
+                        LOGGER.log(ERROR, "Stock Item Not Found for ID: " + in.itemsIds[i]);
+                        continue;
+                    }
+                    if(stockItem.s_quantity < threshold){
+                        LOGGER.log(WARNING, "Found stock item with quantity less than the threshold of " + threshold + "found ");
+                    }
+                }
+            }
         }
     }
 

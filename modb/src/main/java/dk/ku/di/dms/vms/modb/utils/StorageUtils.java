@@ -47,7 +47,7 @@ public final class StorageUtils {
                 // ideally should build sort key based on primary key columns
                 return new NonUniqueSortedIndex(schema, columnsIndex, KeyUtils.createComparator(schema.getPrimaryKeyColumns().length));
             }
-            return new NonUniqueHashMapIndex(schema, columnsIndex);
+            return new NonUniqueHashMapIndex(schema, columnsIndex, KeyUtils.createComparator(schema.getPrimaryKeyColumns().length));
         } else {
             OrderedRecordBuffer[] buffers = loadOrderedBuffers(prefix, MemoryUtils.DEFAULT_NUM_BUCKETS, MemoryUtils.DEFAULT_PAGE_SIZE, indexName);
             return new NonUniqueHashBufferIndex(buffers, schema, columnsIndex);

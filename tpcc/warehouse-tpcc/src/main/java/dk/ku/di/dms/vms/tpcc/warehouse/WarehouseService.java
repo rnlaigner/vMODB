@@ -24,8 +24,7 @@ import java.util.Objects;
 
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.R;
 import static dk.ku.di.dms.vms.modb.api.enums.TransactionTypeEnum.RW;
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.WARNING;
+import static java.lang.System.Logger.Level.*;
 
 @Microservice("warehouse")
 public final class WarehouseService {
@@ -52,7 +51,7 @@ public final class WarehouseService {
         }
         List<Customer> customers = this.customerRepository.lookupByKeys(customerIds);
         if(customers.isEmpty()) {
-            LOGGER.log(DEBUG, "No customers found for w_id "+ in.w_id);
+            LOGGER.log(WARNING, "No customers found for w_id "+ in.w_id);
             // customers = this.customerRepository.lookupByKeys(customerIds);
             return;
         }

@@ -107,8 +107,8 @@ public final class NonUniqueSecondaryIndex implements IMultiVersionIndex {
         }
         for(var entry : writeSet.entrySet()){
             if(entry.getValue().t2() != WriteType.DELETE) continue;
-            IKey secKey = KeyUtils.buildRecordKey( this.underlyingIndex.columns(), entry.getValue().t1() );
-            this.underlyingIndex.delete(secKey);
+            IKey secKey = KeyUtils.buildRecordKey(this.underlyingIndex.columns(), entry.getValue().t1);
+            this.underlyingIndex.delete(secKey, entry.getValue().t1);
         }
         this.clearAndReturnWriteSetToBuffer(writeSet);
     }

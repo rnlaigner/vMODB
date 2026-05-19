@@ -7,10 +7,7 @@ import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -19,9 +16,12 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
     // queue to allow concurrent inserts
     private final Map<IKey, Collection<Object[]>> store;
 
-    public NonUniqueHashMapIndex(Schema schema, int[] columnsIndex) {
+    private final Comparator<Object[]> comparator;
+
+    public NonUniqueHashMapIndex(Schema schema, int[] columnsIndex, Comparator<Object[]> comparator) {
         super(schema, columnsIndex);
         this.store = new ConcurrentHashMap<>();
+        this.comparator = comparator;
     }
 
     @Override
@@ -46,12 +46,12 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
     @Override
     public void update(IKey key, Object[] record) {
-        this.store.get(key).add(record);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public void upsert(IKey key, Object[] record) {
-        this.store.computeIfAbsent(key, _ -> new ConcurrentLinkedQueue<>()).add(record);
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -60,8 +60,20 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
     }
 
     @Override
+    public void delete(IKey key, Object[] record) {
+        var queue = this.store.get(key);
+        var toDelete = queue.stream().filter(p -> this.comparator.compare(p, record) == 0).findFirst();
+        if (toDelete.isPresent()) {
+            queue.remove(toDelete.get());
+        } else {
+            throw new IllegalStateException("No record found for key " + key);
+        }
+    }
+
+    @Override
     public Object[] lookupByKey(IKey key) {
-        return this.store.get(key).toArray();
+        // return this.store.get(key).toArray();
+        throw new UnsupportedOperationException();
     }
 
     @SuppressWarnings("unchecked")
