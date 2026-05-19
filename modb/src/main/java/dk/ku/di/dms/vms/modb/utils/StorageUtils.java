@@ -4,9 +4,11 @@ import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.common.utils.ConfigUtils;
 import dk.ku.di.dms.vms.modb.definition.Schema;
 import dk.ku.di.dms.vms.modb.definition.key.IKey;
+import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.index.non_unique.NonUniqueHashBufferIndex;
 import dk.ku.di.dms.vms.modb.index.non_unique.NonUniqueHashMapIndex;
+import dk.ku.di.dms.vms.modb.index.non_unique.NonUniqueSortedIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashChainingBufferIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashMapIndex;
@@ -25,22 +27,26 @@ import java.nio.file.StandardOpenOption;
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.INFO;
 
-public class StorageUtils {
+public final class StorageUtils {
 
-    protected static final System.Logger LOGGER = System.getLogger(StorageUtils.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(StorageUtils.class.getName());
 
     private static final boolean SEC_IDX_IN_MEMORY_STORAGE = true;
 
     public static ReadWriteIndex<IKey> createUniqueIndex(String prefix, Schema schema, int[] columnsIndex, String indexName){
-        if(SEC_IDX_IN_MEMORY_STORAGE){
+        if(SEC_IDX_IN_MEMORY_STORAGE) {
             return new UniqueHashMapIndex(schema, columnsIndex);
         }
         RecordBufferContext recordBufferContext = StorageUtils.loadRecordBuffer(prefix, 10, schema.getRecordSize(), indexName, true);
         return new UniqueHashBufferIndex(recordBufferContext, schema, columnsIndex, 10);
     }
 
-    public static ReadWriteIndex<IKey> createNonUniqueIndex(String prefix, Schema schema, int[] columnsIndex, String indexName){
-        if(SEC_IDX_IN_MEMORY_STORAGE){
+    public static ReadWriteIndex<IKey> createNonUniqueIndex(String prefix, Schema schema, int[] columnsIndex, String indexName, boolean sorted){
+        if(SEC_IDX_IN_MEMORY_STORAGE) {
+            if(sorted) {
+                // ideally should build sort key based on primary key columns
+                return new NonUniqueSortedIndex(schema, columnsIndex, KeyUtils.createComparator(schema.getPrimaryKeyColumns().length));
+            }
             return new NonUniqueHashMapIndex(schema, columnsIndex);
         } else {
             OrderedRecordBuffer[] buffers = loadOrderedBuffers(prefix, MemoryUtils.DEFAULT_NUM_BUCKETS, MemoryUtils.DEFAULT_PAGE_SIZE, indexName);

@@ -59,7 +59,7 @@ public final class NewOrder implements IEntity<NewOrder.NewOrderId> {
 
     @Id
     @VmsForeignKey(table=Order.class, column = "o_d_id")
-    @VmsIndex(name = "dist_ware_idx")
+    @VmsIndex(name = "dist_ware_idx", sorted = true)
     public int no_d_id;
 
     @Id

@@ -33,19 +33,39 @@ public final class IndexScan extends AbstractScan {
         return 0;
     };
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key) {
-        List<Object[]> res = new ArrayList<>();
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, Integer limit) {
+        List<Object[]> result = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
-        while(iterator.hasNext()){
-            res.add(this.getProjection(iterator.next()));
+        Object[] next;
+
+        // prevent more projection than necessary
+        if(limit == null){
+            while(iterator.hasNext()){
+                next = iterator.next();
+                result.add(this.getProjection(next));
+            }
+            return result;
         }
-        return res;
+        while(iterator.hasNext() && result.size() < limit){
+            next = iterator.next();
+            result.add(next);
+        }
+
+        if(result.isEmpty()) return result;
+
+        if(this.projectionColumns.length != result.get(0).length) {
+            for(int i = 0; i < limit; i++) {
+                result.set(i, this.getProjection(result.get(i)));
+                i++;
+            }
+        }
+        return result;
     }
 
-    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext) {
+    public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext, Integer limit) {
         List<Object[]> res = new ArrayList<>();
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
-        while(iterator.hasNext()){
+        while(iterator.hasNext() && res.size() < limit){
             Object[] record = iterator.next();
             if(this.index.checkCondition(filterContext, record)) {
                 res.add(this.getProjection(record));

@@ -22,4 +22,6 @@ public @interface VmsIndex {
      */
     boolean unique() default false;
 
+    boolean sorted() default false;
+
 }

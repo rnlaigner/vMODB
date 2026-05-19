@@ -240,8 +240,13 @@ public final class SimplePlanner {
         int entrySize = calculateQueryResultEntrySize(tb.schema(), queryTree.projections.size(), projectionColumns);
         OrderByPredicate orderByPredicate = queryTree.orderByPredicates.getFirst();
         if(indexSelectionVerdict.indexIsUsedGivenWhereClause()) {
-            return new IndexScanWithOrder(indexSelectionVerdict.index(), projectionColumns,
-                    orderByPredicate.columnReference.columnPosition, orderByPredicate.sortOperation == OrderBySortOrderEnum.DESC, entrySize);
+            // pass full scan if index is sorted
+            if(orderByPredicate.sortOperation == OrderBySortOrderEnum.ASC && indexSelectionVerdict.index().isSorted()){
+                return new IndexScan(indexSelectionVerdict.index(), projectionColumns, entrySize);
+            } else {
+                return new IndexScanWithOrder(indexSelectionVerdict.index(), projectionColumns,
+                        orderByPredicate.columnReference.columnPosition, orderByPredicate.sortOperation == OrderBySortOrderEnum.DESC, entrySize);
+            }
         } else {
             if(orderByPredicate.sortOperation == OrderBySortOrderEnum.ASC && tb.primaryKeyIndex().isSorted()) {
                 return new FullScan(tb.primaryKeyIndex(), projectionColumns, entrySize);

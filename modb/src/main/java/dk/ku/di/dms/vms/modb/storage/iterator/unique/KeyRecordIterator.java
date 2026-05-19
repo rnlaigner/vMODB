@@ -25,27 +25,27 @@ public final class KeyRecordIterator implements IRecordIterator<IKey> {
         // initialize the first
         this.position = 0;
         this.numberOfKeys = keys.length;
-        this.currentKey = keys[position];
-        this.currentAddress = index.address(currentKey);
+        this.currentKey = keys[this.position];
+        this.currentAddress = index.address(this.currentKey);
     }
 
     @Override
     public boolean hasNext() {
         // iterate until find one feasible entry
-        while(!index.exists(this.currentAddress) && position < numberOfKeys){
-            position++;
-            currentKey = keys[position];
-            currentAddress = index.address(currentKey);
+        while(!this.index.exists(this.currentAddress) && this.position < this.numberOfKeys){
+            this.position++;
+            this.currentKey = this.keys[position];
+            this.currentAddress = this.index.address(this.currentKey);
         }
-        return index.exists(currentAddress);
+        return this.index.exists(currentAddress);
     }
 
     @Override
     public IKey next() {
         var toReturn = this.currentKey;
-        position++;
-        currentKey = keys[position];
-        currentAddress = index.address(currentKey);
+        this.position++;
+        this.currentKey = this.keys[this.position];
+        this.currentAddress = this.index.address(this.currentKey);
         return toReturn;
     }
 

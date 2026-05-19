@@ -38,7 +38,7 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
         if(result.isEmpty()) return result;
 
         int i = 0;
-        if(projectionColumns.length != result.get(0).length) {
+        if(this.projectionColumns.length != result.get(0).length) {
             while (i < limit) {
                 result.set(i, this.getProjection(result.get(i)));
                 i++;

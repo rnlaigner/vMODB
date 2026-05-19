@@ -39,7 +39,8 @@ public final class Main {
         prop.setProperty("table.order_line.chaining", "true");
         prop.setProperty("table.history.chaining", "true");
 
-        prop.setProperty("table.new_orders.sorted", "true");
+        // should sort only d_id and w_id
+        // prop.setProperty("table.new_orders.sorted", "true");
 
         VmsApplicationOptions options = VmsApplicationOptions.build(
                 "0.0.0.0",

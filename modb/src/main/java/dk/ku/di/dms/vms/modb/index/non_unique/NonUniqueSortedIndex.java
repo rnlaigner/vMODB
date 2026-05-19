@@ -7,20 +7,24 @@ import dk.ku.di.dms.vms.modb.index.IndexTypeEnum;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 
-import java.util.Collection;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentSkipListSet;
 
-public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
+public final class NonUniqueSortedIndex extends ReadWriteIndex<IKey> {
 
     // queue to allow concurrent inserts
-    private final Map<IKey, Collection<Object[]>> store;
+    private final Map<IKey, NavigableSet<Object[]>> store;
 
-    public NonUniqueHashMapIndex(Schema schema, int[] columnsIndex) {
+    private final Comparator<Object[]> comparator;
+
+    public NonUniqueSortedIndex(Schema schema, int[] columnsIndex, Comparator<Object[]> comparator) {
         super(schema, columnsIndex);
         this.store = new ConcurrentHashMap<>();
+        this.comparator = comparator;
     }
 
     @Override
@@ -40,7 +44,7 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
     @Override
     public void insert(IKey key, Object[] record) {
-        this.store.computeIfAbsent(key, _ -> new ConcurrentLinkedQueue<>()).add(record);
+        this.store.computeIfAbsent(key, _ -> new ConcurrentSkipListSet<>(this.comparator)).add(record);
     }
 
     @Override
@@ -50,7 +54,7 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
 
     @Override
     public void upsert(IKey key, Object[] record) {
-        this.store.computeIfAbsent(key, _ -> new ConcurrentLinkedQueue<>()).add(record);
+        this.store.computeIfAbsent(key, _ -> new ConcurrentSkipListSet<>(this.comparator)).add(record);
     }
 
     @Override
@@ -80,6 +84,6 @@ public final class NonUniqueHashMapIndex extends ReadWriteIndex<IKey> {
     }
 
     @Override
-    public void flush(){ }
+    public void flush() { }
 
 }

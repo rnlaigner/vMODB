@@ -138,12 +138,12 @@ public final class EmbedMetadataLoader {
         return ((ParameterizedType) repositoryClazz.getGenericInterfaces()[0]).getActualTypeArguments();
     }
 
-    private record IndexMetadata(Integer columnPos, String indexName){}
+    private record IndexMetadata(Integer columnPos, String indexName, boolean sorted){}
     private record PartialIndexMetadata(Integer columnPos, String indexName, Object value){}
 
     private record SchemaMapping(
             Schema schema,
-            // key: table name value: columns
+            // key: table name | value: columns
             Map<String, Tuple<int[],int[]>> secondaryIndexMap,
             List<IndexMetadata> indexMetadataList,
             // value: column, value
@@ -167,16 +167,16 @@ public final class EmbedMetadataLoader {
             final Schema schema = buildEntitySchema(vmsDataModel, entityClazz);
 
             // indexes
-            final List<Field> indexList = Arrays.stream(entityClazz.getFields()).filter(f->f.getAnnotation(VmsIndex.class)!=null).toList();
+            final List<Field> indexList = Arrays.stream(entityClazz.getFields()).filter(f -> f.getAnnotation(VmsIndex.class) != null).toList();
             List<IndexMetadata> indexMetadataList = new ArrayList<>();
             for(Field field : indexList){
                 VmsIndex ann = field.getAnnotation(VmsIndex.class);
                 Integer pos = vmsDataModel.findColumnPosition(field.getName());
-                indexMetadataList.add( new IndexMetadata(pos, ann.name()) );
+                indexMetadataList.add( new IndexMetadata(pos, ann.name(), ann.sorted()) );
             }
 
             // partial indexes
-            final List<Field> partialIndexList = Arrays.stream(entityClazz.getFields()).filter(f->f.getAnnotation(VmsPartialIndex.class)!=null).toList();
+            final List<Field> partialIndexList = Arrays.stream(entityClazz.getFields()).filter(f -> f.getAnnotation(VmsPartialIndex.class) != null).toList();
             List<PartialIndexMetadata> partialIndexMetadataList = new ArrayList<>();
             for(Field field : partialIndexList) {
                 VmsPartialIndex ann = field.getAnnotation(VmsPartialIndex.class);
@@ -229,12 +229,12 @@ public final class EmbedMetadataLoader {
                 chaining = Boolean.parseBoolean( properties.getProperty("table."+tableName+".chaining") );
             }
 
-            boolean sorted = false;
+            boolean pkSorted = false;
             if(properties.getProperty("table."+tableName+".sorted") != null){
-                sorted = Boolean.parseBoolean( properties.getProperty("table."+tableName+".sorted") );
+                pkSorted = Boolean.parseBoolean( properties.getProperty("table."+tableName+".sorted") );
             }
 
-            PrimaryIndex primaryIndex = StorageUtils.createPrimaryIndex(vmsIdentifier, tableName, schema, isCheckpointing, isTruncating, chaining, maxRecords_, sorted);
+            PrimaryIndex primaryIndex = StorageUtils.createPrimaryIndex(vmsIdentifier, tableName, schema, isCheckpointing, isTruncating, chaining, maxRecords_, pkSorted);
             tableToPrimaryIndexMap.put(tableName, primaryIndex);
 
             // normal indexes (i.e., non-partial) and foreign key indexes go here?
@@ -244,8 +244,7 @@ public final class EmbedMetadataLoader {
             List<ReadWriteIndex<IKey>> listPartialIndexes = new ArrayList<>();
             tableToPartialIndexMap.put(tableName, listPartialIndexes);
 
-            // secondary indexes based on foreign keys
-            // now create the secondary index (a - based on foreign keys and b - based on non-foreign keys)
+            // create the secondary index based on foreign keys
             for (var secIdx : entry.getValue().secondaryIndexMap().entrySet()) {
                 // check if secondary index columns are the same as primary key columns
                 int[] secIdxColumns = secIdx.getValue().t1();
@@ -259,21 +258,26 @@ public final class EmbedMetadataLoader {
                     }
                 }
                 if(!equals) {
-                    ReadWriteIndex<IKey> nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, secIdx.getValue().t1(), "FK_"+secIdx.getKey() );
+                    ReadWriteIndex<IKey> nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, secIdx.getValue().t1(), "FK_"+secIdx.getKey(), false);
                     listSecondaryIndexes.add(nuhi);
                 }
             }
 
+            //  create the secondary indexes based on non-foreign keys
             if(!entry.getValue().indexMetadataList().isEmpty()) {
                 Map<String, List<IndexMetadata>> indexMetadataByName = entry.getValue().indexMetadataList().stream()
                         .collect(Collectors.groupingBy(IndexMetadata::indexName));
                 for (var idxEntry : indexMetadataByName.entrySet()) {
                     ReadWriteIndex<IKey> nuhi;
                     if(idxEntry.getValue().size() == 1) {
-                        nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, new int[]{idxEntry.getValue().getFirst().columnPos()}, idxEntry.getKey());
+                        IndexMetadata indexMetadata = idxEntry.getValue().get(0);
+                        nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, new int[]{indexMetadata.columnPos()}, idxEntry.getKey(), indexMetadata.sorted);
                     } else {
-                        int[] columnList = idxEntry.getValue().stream().mapToInt(c-> c.columnPos).toArray();
-                        nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, columnList, idxEntry.getKey() );
+                        var idxEntryVal = idxEntry.getValue();
+                        // for now considering columns are sorted by pk... ideally should pass a comparator downstream if customized
+                        boolean sorted = idxEntryVal.stream().anyMatch(p -> p.sorted);
+                        int[] columnList = idxEntryVal.stream().mapToInt(c-> c.columnPos).toArray();
+                        nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, columnList, idxEntry.getKey(), sorted);
                     }
                     listSecondaryIndexes.add(nuhi);
                 }

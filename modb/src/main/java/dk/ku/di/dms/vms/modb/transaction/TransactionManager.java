@@ -109,9 +109,9 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
                 if(containsNonIndexColumns(wherePredicates, indexScan.index())) {
                     List<WherePredicate> nonIdxClause = this.getNonIndexedColumnsWhereClause(wherePredicates, indexScan.index());
                     FilterContext filterContext = FilterContextBuilder.build(nonIdxClause);
-                    return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key, filterContext);
+                    return scanOperator.asIndexScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key, filterContext, selectStatement.limit);
                 } else {
-                    return indexScan.runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key);
+                    return indexScan.runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key, selectStatement.limit);
                 }
             } else {
                 // can only be IN
@@ -143,6 +143,9 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
             return scanOperator.asIndexMultiAggregationScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), key);
         } else {
             // future optimization is filter not including the columns of partial or non-unique index
+            if(wherePredicates.isEmpty()){
+                return scanOperator.asFullScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), selectStatement.limit);
+            }
             FilterContext filterContext = FilterContextBuilder.build(wherePredicates);
             return scanOperator.asFullScan().runAsEmbedded(this.txCtxMap.get(Thread.currentThread().threadId()), filterContext, selectStatement.limit);
         }
