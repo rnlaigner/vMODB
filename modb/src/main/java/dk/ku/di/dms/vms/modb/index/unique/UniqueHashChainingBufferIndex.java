@@ -105,13 +105,13 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
     }
 
     @Override
-    public void update(IKey key, Object[] record){
+    public void update(IKey key, Object[] record) {
         if (this.updated(key, record)) return;
         LOGGER.log(ERROR, "Cannot find an existing record. Perhaps something wrong in the insertion logic?\nKey: " + key+ " Hash: " + key.hashCode());
     }
 
     @Override
-    public void upsert(IKey key, Object[] record){
+    public void upsert(IKey key, Object[] record) {
         if (this.updated(key, record)) return;
         // haven't found so far, then insert
         this.insert(key, record);
@@ -125,23 +125,28 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             return true;
         }
         // chain logic
+        return this.doChain(key, record);
+    }
+
+    private boolean doChain(IKey key, Object[] record) {
         int index = this.getIndex(key.hashCode());
         AppendOnlyBoundedBuffer aob = this.chainingMap.get(index);
-        if (aob != null) {
-            long chainedPos = aob.address;
-            final long lastPos = aob.nextOffset();
-            while(chainedPos < lastPos) {
-                Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
-                IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
-                if (existingKey.equals(key)) {
-                    UNSAFE.putByte(null, chainedPos, Header.ACTIVE_BYTE);
-                    UNSAFE.putInt(null, chainedPos + Header.SIZE, key.hashCode());
-                    this.doWrite(pos, record);
-                    this.pendingFlush.add(index);
-                    return true;
-                }
-                chainedPos = chainedPos + this.recordSize;
+        if (aob == null) {
+            return false;
+        }
+        long chainedPos = aob.address;
+        final long lastPos = aob.nextOffset();
+        while(chainedPos < lastPos) {
+            Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
+            IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
+            if (existingKey.equals(key)) {
+                UNSAFE.putByte(null, chainedPos, Header.ACTIVE_BYTE);
+                UNSAFE.putInt(null, chainedPos + Header.SIZE, key.hashCode());
+                this.doWrite(chainedPos, record);
+                this.pendingFlush.add(index);
+                return true;
             }
+            chainedPos = chainedPos + this.recordSize;
         }
         return false;
     }
