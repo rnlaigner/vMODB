@@ -25,6 +25,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import static java.lang.System.Logger.Level.INFO;
 import static java.lang.System.Logger.Level.WARNING;
 
 public final class ExperimentUtils {
@@ -33,17 +34,17 @@ public final class ExperimentUtils {
 
     private static boolean CONSUMER_REGISTERED = false;
 
-    private static int lastExperimentLastTID = 0;
+    private static int prevExperimentLastTID = 0;
 
     public static ExperimentStats runExperiment(Coordinator coordinator, Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, int runTime, int warmUp) {
 
         // provide a consumer to avoid depending on the coordinator
-        Function<Object, Long> func = tpccInputBuilder(coordinator);
+        Function<Object, Long> inputResolverFunc = tpccInputBuilder(coordinator);
 
         if(CONSUMER_REGISTERED) {
             // clean up possible entries from previous run
             BATCH_TO_FINISHED_TS_MAP.keySet().stream().max(Long::compareTo).ifPresent(
-                    highestKey -> lastExperimentLastTID = (int) BATCH_TO_FINISHED_TS_MAP.get(highestKey).lastTid);
+                    highestKey -> prevExperimentLastTID = (int) BATCH_TO_FINISHED_TS_MAP.get(highestKey).lastTid);
             BATCH_TO_FINISHED_TS_MAP.clear();
         } else {
             coordinator.registerBatchCommitConsumer((batchId, tid) -> BATCH_TO_FINISHED_TS_MAP.put(
@@ -52,19 +53,23 @@ public final class ExperimentUtils {
             CONSUMER_REGISTERED = true;
         }
 
-        int newRuntime = runTime + warmUp;
-        WorkloadUtils.WorkloadStats workloadStats = WorkloadUtils.submitWorkload(txRatio, input, func, newRuntime);
+        int fullRuntime = runTime + warmUp;
+        WorkloadUtils.WorkloadStats workloadStats = WorkloadUtils.submitWorkload(txRatio, input, inputResolverFunc, fullRuntime);
 
         // avoid submitting after experiment termination
-        // coordinator.clearTransactionInputs();
-        // LOGGER.log(INFO,"Transaction input queue(s) cleared.");
+        coordinator.clearTransactionInputs();
+        LOGGER.log(INFO,"Transaction input queue(s) cleared.");
+
+        long numTIDsSubmitted = coordinator.getNumTIDsSubmitted(prevExperimentLastTID + 1);
+        long actualRunTime = workloadStats.actualEndTs() - workloadStats.initTs();
+        double txSubPerSec = numTIDsSubmitted / ((double) actualRunTime / 1000L);
 
         if(BATCH_TO_FINISHED_TS_MAP.isEmpty()) {
             LOGGER.log(WARNING, "No batch of transactions completed!");
-            return new ExperimentStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new ExperimentStats(workloadStats.initTs(), runTime, 0, numTIDsSubmitted, txSubPerSec, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
 
-        long endTs = workloadStats.initTs() + newRuntime;
+        long endTs = workloadStats.initTs() + fullRuntime;
         long initTs = workloadStats.initTs() + warmUp;
         int numCompletedWithWarmUp;
         int numCompletedDuringWarmUp = 0;
@@ -73,10 +78,10 @@ public final class ExperimentUtils {
 
         // find first batch that runs transactions after warm up
         BatchStats prevBatchStats = null;
-        for(var batchStat : BATCH_TO_FINISHED_TS_MAP.entrySet()){
+        for(Map.Entry<Long, ExperimentUtils.BatchStats> batchStat : BATCH_TO_FINISHED_TS_MAP.entrySet()){
             if(batchStat.getValue().endTs < initTs) {
                 prevBatchStats = batchStat.getValue();
-                numCompletedDuringWarmUp = (int) prevBatchStats.lastTid - lastExperimentLastTID;
+                numCompletedDuringWarmUp = (int) prevBatchStats.lastTid - prevExperimentLastTID;
                 continue;
             }
             break;
@@ -98,7 +103,7 @@ public final class ExperimentUtils {
             prevBatchStats = currBatchStats;
         }
 
-        numCompletedWithWarmUp = (int) prevBatchStats.lastTid - lastExperimentLastTID;
+        numCompletedWithWarmUp = (int) prevBatchStats.lastTid - prevExperimentLastTID;
         numCompleted = numCompletedWithWarmUp - numCompletedDuringWarmUp;
         long usefulRuntime = prevBatchStats.endTs - firstBatchStats.endTs;
 
@@ -113,26 +118,33 @@ public final class ExperimentUtils {
         // considering first received batch result
         double txPerSecUseful = numCompleted / ((double) usefulRuntime / 1000L);
 
+        System.out.println("Number of submitted transactions: "+ numTIDsSubmitted);
+        System.out.println("Transaction submission throughput (tx/sec): "+ txSubPerSec);
+        System.out.println();
+
         System.out.println("Average latency: "+ average);
         System.out.println("Latency at 50th percentile: "+ percentile_50);
         System.out.println("Latency at 75th percentile: "+ percentile_75);
         System.out.println("Latency at 90th percentile: "+ percentile_90);
         System.out.println("Latency at 99th percentile: "+ percentile_99);
+
+        System.out.println();
         System.out.println("Number of completed transactions (during warm up): "+ numCompletedDuringWarmUp);
         System.out.println("Number of completed transactions (after warm up): "+ numCompleted);
         System.out.println("Number of completed transactions (total): "+ numCompletedWithWarmUp);
         System.out.println("Total runtime (ms): "+ runTime);
         System.out.println("Transactions per second: "+txPerSec);
 
-        // useful work: from first useful batch (the first after warm up)
+        System.out.println();
+        // useful work: from first actual batch (the first after warm up)
         System.out.println("Useful work runtime (ms): "+ usefulRuntime);
         System.out.println("Transactions per second (useful work): "+txPerSecUseful);
         System.out.println();
 
-        return new ExperimentStats(workloadStats.initTs(), runTime, usefulRuntime, numCompletedWithWarmUp, numCompleted, txPerSec, txPerSecUseful, average, percentile_50, percentile_75, percentile_90, percentile_99);
+        return new ExperimentStats(workloadStats.initTs(), runTime, usefulRuntime, numTIDsSubmitted, txSubPerSec, numCompletedWithWarmUp, numCompleted, txPerSec, txPerSecUseful, average, percentile_50, percentile_75, percentile_90, percentile_99);
     }
 
-    public record ExperimentStats(long initTs, int runTime, long usefulRuntime, int numCompletedWithWarmUp, int numCompleted, double txPerSec, double txPerSecUseful, double average, double percentile_50, double percentile_75, double percentile_90, double percentile_99){}
+    public record ExperimentStats(long initTs, int runTime, long usefulRuntime, long numSubmitted, double txSubPerSec, int numCompletedWithWarmUp, int numCompleted, double txPerSec, double txPerSecUseful, double average, double percentile_50, double percentile_75, double percentile_90, double percentile_99){}
 
     public static void writeResultsToFile(int numWare, ExperimentStats expStats, int runTime, int warmUp, int numTransactionWorkers, int batchWindow, int maxTransactionsPerBatch, Tuple<Integer, String>[] txRatio, Map<String, Integer> numTxInputPerType, String logging, String checkpointing){
         LocalDateTime time = LocalDateTime.ofInstant(Instant.ofEpochMilli(expStats.initTs),  ZoneId.systemDefault());
@@ -180,6 +192,12 @@ public final class ExperimentUtils {
             writer.newLine();
             writer.write("Checkpointing: "+checkpointing);
             writer.newLine();
+            writer.newLine();
+
+            writer.write("Number of submitted transactions: "+ expStats.numSubmitted);
+            writer.newLine();
+            writer.write("Transaction submission throughput (tx/sec): "+ expStats.txSubPerSec);
+            writer.newLine();
 
             writer.newLine();
             writer.write("Average latency: "+ expStats.average);
@@ -198,9 +216,9 @@ public final class ExperimentUtils {
             writer.newLine();
             writer.write("Number of completed transactions (total): "+ expStats.numCompletedWithWarmUp);
             writer.newLine();
-            writer.write("Throughput (tx/sec): "+expStats.txPerSec);
+            writer.write("Transaction throughput (tx/sec): "+expStats.txPerSec);
             writer.newLine();
-            writer.write("Useful Throughput (tx/sec): "+expStats.txPerSecUseful);
+            writer.write("Useful transaction throughput (tx/sec): "+expStats.txPerSecUseful);
             writer.newLine();
         } catch (IOException e) {
             throw new RuntimeException(e);

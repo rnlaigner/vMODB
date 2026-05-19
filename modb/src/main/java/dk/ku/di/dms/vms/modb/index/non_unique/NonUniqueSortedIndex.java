@@ -86,4 +86,9 @@ public final class NonUniqueSortedIndex extends ReadWriteIndex<IKey> {
     @Override
     public void flush() { }
 
+    @Override
+    public void reset() {
+        this.store.clear();
+    }
+
 }

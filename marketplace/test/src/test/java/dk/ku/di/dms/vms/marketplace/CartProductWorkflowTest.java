@@ -52,7 +52,7 @@ public class CartProductWorkflowTest extends AbstractWorkflowTest {
 
         sleep(BATCH_WINDOW_INTERVAL * 3);
 
-        Assert.assertEquals(9, coordinator.getNumTIDsCommitted());
+        Assert.assertEquals(9, coordinator.getLastTidCommitted());
 
         this.additionalAssertions();
     }

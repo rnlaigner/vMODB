@@ -37,14 +37,15 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
 
         if(result.isEmpty()) return result;
 
+        int min = Math.min(limit, result.size());
         int i = 0;
         if(this.projectionColumns.length != result.get(0).length) {
-            while (i < limit) {
+            while (i < min) {
                 result.set(i, this.getProjection(result.get(i)));
                 i++;
             }
         }
-        return result.subList(0, limit);
+        return result.subList(0, min);
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext, Integer limit) {

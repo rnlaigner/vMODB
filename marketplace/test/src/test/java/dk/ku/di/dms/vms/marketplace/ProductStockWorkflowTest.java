@@ -54,7 +54,7 @@ public final class ProductStockWorkflowTest extends AbstractWorkflowTest {
         sleep(BATCH_WINDOW_INTERVAL * 2);
 
         Assert.assertEquals(2, coordinator.getBatchOffsetPendingCommit());
-        Assert.assertEquals(9, coordinator.getNumTIDsCommitted());
+        Assert.assertEquals(9, coordinator.getLastTidCommitted());
     }
 
     private Coordinator loadCoordinator() throws IOException {

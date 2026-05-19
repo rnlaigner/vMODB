@@ -94,12 +94,13 @@ public final class WorkloadUtils {
 
     /**
      * @param initTs Necessary to discard batches that complete after the end of the experiment
+     * @param actualEndTs The actual finish time of the last worker
      * @param submitted Necessary to calculate the latency, throughput, and percentiles
      */
-    public record WorkloadStats(long initTs, Map<Long, List<Long>>[] submitted){}
+    public record WorkloadStats(long initTs, long actualEndTs, Map<Long, List<Long>>[] submitted){}
 
     @SuppressWarnings("unchecked")
-    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> func, int runtime) {
+    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> inputResolverFunc, int runTime) {
         int numWorkers = input.size();
         LOGGER.log(INFO, "Submitting transactions through "+numWorkers+" worker(s)");
         CountDownLatch allThreadsStart = new CountDownLatch(numWorkers+1);
@@ -110,27 +111,33 @@ public final class WorkloadUtils {
             final Map<String, Iterator<Object>> workerInput = input.get(i);
             int finalI = i;
             Thread thread = new Thread(()-> submittedArray[finalI] =
-                            Worker.run(allThreadsStart, allThreadsAreDone, txRatio, workerInput, func, runtime));
+                            Worker.run(allThreadsStart, allThreadsAreDone, txRatio, workerInput, inputResolverFunc, runTime));
             thread.start();
         }
 
         allThreadsStart.countDown();
         long initTs = System.currentTimeMillis();
+        long endTs;
         try {
             allThreadsStart.await();
             LOGGER.log(INFO,"Experiment main going to wait for the workers to finish.");
             allThreadsAreDone.await();
-            LOGGER.log(INFO,"Experiment main woke up!");
+            endTs = System.currentTimeMillis();
+            LOGGER.log(INFO,"Experiment main woke up (all workers have finished)!");
+            long totalTs = endTs - initTs;
+            if(totalTs < runTime) {
+                Thread.sleep(runTime - totalTs);
+            }
         } catch (InterruptedException e){
             throw new RuntimeException(e);
         }
 
-        return new WorkloadStats(initTs, submittedArray);
+        return new WorkloadStats(initTs, endTs, submittedArray);
     }
 
     private static final class Worker {
 
-        public static Map<Long, List<Long>> run(CountDownLatch allThreadsStart, CountDownLatch allThreadsAreDone, Tuple<Integer, String>[] txRatio, Map<String, Iterator<Object>> input, Function<Object, Long> func, int runTime) {
+        public static Map<Long, List<Long>> run(CountDownLatch allThreadsStart, CountDownLatch allThreadsAreDone, Tuple<Integer, String>[] txRatio, Map<String, Iterator<Object>> input, Function<Object, Long> inputResolverFunc, int runTime) {
             Map<Long, List<Long>> startTsMap = new HashMap<>();
             Map<String, Integer> histogram = new HashMap<>(txRatio.length);
             for (Tuple<Integer, String> integerStringTuple : txRatio) {
@@ -163,10 +170,9 @@ public final class WorkloadUtils {
                 try {
                     if(!input.get(tx).hasNext()){
                         LOGGER.log(WARNING,"Not enough transaction inputs for: "+tx+". Closing submission loop earlier...");
-                        Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
                         break;
                     }
-                    long batchId = func.apply(input.get(tx).next());
+                    long batchId = inputResolverFunc.apply(input.get(tx).next());
                     if(!startTsMap.containsKey(batchId)){
                         startTsMap.put(batchId, new ArrayList<>());
                     }

@@ -263,7 +263,7 @@ public final class EmbedMetadataLoader {
                 }
             }
 
-            //  create the secondary indexes based on non-foreign keys
+            //  create the secondary indexes based on non-foreign keys (e.g., composite keys)
             if(!entry.getValue().indexMetadataList().isEmpty()) {
                 Map<String, List<IndexMetadata>> indexMetadataByName = entry.getValue().indexMetadataList().stream()
                         .collect(Collectors.groupingBy(IndexMetadata::indexName));
@@ -273,7 +273,7 @@ public final class EmbedMetadataLoader {
                         IndexMetadata indexMetadata = idxEntry.getValue().get(0);
                         nuhi = StorageUtils.createNonUniqueIndex(vmsIdentifier, schema, new int[]{indexMetadata.columnPos()}, idxEntry.getKey(), indexMetadata.sorted);
                     } else {
-                        var idxEntryVal = idxEntry.getValue();
+                        List<IndexMetadata> idxEntryVal = idxEntry.getValue();
                         // for now considering columns are sorted by pk... ideally should pass a comparator downstream if customized
                         boolean sorted = idxEntryVal.stream().anyMatch(p -> p.sorted);
                         int[] columnList = idxEntryVal.stream().mapToInt(c-> c.columnPos).toArray();

@@ -62,7 +62,7 @@ public non-sealed class UpdateShipmentWorkflowTest extends CheckoutWorkflowTest 
         sleep(BATCH_WINDOW_INTERVAL * 2);
 
         Assert.assertEquals(3, coordinator.getBatchOffsetPendingCommit());
-        Assert.assertEquals(11, coordinator.getNumTIDsCommitted());
+        Assert.assertEquals(11, coordinator.getLastTidCommitted());
     }
 
     @Override

@@ -885,7 +885,7 @@ public final class Coordinator extends ModbHttpServer {
         }
     }
 
-    public long getNumTIDsCommitted() {
+    public long getLastTidCommitted() {
         long nextBatchToCheck = this.batchOffsetPendingCommit;
         if(this.batchContextMap.containsKey(nextBatchToCheck)){
             return this.batchContextMap.get(nextBatchToCheck).lastTid;
@@ -893,12 +893,22 @@ public final class Coordinator extends ModbHttpServer {
         return this.batchContextMap.get(nextBatchToCheck - 1).lastTid;
     }
 
-    public long getNumTIDsSubmitted(){
+    public long getLastTidSubmitted(){
         long nextBatchToCheck = this.batchOffsetPendingCommit;
         while(this.batchContextMap.containsKey(nextBatchToCheck)){
             nextBatchToCheck++;
         }
         return this.batchContextMap.get(nextBatchToCheck - 1).lastTid;
+    }
+
+    public long getNumTIDsSubmitted(long initialTid) {
+        long nextBatchToCheck = initialTid;
+        long numTids = 0;
+        while(this.batchContextMap.containsKey(nextBatchToCheck)){
+            numTids += this.batchContextMap.get(nextBatchToCheck).numTIDsOverall;
+            nextBatchToCheck++;
+        }
+        return numTids;
     }
 
     public CoordinatorOptions getOptions(){

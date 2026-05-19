@@ -49,7 +49,7 @@ public sealed class CheckoutWorkflowTest extends AbstractWorkflowTest permits Up
         this.triggerCheckoutWorkflow(coordinator);
         sleep(BATCH_WINDOW_INTERVAL * 5);
         Assert.assertEquals(2, coordinator.getBatchOffsetPendingCommit());
-        Assert.assertEquals(10, coordinator.getNumTIDsCommitted());
+        Assert.assertEquals(10, coordinator.getLastTidCommitted());
     }
 
     @SuppressWarnings("BusyWait")

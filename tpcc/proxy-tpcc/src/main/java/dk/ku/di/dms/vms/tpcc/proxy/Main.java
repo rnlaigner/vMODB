@@ -120,6 +120,11 @@ public final class Main {
 
                     while(true) {
                         System.out.print("Enter duration (ms): [press 0 for 10s] ");
+                        String runTimeStr = scanner.nextLine();
+                        if(runTimeStr.equalsIgnoreCase("")){
+                            runTime = 10000;
+                            break;
+                        }
                         runTime = Integer.parseInt(scanner.nextLine());
                         if (runTime == 0) runTime = 10000;
                         if(runTime < (batchWindow * 2)){
@@ -210,10 +215,10 @@ public final class Main {
 
     private static boolean checkCompleteness(Coordinator coordinator, Scanner scanner) {
         if(coordinator != null){
-            long numTIDsCommitted = coordinator.getNumTIDsCommitted();
-            long numTIDsSubmitted = coordinator.getNumTIDsSubmitted();
+            long numTIDsCommitted = coordinator.getLastTidCommitted();
+            long numTIDsSubmitted = coordinator.getLastTidSubmitted();
             if(numTIDsCommitted != numTIDsSubmitted){
-                System.out.println("There are ongoing batches executing! Cannot reset states now. \n Number of TIDs committed: "+numTIDsCommitted+"\n Number of TIDs submitted: "+numTIDsSubmitted);
+                System.out.println("There are ongoing batches executing! Cannot reset states now. \n Last TID committed: "+numTIDsCommitted+"\n Last TID submitted: "+numTIDsSubmitted);
                 System.out.println("Do you want to proceed? [y/n]");
                 String resp = scanner.nextLine();
                 return resp.equalsIgnoreCase("n");

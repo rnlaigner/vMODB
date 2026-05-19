@@ -203,11 +203,11 @@ public final class InventoryHttpHandler extends DefaultHttpHandler {
             final int f_w_id = w_id;
             futures[w_id-1] = pool.submit(() -> {
                 LOGGER.log(DEBUG, "Started creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id);
-                transactionManager.beginTransaction(-f_w_id, 0, lastTid, false);
+                this.transactionManager.beginTransaction(-f_w_id, 0, lastTid, false);
                 long internalInitTs = System.currentTimeMillis();
                 for (int i_id = 1; i_id <= TPCcConstants.NUM_ITEMS; i_id++) {
                     Stock stock = generateStockItem(f_w_id, i_id);
-                    stockRepository.insert(stock);
+                    this.stockRepository.insert(stock);
                 }
                 // transactionManager.commit();
                 LOGGER.log(DEBUG, "Finished creating "+TPCcConstants.NUM_ITEMS+" stock records for warehouse "+f_w_id+" in "+(System.currentTimeMillis()-internalInitTs)+" ms");

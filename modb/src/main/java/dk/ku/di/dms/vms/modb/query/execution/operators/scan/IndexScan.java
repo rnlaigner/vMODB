@@ -53,13 +53,14 @@ public final class IndexScan extends AbstractScan {
 
         if(result.isEmpty()) return result;
 
+        int min = Math.min(limit, result.size());
         if(this.projectionColumns.length != result.get(0).length) {
-            for(int i = 0; i < limit; i++) {
+            for(int i = 0; i < min; i++) {
                 result.set(i, this.getProjection(result.get(i)));
                 i++;
             }
         }
-        return result;
+        return result.subList(0, min);
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, IKey key, FilterContext filterContext, Integer limit) {
