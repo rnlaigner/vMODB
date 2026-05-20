@@ -62,13 +62,25 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
     }
 
     @Override
-    public Object[] lookupByKey(IKey key){
-        long pos = this.findRecordAddress(key);
-        if(pos != -1) {
-            return this.readFromIndex(pos + Schema.RECORD_HEADER);
-        }
+    public boolean exists(IKey key){
+        return this.record(key) != null;
+    }
+
+    @Override
+    public Object[] lookupByKey(IKey key) {
+        return this.record(key);
+    }
+
+    @Override
+    public Object[] record(IKey key) {
         int index = this.getIndex(key.hashCode());
-        return lookupChain(key, index);
+        long pos = this.getPositionWithIndex(index);
+        Object[] hashedRecord = this.readFromIndex(pos + Schema.RECORD_HEADER);
+        IKey hashedKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), hashedRecord);
+        if (hashedKey.equals(key)) {
+            return hashedRecord;
+        }
+        return this.lookupChain(key, index);
     }
 
     @Override
@@ -178,18 +190,6 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         UNSAFE.putInt(null, pos + Header.SIZE, keyHash);
         this.doWrite(pos, record);
         this.updateSize(1);
-    }
-
-    @Override
-    public Object[] record(IKey key) {
-        int index = this.getIndex(key.hashCode());
-        long pos = this.getPositionWithIndex(index);
-        Object[] hashedRecord = this.readFromIndex(pos + Schema.RECORD_HEADER);
-        IKey hashedKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), hashedRecord);
-        if (hashedKey.equals(key)) {
-            return hashedRecord;
-        }
-        return this.lookupChain(key, index);
     }
 
     private Object[] lookupChain(IKey key, int index) {

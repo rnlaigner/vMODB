@@ -104,7 +104,7 @@ public final class NonUniqueHashBufferIndex extends ReadWriteIndex<IKey> impleme
 
     @Override
     public Object[] lookupByKey(IKey key) {
-        throw new RuntimeException("Not implemented");
+        throw new RuntimeException("Not supported.");
     }
 
     @Override
@@ -115,7 +115,7 @@ public final class NonUniqueHashBufferIndex extends ReadWriteIndex<IKey> impleme
 
     @Override
     public boolean exists(long address) {
-        throw new RuntimeException("Not implemented");
+        throw new RuntimeException("Not supported.");
     }
 
     @Override

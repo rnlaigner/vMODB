@@ -264,11 +264,7 @@ public class UniqueHashBufferIndex extends ReadWriteIndex<IKey> implements ReadW
 
     @Override
     public Object[] lookupByKey(IKey key){
-        long pos = this.findRecordAddress(key);
-        if(pos != -1) {
-            return this.readFromIndex(pos + Schema.RECORD_HEADER);
-        }
-        return null;
+        return this.record(key);
     }
 
     @Override

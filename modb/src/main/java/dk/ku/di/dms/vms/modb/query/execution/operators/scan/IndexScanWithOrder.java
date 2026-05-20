@@ -21,7 +21,7 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
         Object[] next;
         int pos;
         // prevent more projection than necessary
-        if(limit == null){
+        if(limit == null || limit == Integer.MAX_VALUE) {
             while(iterator.hasNext()){
                 next = iterator.next();
                 pos = this.getPositionToInsert(result, next);
@@ -49,7 +49,7 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
                 this.insert(result, this.getProjection(record));
             }
         }
-        if(limit == null){
+        if(limit == null || limit == Integer.MAX_VALUE) {
             return result;
         }
         return result.subList(0, limit);
@@ -61,7 +61,7 @@ public final class IndexScanWithOrder extends AbstractScanWithOrder {
         while(iterator.hasNext()){
             this.insert(result, this.getProjection(iterator.next()));
         }
-        if(limit == null){
+        if(limit == null || limit == Integer.MAX_VALUE) {
             return result;
         }
         return result.subList(0, limit);

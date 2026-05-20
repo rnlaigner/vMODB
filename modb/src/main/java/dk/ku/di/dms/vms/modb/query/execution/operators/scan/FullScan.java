@@ -17,7 +17,7 @@ public final class FullScan extends AbstractScan {
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, Integer limit) {
-        if(limit == Integer.MAX_VALUE) {
+        if(limit == null || limit == Integer.MAX_VALUE) {
             List<Object[]> res = new ArrayList<>();
             Iterator<Object[]> iterator = this.index.iterator(txCtx);
             while(iterator.hasNext()) {
@@ -37,7 +37,7 @@ public final class FullScan extends AbstractScan {
     }
 
     public List<Object[]> runAsEmbedded(TransactionContext txCtx, FilterContext filterContext, Integer limit) {
-        if(limit == Integer.MAX_VALUE) {
+        if(limit == null || limit == Integer.MAX_VALUE) {
             List<Object[]> res = new ArrayList<>();
             Iterator<Object[]> iterator = this.index.iterator(txCtx);
             while(iterator.hasNext()) {

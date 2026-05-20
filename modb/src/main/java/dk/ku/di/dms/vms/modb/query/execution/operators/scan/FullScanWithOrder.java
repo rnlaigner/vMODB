@@ -27,7 +27,7 @@ public final class FullScanWithOrder extends AbstractScanWithOrder {
         if(result.isEmpty()) {
             return result;
         }
-        if(limit == Integer.MAX_VALUE) {
+        if(limit == null || limit == Integer.MAX_VALUE) {
             return result;
         }
         return result.subList(0, limit);
@@ -45,7 +45,7 @@ public final class FullScanWithOrder extends AbstractScanWithOrder {
         if(result.isEmpty()) {
             return result;
         }
-        if(limit == Integer.MAX_VALUE) {
+        if(limit == null || limit == Integer.MAX_VALUE) {
             return result;
         }
         return result.subList(0, limit);

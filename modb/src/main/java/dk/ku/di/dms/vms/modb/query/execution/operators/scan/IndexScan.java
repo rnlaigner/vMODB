@@ -38,7 +38,7 @@ public final class IndexScan extends AbstractScan {
         Iterator<Object[]> iterator = this.index.iterator(txCtx, key);
         Object[] next;
         // prevent more projection than necessary
-        if(limit == null){
+        if(limit == null || limit == Integer.MAX_VALUE) {
             while(iterator.hasNext()){
                 next = iterator.next();
                 result.add(this.getProjection(next));
