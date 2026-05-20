@@ -70,6 +70,11 @@ public final class InventoryService {
 
         for(int i = 0; i < in.itemsIds.length; i++){
             Stock stock = this.stockRepository.lookupByKey(new Stock.StockId(in.itemsIds[i], in.supWares[i]));
+            if(stock == null) {
+                // LOGGER.log(ERROR, "Stock Item Not Found for ID: " + in.itemsIds[i]);
+                throw new RuntimeException("Stock Item Not Found for ID: " + in.itemsIds[i]);
+                // continue;
+            }
             ol_dist_info[i] = stock.getDistInfo(in.d_id);
             int ol_quantity = in.qty[i];
             if(stock.s_quantity > ol_quantity){

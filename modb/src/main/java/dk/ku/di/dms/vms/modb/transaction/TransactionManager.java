@@ -81,8 +81,8 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
     }
 
     @Override
-    public List<Object[]> fetch(final Table table, final SelectStatement selectStatement){
-        return this.fetch(table, selectStatement, Collections.emptyList());
+    public List<Object[]> fetch(final Table table, final SelectStatement selectStatement) {
+        return this.fetch(table, selectStatement, selectStatement.whereClause);
     }
 
     /**

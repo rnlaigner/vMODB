@@ -9,6 +9,7 @@ import dk.ku.di.dms.vms.modb.definition.key.KeyUtils;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadOnlyBufferIndex;
 import dk.ku.di.dms.vms.modb.index.interfaces.ReadWriteIndex;
 import dk.ku.di.dms.vms.modb.index.unique.UniqueHashBufferIndex;
+import dk.ku.di.dms.vms.modb.index.unique.UniqueHashChainingBufferIndex;
 import dk.ku.di.dms.vms.modb.storage.iterator.IRecordIterator;
 import dk.ku.di.dms.vms.modb.transaction.TransactionContext;
 import dk.ku.di.dms.vms.modb.transaction.internal.Entry;
@@ -249,14 +250,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
                 LOGGER.log(WARNING, "Primary key violation found in multi version map: " + key);
                 return false;
             }
-        }
-        /*
-        unknown error related to this block. only occurs in processStockConfirmed and after an initial run
-        either (a) the checkpoint is concurrently putting this entry or
-        (b) the reset is not appropriately cleaning the buffer or
-        (c) some hash buffer operation is buggy (although the record returned below indeed has the same key)
-         */
-        else if(this.rawIndex.exists(key)){
+        } else if(this.rawIndex.exists(key)){
             Object[] existingRecord = this.rawIndex.lookupByKey(key);
             LOGGER.log(WARNING, "Primary key violation found in underlying primary key index: "+key+" Existing record:\n"+Arrays.stream(existingRecord).toList());
             return false;

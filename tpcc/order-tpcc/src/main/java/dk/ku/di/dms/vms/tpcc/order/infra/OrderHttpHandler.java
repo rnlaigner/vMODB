@@ -52,7 +52,6 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
     }
 
     private static final SelectStatement selectStatementOrder = QueryBuilderFactory.select().project("*").from("orders").where("o_id", ExpressionTypeEnum.LESS_THAN_OR_EQUAL, 3000).build();
-    private static final SelectStatement selectStatementNewOrder = QueryBuilderFactory.select().project("*").from("new_orders").where("no_o_id", ExpressionTypeEnum.LESS_THAN_OR_EQUAL, 3000).build();
     private static final SelectStatement selectStatementOrderLine = QueryBuilderFactory.select().project("*").from("order_line").where("ol_o_id", ExpressionTypeEnum.LESS_THAN_OR_EQUAL, 3000).build();
 
     @Override
@@ -69,7 +68,6 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
 
         this.transactionManager.beginTransaction(Long.MAX_VALUE, 0, 0,false);
         List<Order> orders = this.orderRepository.fetchMany(selectStatementOrder, Order.class);
-        List<NewOrder> newOrders = this.newOrderRepository.fetchMany(selectStatementNewOrder, NewOrder.class);
         List<OrderLine> orderLines = this.orderLineRepository.fetchMany(selectStatementOrderLine, OrderLine.class);
         this.transactionManager.reset();
 
@@ -81,7 +79,11 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
 
         this.transactionManager.beginTransaction(0, 0, 0,false);
         this.orderRepository.insertAll(orders);
-        this.newOrderRepository.insertAll(newOrders);
+
+        // all new orders may have been deleted (delivery tx) so it is safer to just recreate to ensure correctness in all cases
+        int numWare = Integer.parseInt(ConfigUtils.loadProperties().getProperty("num_ware"));
+        this.populateNewOrder(numWare);
+
         this.orderLineRepository.insertAll(orderLines);
         // this.transactionManager.commit();
         LOGGER.log(INFO, "Order finished cleanup");
@@ -211,6 +213,17 @@ public final class OrderHttpHandler extends DefaultHttpHandler {
             this.transactionManager.rebuildIndexes();
         } catch(ExecutionException | InterruptedException e){
             LOGGER.log(ERROR, "Error:\n"+e);
+        }
+    }
+
+    private void populateNewOrder(int numWare) {
+        for(int w_id = 1; w_id <= numWare; w_id++){
+            for (int d_id = 1; d_id <= TPCcConstants.NUM_DIST_PER_WARE; d_id++) {
+                for (int o_id = 1; o_id <= TPCcConstants.NUM_CUST_PER_DIST; o_id++) {
+                    NewOrder newOrder = new NewOrder(o_id, d_id, w_id);
+                    this.newOrderRepository.insert(newOrder);
+                }
+            }
         }
     }
 

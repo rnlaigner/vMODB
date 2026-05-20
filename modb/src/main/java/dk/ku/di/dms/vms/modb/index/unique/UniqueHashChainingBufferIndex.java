@@ -75,6 +75,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
     public Object[] record(IKey key) {
         int index = this.getIndex(key.hashCode());
         long pos = this.getPositionWithIndex(index);
+        if(UNSAFE.getByte(null, pos) == Header.INACTIVE_BYTE) return null;
         Object[] hashedRecord = this.readFromIndex(pos + Schema.RECORD_HEADER);
         IKey hashedKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), hashedRecord);
         if (hashedKey.equals(key)) {
@@ -198,10 +199,12 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             long chainedPos = aob.address;
             final long lastPos = aob.nextOffset();
             while(chainedPos < lastPos) {
-                Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
-                IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
-                if (existingKey.equals(key)) {
-                    return chainedRecord;
+                if(UNSAFE.getByte(null, chainedPos) == Header.ACTIVE_BYTE ) {
+                    Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
+                    IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
+                    if (existingKey.equals(key)) {
+                        return chainedRecord;
+                    }
                 }
                 chainedPos = chainedPos + this.recordSize;
             }
@@ -238,7 +241,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
         private final Map<Integer, AppendOnlyBoundedBuffer> chainingMapCopy;
 
-        public ChainedRecordIterator(long address, int recordSize, long capacity){
+        public ChainedRecordIterator(long address, int recordSize, long capacity) {
             this.nextAddress = address;
             this.recordSize = recordSize;
             this.mainCapacity = capacity;
@@ -250,7 +253,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         @Override
         public boolean hasNext() {
             // checks for an active bit
-            while(this.mainProgress < this.mainCapacity && UNSAFE.getByte(null, this.nextAddress) != Header.ACTIVE_BYTE){
+            while(this.mainProgress < this.mainCapacity && UNSAFE.getByte(null, this.nextAddress) != Header.ACTIVE_BYTE) {
                 this.mainProgress++;
                 this.nextAddress += recordSize;
             }
