@@ -13,21 +13,16 @@ public final class LoggingHandlerBuilder {
 
     public static ILoggingHandler build(String identifier) {
         String fileName = identifier + "_" + System.currentTimeMillis() +".llog";
-        String userHome = ConfigUtils.getUserHome();
-        String basePath = userHome + "/vms";
-        File file = new File(basePath);
-        boolean fileExists = file.exists() || file.mkdirs();
-        if(!fileExists){
-            throw new RuntimeException("It was not possible to create the file "+file);
-        }
-        String filePath = basePath + "/" + fileName;
-        Path path = Paths.get(filePath);
+        Path path = getPath(fileName);
         FileChannel fileChannel;
         try {
             fileChannel = FileChannel.open(path,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
+                    StandardOpenOption.CREATE_NEW,
+                    // StandardOpenOption.TRUNCATE_EXISTING,
+                    // StandardOpenOption.SYNC,
+                    StandardOpenOption.APPEND
+
+            );
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -44,6 +39,18 @@ public final class LoggingHandlerBuilder {
             handler = new DefaultLoggingHandler(fileChannel, fileName);
         }
         return handler;
+    }
+
+    public static Path getPath(String fileName) {
+        String userHome = ConfigUtils.getUserHome();
+        String basePath = userHome + "/vms";
+        File file = new File(basePath);
+        boolean fileExists = file.exists() || file.mkdirs();
+        if(!fileExists){
+            throw new RuntimeException("It was not possible to create the file "+file);
+        }
+        String filePath = basePath + "/" + fileName;
+        return Paths.get(filePath);
     }
 
 }

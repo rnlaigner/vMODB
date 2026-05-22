@@ -1,5 +1,6 @@
 package dk.ku.di.dms.vms.sdk.embed.handler;
 
+import dk.ku.di.dms.vms.modb.common.logging.LoggingHandlerBuilder;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.*;
 import dk.ku.di.dms.vms.modb.common.schema.network.control.ConsumerSet;
@@ -24,11 +25,14 @@ import dk.ku.di.dms.vms.web_common.NetworkUtils;
 import dk.ku.di.dms.vms.web_common.channel.JdkAsyncChannel;
 import dk.ku.di.dms.vms.web_common.meta.ConnectionMetadata;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -122,6 +126,8 @@ public final class VmsEventHandler extends ModbHttpServer {
      */
     private final Map<Long, Map<String, Long>> tidToPrecedenceMap;
 
+    private final Map<Long, RandomAccessFile> loggingFileMap;
+
     public static VmsEventHandler build(// to identify which vms this is
                                         VmsNode me,
                                         // to checkpoint private state
@@ -204,6 +210,8 @@ public final class VmsEventHandler extends ModbHttpServer {
 
         this.options = options;
         this.httpHandler = httpHandler;
+
+        this.loggingFileMap = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -211,6 +219,45 @@ public final class VmsEventHandler extends ModbHttpServer {
         // setup accept since we need to accept connections from the coordinator and other VMSs
         this.serverSocket.accept(null, new AcceptCompletionHandler());
         LOGGER.log(DEBUG,this.me.identifier+": Accept handler setup");
+    }
+
+    private RandomAccessFile setUpLoggingFile(long threadId) {
+        RandomAccessFile raf;
+        String fileName = me.identifier + "_" + threadId + "_" + System.currentTimeMillis() +".llog";
+        Path path = LoggingHandlerBuilder.getPath(fileName);
+        try {
+            raf = new RandomAccessFile(path.toFile(), "rw");
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        return raf;
+    }
+
+    void writeToLog(RandomAccessFile raf, TransactionEvent.PayloadRaw payload) {
+        try {
+            writeLong(raf, payload.tid());
+            writeLong(raf, payload.batch());
+            raf.write(payload.event().length);
+            raf.write(payload.event());
+            raf.write(payload.payload().length);
+            raf.write(payload.payload());
+            raf.write(payload.precedenceMap().length);
+            raf.write(payload.precedenceMap());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static void writeLong(RandomAccessFile raf, long lng) throws IOException {
+        raf.write(new byte[] {
+                (byte) lng,
+                (byte) (lng >> 8),
+                (byte) (lng >> 16),
+                (byte) (lng >> 24),
+                (byte) (lng >> 32),
+                (byte) (lng >> 40),
+                (byte) (lng >> 48),
+                (byte) (lng >> 56)});
     }
 
     public void processOutputEvent(IVmsTransactionResult txResult) {
@@ -250,12 +297,19 @@ public final class VmsEventHandler extends ModbHttpServer {
             // must be queued in case leader is off and comes back online
             this.leaderWorker.queueMessage(BatchComplete.of(thisBatch.batch, this.me.identifier));
         }
-        if(this.options.checkpointing()){
+        if(this.options.logging) {
+            submitBackgroundTask(()-> {
+                for(var raf : this.loggingFileMap.values()) {
+                    try { raf.getFD().sync(); } catch (IOException _) { }
+                }
+            });
+        }
+        if(this.options.checkpointing){
             LOGGER.log(DEBUG, this.me.identifier + ": Requesting checkpoint for batch " + thisBatch.batch);
             thisBatch.setStatus(BatchContext.CHECKPOINTING);
             submitBackgroundTask(()->this.checkpoint(thisBatch.batch, batchMetadata.maxTidExecuted));
         } else {
-            submitBackgroundTask(()->transactionManager.cleanup(batchMetadata.maxTidExecuted));
+            submitBackgroundTask(()->this.transactionManager.cleanup(batchMetadata.maxTidExecuted));
         }
         this.cleanUpBatchInfo(thisBatch.batch);
     }
@@ -336,6 +390,12 @@ public final class VmsEventHandler extends ModbHttpServer {
 //            System.out.println("TESTE");
 //        }
         TransactionEvent.PayloadRaw payload = TransactionEvent.of(outputEvent.tid(), outputEvent.batch(), outputEvent.outputQueue(), objStr, precedenceMap);
+
+        if(this.options.logging) {
+            RandomAccessFile raf = this.loggingFileMap.computeIfAbsent(Thread.currentThread().threadId(), this::setUpLoggingFile);
+            this.writeToLog(raf, payload);
+        }
+
         for(IVmsContainer consumerVmsContainer : consumerVMSs) {
             LOGGER.log(DEBUG,this.me.identifier+": An output event (queue: " + outputEvent.outputQueue() + ") will be queued to VMS: " + consumerVmsContainer.identifier());
             consumerVmsContainer.queue(payload);
