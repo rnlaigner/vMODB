@@ -764,10 +764,10 @@ public final class Coordinator extends ModbHttpServer {
 
         if(this.options.logging()) {
             try {
-                raf.writeLong(-1);
-                LoggingHandlerBuilder.writeLong(this.raf, txAbort.batch());
-                LoggingHandlerBuilder.writeLong(this.raf, txAbort.tid());
-                raf.getFD().sync();
+                this.raf.writeLong(-1);
+                this.raf.writeLong(txAbort.batch());
+                this.raf.writeLong(txAbort.tid());
+                this.raf.getFD().sync();
             } catch (IOException e) {
                 LOGGER.log(WARNING,"Could not write commit command",e);
             }
@@ -882,9 +882,9 @@ public final class Coordinator extends ModbHttpServer {
 
         if(this.options.logging()) {
             try {
-                LoggingHandlerBuilder.writeLong(this.raf, batchContext.batchOffset);
-                LoggingHandlerBuilder.writeLong(this.raf, batchContext.numTIDsOverall);
-                LoggingHandlerBuilder.writeLong(this.raf, batchContext.lastTid);
+                this.raf.writeLong(batchContext.batchOffset);
+                this.raf.writeLong(batchContext.numTIDsOverall);
+                this.raf.writeLong(batchContext.lastTid);
                 raf.getFD().sync();
             } catch (IOException e) {
                 LOGGER.log(WARNING,"Could not write commit command",e);

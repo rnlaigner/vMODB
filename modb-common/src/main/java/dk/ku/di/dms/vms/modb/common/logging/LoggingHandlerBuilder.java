@@ -70,8 +70,8 @@ public final class LoggingHandlerBuilder {
 
     public static void writeToLog(RandomAccessFile raf, TransactionEvent.PayloadRaw payload) {
         try {
-            writeLong(raf, payload.tid());
-            writeLong(raf, payload.batch());
+            raf.writeLong(payload.tid());
+            raf.writeLong(payload.batch());
             raf.write(payload.event().length);
             raf.write(payload.event());
             raf.write(payload.payload().length);
@@ -81,18 +81,6 @@ public final class LoggingHandlerBuilder {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    public static void writeLong(RandomAccessFile raf, long lng) throws IOException {
-        raf.write(new byte[] {
-                (byte) lng,
-                (byte) (lng >> 8),
-                (byte) (lng >> 16),
-                (byte) (lng >> 24),
-                (byte) (lng >> 32),
-                (byte) (lng >> 40),
-                (byte) (lng >> 48),
-                (byte) (lng >> 56)});
     }
 
 }
