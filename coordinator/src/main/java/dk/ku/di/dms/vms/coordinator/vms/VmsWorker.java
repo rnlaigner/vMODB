@@ -1,8 +1,6 @@
 package dk.ku.di.dms.vms.coordinator.vms;
 
 import dk.ku.di.dms.vms.coordinator.options.VmsWorkerOptions;
-import dk.ku.di.dms.vms.modb.common.logging.ILoggingHandler;
-import dk.ku.di.dms.vms.modb.common.logging.LoggingHandlerBuilder;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
 import dk.ku.di.dms.vms.modb.common.runnable.StoppableRunnable;
 import dk.ku.di.dms.vms.modb.common.schema.network.batch.BatchCommitAck;
@@ -20,6 +18,7 @@ import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 import dk.ku.di.dms.vms.modb.common.utils.BatchUtils;
 import dk.ku.di.dms.vms.web_common.NetworkUtils;
 import dk.ku.di.dms.vms.web_common.channel.IChannel;
+import org.jctools.queues.MpscBlockingConsumerArrayQueue;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
@@ -32,8 +31,8 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -86,8 +85,6 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 
     private State state;
 
-    private final ILoggingHandler loggingHandler;
-
     private final IVmsSerdesProxy serdesProxy;
 
     private final ByteBuffer readBuffer;
@@ -105,9 +102,8 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
     // DTs particular to this vms worker
     private final IVmsDeque transactionEventQueue;
 
+    @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
     private final Deque<Object> messageQueue;
-
-    private final Queue<ByteBuffer> loggingWriteBuffers = new ConcurrentLinkedQueue<>();
 
     private final Deque<ByteBuffer> pendingWriteBuffers = new ConcurrentLinkedDeque<>();
 
@@ -115,7 +111,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 
     private final BatchWriteCompletionHandler batchWriteCompletionHandler = new BatchWriteCompletionHandler();
 
-    private final Consumer<Object> queueMessage_;
+    private final Consumer<Object> internalMailbox;
 
     private interface IVmsDeque {
         void drain(List<TransactionEvent.PayloadRaw> list, int maxSize);
@@ -155,15 +151,22 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
     }
 
     private static final class SingleDeque implements IVmsDeque {
-        private final ConcurrentLinkedDeque<TransactionEvent.PayloadRaw> queue = new ConcurrentLinkedDeque<>();
+        private final BlockingQueue<TransactionEvent.PayloadRaw> queue = new MpscBlockingConsumerArrayQueue<>(1024 * 100);
         @Override
         public void insert(TransactionEvent.PayloadRaw payloadRaw) {
-            this.queue.offerLast(payloadRaw);
+            while(!this.queue.offer(payloadRaw)) {
+                LOGGER.log(WARNING, "Queue full");
+                try { this.queue.put(payloadRaw); return; } catch (InterruptedException _) {}
+            }
         }
         @Override
         public void drain(List<TransactionEvent.PayloadRaw> list, int maxSize){
             int totalSize = 0;
-            TransactionEvent.PayloadRaw txEvent = this.queue.poll();
+            TransactionEvent.PayloadRaw txEvent = null;
+             try {
+                 // txEvent = this.queue.take();
+                 txEvent = this.queue.poll(250, TimeUnit.MILLISECONDS);
+             } catch (InterruptedException _) { }
             if(txEvent == null) return;
             totalSize += txEvent.totalSize();
             while(true) {
@@ -215,12 +218,6 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 
         this.readBuffer = MemoryManager.getTemporaryDirectBuffer(options.networkBufferSize());
 
-        // logging
-        if(options.logging()) {
-            this.loggingHandler = LoggingHandlerBuilder.build("coordinator_"+consumerVms.identifier); }
-        else {
-            this.loggingHandler = new ILoggingHandler() { };
-        }
         this.serdesProxy = serdesProxy;
 
         // in
@@ -232,9 +229,9 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
         }
 
         if(this.options.active()){
-            this.queueMessage_ = this.messageQueue::offerLast;
+            this.internalMailbox = this.messageQueue::offerLast;
         } else {
-            this.queueMessage_ = this::sendMessage;
+            this.internalMailbox = this::sendMessage;
         }
 
         // out - shared by many vms workers
@@ -244,10 +241,6 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
     @SuppressWarnings("StatementWithEmptyBody")
     public void acquireLock(){
         while(! WRITE_SYNCHRONIZER.compareAndSet(this, 0, 1) );
-    }
-
-    public boolean tryAcquireLock(){
-        return WRITE_SYNCHRONIZER.compareAndSet(this, 0, 1);
     }
 
     public void releaseLock(){
@@ -357,49 +350,24 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
      * (c) Logging
      */
     private void eventLoop() {
-        int pollTimeout = 1;
         while (this.isRunning()){
             try {
                 this.transactionEventQueue.drain(this.drained, this.options.networkBufferSize());
                 if(this.drained.isEmpty()){
-                    pollTimeout = Math.min(pollTimeout * 2, this.options.maxSleep());
                     this.processPendingNetworkTasks();
-                    this.processPendingLogging();
-                    this.giveUpCpu(pollTimeout);
                     continue;
                 }
-                pollTimeout = pollTimeout > 0 ? pollTimeout / 2 : 0;
-//                if(!this.transactionEventQueue.isEmpty()){
-                    this.sendBatchOfEvents();
-//                } else {
-//                    this.sendEvent(payloadRaw);
-//                }
+                this.sendBatchOfEvents();
                 this.processPendingNetworkTasks();
-                this.processPendingLogging();
             } catch (Exception e) {
                 LOGGER.log(ERROR, "Leader: VMS worker for "+this.consumerVms.identifier+" has caught an exception: \n"+e);
             }
         }
     }
 
-    private void processPendingLogging(){
-        ByteBuffer writeBuffer;
-        if((writeBuffer = this.loggingWriteBuffers.poll()) != null){
-            try {
-                writeBuffer.position(0);
-                this.loggingHandler.log(writeBuffer);
-                // return buffer
-                this.returnByteBuffer(writeBuffer);
-            } catch (IOException e) {
-                LOGGER.log(ERROR, "error on writing byte buffer to logging file: "+e.getMessage());
-                this.loggingWriteBuffers.add(writeBuffer);
-            }
-        }
-    }
-
     private void processPendingNetworkTasks() {
         Object pendingMessage;
-        while((pendingMessage = this.messageQueue.pollFirst()) != null){
+        while((pendingMessage = this.messageQueue.pollFirst()) != null) {
             this.sendMessage(pendingMessage);
         }
         ByteBuffer bb = this.pendingWriteBuffers.poll();
@@ -439,23 +407,16 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 
     @Override
     public void queueMessage(Object message) {
-        this.queueMessage_.accept(message);
+        this.internalMailbox.accept(message);
     }
 
     private void sendMessage(Object message) {
         switch (message) {
-            case BatchCommitCommand.Payload o -> {
-                this.sendBatchCommitCommand(o);
-                this.loggingHandler.force();
-            }
-            case BatchCommitInfo.Payload o -> {
-                this.sendBatchCommitInfo(o);
-                this.loggingHandler.force();
-            }
+            case BatchCommitCommand.Payload o -> this.sendBatchCommitCommand(o);
+            case BatchCommitInfo.Payload o -> this.sendBatchCommitInfo(o);
             case TransactionAbort.Payload o -> this.sendTransactionAbort(o);
             case String o -> this.sendConsumerSet(o);
-            default ->
-                    LOGGER.log(WARNING, "Leader: VMS worker for " + this.consumerVms.identifier + " has unknown message type: " + message.getClass().getName());
+            default -> LOGGER.log(WARNING, "Leader: VMS worker for " + this.consumerVms.identifier + " has unknown message type: " + message.getClass().getName());
         }
     }
 
@@ -663,7 +624,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
     /**
      * While a write operation is in progress, it must wait for completion and then submit the next write.
      */
-    private void sendBatchOfEvents(){
+    private void sendBatchOfEvents() {
         int remaining = this.drained.size();
         int count = remaining;
         ByteBuffer writeBuffer;
@@ -682,10 +643,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
 //                } while(writeBuffer.hasRemaining());
 //                this.returnByteBuffer(writeBuffer);
 
-                // maximize useful work
-                while(!this.tryAcquireLock()){
-                    this.processPendingLogging();
-                }
+                this.acquireLock();
                 this.channel.write(writeBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, writeBuffer, this.batchWriteCompletionHandler);
             } catch (Exception e) {
                 LOGGER.log(ERROR, "Leader: Error on submitting ["+count+"] events to "+this.consumerVms.identifier+":"+e);
@@ -733,11 +691,7 @@ public final class VmsWorker extends StoppableRunnable implements IVmsWorker {
                 channel.write(byteBuffer, options.networkSendTimeout(), TimeUnit.MILLISECONDS, byteBuffer, this);
             } else {
                 releaseLock();
-                if(options.logging()){
-                    loggingWriteBuffers.add(byteBuffer);
-                } else {
-                    returnByteBuffer(byteBuffer);
-                }
+                returnByteBuffer(byteBuffer);
             }
         }
 

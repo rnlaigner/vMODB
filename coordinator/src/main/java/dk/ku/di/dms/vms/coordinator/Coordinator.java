@@ -11,6 +11,7 @@ import dk.ku.di.dms.vms.coordinator.transaction.TransactionWorker;
 import dk.ku.di.dms.vms.coordinator.vms.IVmsWorker;
 import dk.ku.di.dms.vms.coordinator.vms.VmsWorker;
 import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
+import dk.ku.di.dms.vms.modb.common.logging.LoggingHandlerBuilder;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryManager;
 import dk.ku.di.dms.vms.modb.common.memory.MemoryUtils;
 import dk.ku.di.dms.vms.modb.common.schema.VmsEventSchema;
@@ -35,6 +36,7 @@ import dk.ku.di.dms.vms.web_common.meta.ConnectionMetadata;
 import dk.ku.di.dms.vms.web_common.meta.LockConnectionMetadata;
 
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousChannelGroup;
 import java.nio.channels.AsynchronousServerSocketChannel;
@@ -123,6 +125,8 @@ public final class Coordinator extends ModbHttpServer {
     private static final int DEFAULT_STARTING_TID = 1;
     private static final int DEFAULT_STARTING_BATCH_ID = 1;
 
+    private final RandomAccessFile raf;
+
     public static Coordinator build(Properties properties, Map<String, IdentifiableNode> startersVMSs,
                                     Map<String, TransactionDAG> transactionMap, Function<Coordinator, IHttpHandler> httpHandlerSupplier){
 
@@ -143,7 +147,7 @@ public final class Coordinator extends ModbHttpServer {
 
         // batch generation
         int batchWindow = Integer.parseInt( properties.getProperty("batch_window_ms") );
-        int batchMaxTransactions = Integer.parseInt( properties.getProperty("num_max_transactions_batch") );
+        int numMaxTransactionsBatch = Integer.parseInt( properties.getProperty("num_max_transactions_batch") );
         int numTransactionWorkers = Integer.parseInt( properties.getProperty("num_transaction_workers") );
 
         // vms worker config
@@ -165,7 +169,7 @@ public final class Coordinator extends ModbHttpServer {
                         .withNetworkThreadPoolSize(groupPoolSize)
                         .withNetworkSendTimeout(networkSendTimeout)
                         .withBatchWindow(batchWindow)
-                        .withMaxTransactionsPerBatch(batchMaxTransactions)
+                        .withMaxTransactionsPerBatch(numMaxTransactionsBatch)
                         .withNumTransactionWorkers(numTransactionWorkers)
                         .withNumWorkersPerVms(numWorkersPerVms)
                         .withNumQueuesVmsWorker(numQueuesVmsWorker)
@@ -254,7 +258,7 @@ public final class Coordinator extends ModbHttpServer {
             Deque<TransactionInput> inputQueue = this.transactionInputDeques.getFirst();
             this.transactionInputConsumer = inputQueue::offerLast;
         } else {
-            transactionInputConsumer = transactionInput -> {
+            this.transactionInputConsumer = transactionInput -> {
                 int idx = ThreadLocalRandom.current().nextInt(0, this.options.getNumTransactionWorkers());
                 this.transactionInputDeques.get(idx).offerLast(transactionInput);
             };
@@ -279,6 +283,12 @@ public final class Coordinator extends ModbHttpServer {
         this.vmsWorkerContainerMap = new HashMap<>();
         this.transactionWorkers = new ArrayList<>();
         this.httpHandler = httpHandlerSupplier.apply(this);
+
+        if(options.logging()){
+            this.raf = LoggingHandlerBuilder.setUpLoggingFile("coord_evt_lp", 0);
+        } else {
+            this.raf = null;
+        }
     }
 
     private final Map<String, VmsNode[]> vmsIdentifiersPerDAG = new HashMap<>();
@@ -352,7 +362,7 @@ public final class Coordinator extends ModbHttpServer {
             TransactionWorker txWorker = TransactionWorker.build(idx, txInputQueue, initTid,
                     this.options.getMaxTransactionsPerBatch(), this.options.getBatchWindow(),
                     numWorkers, precedenceMapInputQueue, precedenceMapOutputQueue, this.transactionMap,
-                    this.vmsIdentifiersPerDAG, this.vmsWorkerContainerMap, this.coordinatorQueue, this.serdesProxy);
+                    this.vmsIdentifiersPerDAG, this.vmsWorkerContainerMap, this.coordinatorQueue, this.serdesProxy, this.options.logging());
             Thread txWorkerThread = Thread.ofPlatform()
                     .name("tx-worker-"+idx)
                     .inheritInheritableThreadLocals(false)
@@ -751,6 +761,18 @@ public final class Coordinator extends ModbHttpServer {
         // cannot commit the batch unless the VMS is sure there will be no aborts...
         // this is guaranteed by design, since the batch complete won't arrive unless all events of the batch arrive at the terminal VMSs
         this.batchContextMap.get(txAbort.batch()).tidAborted = txAbort.tid();
+
+        if(this.options.logging()) {
+            try {
+                raf.writeLong(-1);
+                LoggingHandlerBuilder.writeLong(this.raf, txAbort.batch());
+                LoggingHandlerBuilder.writeLong(this.raf, txAbort.tid());
+                raf.getFD().sync();
+            } catch (IOException e) {
+                LOGGER.log(WARNING,"Could not write commit command",e);
+            }
+        }
+
         // can reuse the same buffer since the message does not change across VMSs like the commit request
         for (VmsNode vms : this.vmsMetadataMap.values()) {
             // don't need to send to the vms that aborted
@@ -774,7 +796,7 @@ public final class Coordinator extends ModbHttpServer {
 
     private void updateBatchOffsetPendingCommit(BatchContext batchContext) {
         final long batchOffsetPendingCommit_ = this.batchOffsetPendingCommit;
-        if(batchContext.batchOffset == batchOffsetPendingCommit_){
+        if(batchContext.batchOffset == batchOffsetPendingCommit_) {
             this.sendCommitCommandToVMSs(batchContext);
             this.batchOffsetPendingCommit = batchOffsetPendingCommit_ + 1;
             // making this implementation order-independent, so not assuming batch commit are received in order
@@ -857,6 +879,18 @@ public final class Coordinator extends ModbHttpServer {
      * Only send to non-terminals
      */
     private void sendCommitCommandToVMSs(BatchContext batchContext){
+
+        if(this.options.logging()) {
+            try {
+                LoggingHandlerBuilder.writeLong(this.raf, batchContext.batchOffset);
+                LoggingHandlerBuilder.writeLong(this.raf, batchContext.numTIDsOverall);
+                LoggingHandlerBuilder.writeLong(this.raf, batchContext.lastTid);
+                raf.getFD().sync();
+            } catch (IOException e) {
+                LOGGER.log(WARNING,"Could not write commit command",e);
+            }
+        }
+
         for(VmsNode vms : this.vmsMetadataMap.values()){
             if(batchContext.terminalVMSes.contains(vms.identifier)) {
                 LOGGER.log(DEBUG,"Leader: Batch ("+batchContext.batchOffset+") commit command not sent to "+ vms.identifier + " (terminal)");
@@ -871,8 +905,7 @@ public final class Coordinator extends ModbHttpServer {
                     new BatchCommitCommand.Payload(
                         batchContext.batchOffset,
                         batchContext.previousBatchPerVms.get(vms.identifier),
-                        batchContext.numberOfTIDsPerVms.get(vms.identifier)
-            ));
+                        batchContext.numberOfTIDsPerVms.get(vms.identifier)));
         }
 
         if(!BATCH_COMMIT_CONSUMERS.isEmpty()) {

@@ -2,11 +2,15 @@ package dk.ku.di.dms.vms.coordinator.transaction;
 
 import dk.ku.di.dms.vms.coordinator.batch.BatchContext;
 import dk.ku.di.dms.vms.coordinator.vms.IVmsWorker;
+import dk.ku.di.dms.vms.modb.common.data_structure.Tuple;
+import dk.ku.di.dms.vms.modb.common.logging.LoggingHandlerBuilder;
 import dk.ku.di.dms.vms.modb.common.runnable.StoppableRunnable;
 import dk.ku.di.dms.vms.modb.common.schema.network.node.VmsNode;
 import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionEvent;
 import dk.ku.di.dms.vms.modb.common.serdes.IVmsSerdesProxy;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
@@ -21,6 +25,7 @@ public final class TransactionWorker extends StoppableRunnable {
     private final int id;
 
     private final Deque<TransactionInput> inputQueue;
+
     private long startingTidBatch;
     private long tid;
     private final int maxNumberOfTIDsBatch;
@@ -42,6 +47,9 @@ public final class TransactionWorker extends StoppableRunnable {
     private final Queue<Map<String, PrecedenceInfo>> precedenceMapOutputQueue;
     private final Map<Long, Map<String, PrecedenceInfo>> precedenceMapCache;
     private final Queue<Object> coordinatorQueue;
+
+    private final boolean logging;
+    private final RandomAccessFile raf;
 
     private static class VmsTracking {
         public final String identifier;
@@ -74,7 +82,8 @@ public final class TransactionWorker extends StoppableRunnable {
                                           Map<String, VmsNode[]> vmsIdentifiersPerDAG,
                                           Map<String, IVmsWorker> vmsWorkerContainerMap,
                                           Queue<Object> coordinatorQueue,
-                                          IVmsSerdesProxy serdesProxy){
+                                          IVmsSerdesProxy serdesProxy,
+                                          boolean logging){
         Map<String, VmsTracking> vmsTrackingMap = new HashMap<>();
         Map<String, VmsTracking[]> vmsPerTransactionMap = new HashMap<>(vmsIdentifiersPerDAG.size());
         for(var txEntry : vmsIdentifiersPerDAG.entrySet()) {
@@ -95,7 +104,7 @@ public final class TransactionWorker extends StoppableRunnable {
         }
         return new TransactionWorker(id, inputQueue, startingTid, maxNumberOfTIDsBatch, batchWindow, numWorkers,
                 precedenceMapInputQueue, precedenceMapOutputQueue, transactionMap,
-                vmsPerTransactionMap, vmsTrackingMap, vmsWorkerContainerMap, coordinatorQueue, serdesProxy);
+                vmsPerTransactionMap, vmsTrackingMap, vmsWorkerContainerMap, coordinatorQueue, serdesProxy, logging);
     }
 
     private TransactionWorker(int id, Deque<TransactionInput> inputQueue,
@@ -104,7 +113,7 @@ public final class TransactionWorker extends StoppableRunnable {
                               Queue<Map<String, PrecedenceInfo>> precedenceMapOutputQueue,
                               Map<String, TransactionDAG> transactionMap, Map<String, VmsTracking[]> vmsPerTransactionMap,
                               Map<String, VmsTracking> vmsTrackingMap, Map<String, IVmsWorker> vmsWorkerContainerMap,
-                              Queue<Object> coordinatorQueue, IVmsSerdesProxy serdesProxy){
+                              Queue<Object> coordinatorQueue, IVmsSerdesProxy serdesProxy, boolean logging){
         this.id = id;
         this.inputQueue = inputQueue;
         this.startingTidBatch = startingTidBatch;
@@ -132,6 +141,9 @@ public final class TransactionWorker extends StoppableRunnable {
         this.lastBatchContext.numberOfTIDsPerVms = new HashMap<>();
 
         this.coordinatorQueue = coordinatorQueue;
+
+        this.logging = logging;
+        this.raf = LoggingHandlerBuilder.setUpLoggingFile("coord_tx_worker", id);
     }
 
     @Override
@@ -237,6 +249,12 @@ public final class TransactionWorker extends StoppableRunnable {
             TransactionEvent.PayloadRaw txEvent = TransactionEvent.of(this.tid, this.currBatchContext.batchOffset,
                     transactionInput.event.name, transactionInput.event.payload, precedenceMapStr);
             LOGGER.log(DEBUG,"Leader: Transaction worker "+id+" adding event "+event.name+" to "+inputVms.identifier+" worker:\n"+txEvent+"\n"+previousTidPerVms);
+
+            // log before sending
+            if(this.logging) {
+                LoggingHandlerBuilder.writeToLog(this.raf, txEvent);
+            }
+
             this.vmsWorkerContainerMap.get(inputVms.identifier).queueTransactionEvent(txEvent);
             previousTidPerVms.clear();
             PREVIOUS_TID_PER_VMS_CACHE.addLast(previousTidPerVms);
@@ -295,7 +313,23 @@ public final class TransactionWorker extends StoppableRunnable {
         }
 
         List<PendingTransactionInput> pendingInputs = entry.getValue();
-        for(PendingTransactionInput pendingInput : pendingInputs){
+        this.submitPendingInputEvents(pendingInputs, precedenceMap);
+
+        this.pendingInputMap.remove(entry.getKey());
+
+        // store precedenceMap for processing inside advanceCurrentBatch
+        // store for batch completion time
+        this.precedenceMapCache.put(entry.getKey(), precedenceMap);
+    }
+
+    /**
+     * These events act like a barrier: without them, the consumer VMSes cannot reach the end of a batch; therefore, they must be flushed to disk before being sent
+     * Another way would be ordering by TID, but maybe a consumer VMS does not consume TID 1, only 2, leading it to complete its batch. If TID 1 is not logged, the batch is unrecoverable.
+     */
+    private final List<Tuple<String, TransactionEvent.PayloadRaw>> loggedToSend = new ArrayList<>();
+
+    private void submitPendingInputEvents(List<PendingTransactionInput> pendingInputs, Map<String, PrecedenceInfo> precedenceMap) {
+        for(PendingTransactionInput pendingInput : pendingInputs) {
             // building map only those VMSs that participate in the transaction
             TransactionDAG transactionDAG = this.transactionMap.get(pendingInput.input.name);
             VmsTracking[] vmsList = this.vmsPerTransactionMap.get(transactionDAG.name);
@@ -312,10 +346,18 @@ public final class TransactionWorker extends StoppableRunnable {
             String precedenceMapStr = this.serdesProxy.serializeMap(pendingInput.previousTidPerVms);
             EventIdentifier event = transactionDAG.inputEvents.get(pendingInput.input.event.name);
             VmsTracking inputVms = this.vmsTrackingMap.get(event.targetVms);
+
             TransactionEvent.PayloadRaw txEvent = TransactionEvent.of(pendingInput.tid, pendingInput.batch,
                     pendingInput.input.event.name, pendingInput.input.event.payload, precedenceMapStr);
             LOGGER.log(DEBUG,"Leader: Transaction worker "+id+" adding event "+event.name+" to "+inputVms.identifier+" worker:\n"+txEvent+"\n"+pendingInput.previousTidPerVms);
-            this.vmsWorkerContainerMap.get(inputVms.identifier).queueTransactionEvent(txEvent);
+
+            // if logging, flush it before sending
+            if(this.logging) {
+                LoggingHandlerBuilder.writeToLog(this.raf, txEvent);
+                this.loggedToSend.add(Tuple.of(inputVms.identifier, txEvent));
+            } else {
+                this.vmsWorkerContainerMap.get(inputVms.identifier).queueTransactionEvent(txEvent);
+            }
 
             // reuse previous tid per vms map
             pendingInput.previousTidPerVms.clear();
@@ -325,12 +367,14 @@ public final class TransactionWorker extends StoppableRunnable {
             pendingInput.pendingVMSs.clear();
             PENDING_VMSES_CACHE.addLast(pendingInput.pendingVMSs);
         }
-
-        this.pendingInputMap.remove(entry.getKey());
-
-        // store precedenceMap for processing inside advanceCurrentBatch
-        // store for batch completion time
-        this.precedenceMapCache.put(entry.getKey(), precedenceMap);
+        if(this.loggedToSend.isEmpty()) { return; }
+        // flush
+        try { this.raf.getFD().sync(); } catch (IOException _) { }
+        for(Iterator<Tuple<String, TransactionEvent.PayloadRaw>> it = this.loggedToSend.iterator(); it.hasNext();) {
+            Tuple<String, TransactionEvent.PayloadRaw> next = it.next();
+            this.vmsWorkerContainerMap.get(next.t1).queueTransactionEvent(next.t2);
+            it.remove();
+        }
     }
 
     private boolean advanceCurrentBatch() {

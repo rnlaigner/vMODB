@@ -25,14 +25,12 @@ import dk.ku.di.dms.vms.web_common.NetworkUtils;
 import dk.ku.di.dms.vms.web_common.channel.JdkAsyncChannel;
 import dk.ku.di.dms.vms.web_common.meta.ConnectionMetadata;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -63,7 +61,7 @@ public final class VmsEventHandler extends ModbHttpServer {
     private final VmsEmbedInternalChannels vmsInternalChannels;
 
     /** VMS METADATA **/
-    private final VmsNode me; // this merges network and semantic data about the vms
+    private final VmsNode me; // this merges network and semantic data about the VMS
 
     private final VmsRuntimeMetadata vmsMetadata;
 
@@ -93,9 +91,6 @@ public final class VmsEventHandler extends ModbHttpServer {
 
     // the thread responsible to send data to the leader
     private LeaderWorker leaderWorker;
-
-    // refer to what operation must be performed
-    // private final BlockingQueue<Object> leaderWorkerQueue;
 
     // cannot be final, may differ across time and new leaders
     @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
@@ -221,45 +216,6 @@ public final class VmsEventHandler extends ModbHttpServer {
         LOGGER.log(DEBUG,this.me.identifier+": Accept handler setup");
     }
 
-    private RandomAccessFile setUpLoggingFile(long threadId) {
-        RandomAccessFile raf;
-        String fileName = me.identifier + "_" + threadId + "_" + System.currentTimeMillis() +".llog";
-        Path path = LoggingHandlerBuilder.getPath(fileName);
-        try {
-            raf = new RandomAccessFile(path.toFile(), "rw");
-        } catch (FileNotFoundException e) {
-            throw new RuntimeException(e);
-        }
-        return raf;
-    }
-
-    void writeToLog(RandomAccessFile raf, TransactionEvent.PayloadRaw payload) {
-        try {
-            writeLong(raf, payload.tid());
-            writeLong(raf, payload.batch());
-            raf.write(payload.event().length);
-            raf.write(payload.event());
-            raf.write(payload.payload().length);
-            raf.write(payload.payload());
-            raf.write(payload.precedenceMap().length);
-            raf.write(payload.precedenceMap());
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static void writeLong(RandomAccessFile raf, long lng) throws IOException {
-        raf.write(new byte[] {
-                (byte) lng,
-                (byte) (lng >> 8),
-                (byte) (lng >> 16),
-                (byte) (lng >> 24),
-                (byte) (lng >> 32),
-                (byte) (lng >> 40),
-                (byte) (lng >> 48),
-                (byte) (lng >> 56)});
-    }
-
     public void processOutputEvent(IVmsTransactionResult txResult) {
         LOGGER.log(DEBUG,this.me.identifier+": New transaction result in event handler. TID = "+ txResult.tid());
         // it is a void method that executed, nothing to send
@@ -343,7 +299,7 @@ public final class VmsEventHandler extends ModbHttpServer {
                 consumerToEventsMap.computeIfAbsent(consumer, (ignored) -> new ArrayList<>()).add(entry.getKey());
             }
         }
-        for( Map.Entry<IdentifiableNode,List<String>> consumerEntry : consumerToEventsMap.entrySet() ) {
+        for(Map.Entry<IdentifiableNode,List<String>> consumerEntry : consumerToEventsMap.entrySet()) {
             // connect to more consumers...
             for(int i = 0; i < this.options.numVmsWorkers; i++){
                 this.initConsumerVmsWorker(consumerEntry.getKey(), consumerEntry.getValue(), i);
@@ -392,8 +348,8 @@ public final class VmsEventHandler extends ModbHttpServer {
         TransactionEvent.PayloadRaw payload = TransactionEvent.of(outputEvent.tid(), outputEvent.batch(), outputEvent.outputQueue(), objStr, precedenceMap);
 
         if(this.options.logging) {
-            RandomAccessFile raf = this.loggingFileMap.computeIfAbsent(Thread.currentThread().threadId(), this::setUpLoggingFile);
-            this.writeToLog(raf, payload);
+            RandomAccessFile raf = this.loggingFileMap.computeIfAbsent(Thread.currentThread().threadId(), threadId -> LoggingHandlerBuilder.setUpLoggingFile(me.identifier, threadId));
+            LoggingHandlerBuilder.writeToLog(raf, payload);
         }
 
         for(IVmsContainer consumerVmsContainer : consumerVMSs) {
@@ -424,10 +380,10 @@ public final class VmsEventHandler extends ModbHttpServer {
                 MultiVmsContainer multiVmsContainer = new MultiVmsContainer(consumerVmsWorker, node, this.options.numVmsWorkers);
                 this.consumerVmsContainerMap.put(node, multiVmsContainer);
             }
-            // add to tracked VMSs
+            // add to tracked VMSes
             for (String outputEvent : outputEvents) {
                 LOGGER.log(INFO,me.identifier+ " adding "+outputEvent+" to consumers map with "+node.identifier);
-                this.eventToConsumersMap.computeIfAbsent(outputEvent, (ignored) -> new ArrayList<>());
+                this.eventToConsumersMap.computeIfAbsent(outputEvent, _ -> new ArrayList<>());
                 this.eventToConsumersMap.get(outputEvent).add(consumerVmsWorker);
             }
         } else {
