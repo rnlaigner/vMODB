@@ -98,7 +98,7 @@ public final class CoordinatorTest {
 
         var txWorker = TransactionWorker.build(1, txInputQueue, 1, MAX_NUM_TID_BATCH, 1000,
                 1, precedenceMapInputQueue, precedenceMapOutputQueue, transactionMap, vmsNodePerDAG,
-                workers, new ConcurrentLinkedQueue<>(), serdes );
+                workers, new ConcurrentLinkedQueue<>(), serdes, false);
 
         var input1 = new TransactionInput("customer_checkout", new TransactionInput.Event("customer_checkout", ""));
         txInputQueue.add(input1);
@@ -211,7 +211,7 @@ public final class CoordinatorTest {
 
         var txWorker = TransactionWorker.build(1, txInputQueue, 11, MAX_NUM_TID_BATCH, 1000,
                 1, precedenceMapInputQueue, precedenceMapOutputQueue, transactionMap, vmsNodePerDAG,
-                workers, new ConcurrentLinkedQueue<>(), VmsSerdesProxyBuilder.build() );
+                workers, new ConcurrentLinkedQueue<>(), VmsSerdesProxyBuilder.build(), false);
 
         // queue two pending inputs
         var input1 = new TransactionInput("update_price", new TransactionInput.Event("update_price", ""));
@@ -289,7 +289,7 @@ public final class CoordinatorTest {
 
             var txWorker = TransactionWorker.build(idx, txInputQueue, initTid, MAX_NUM_TID_BATCH, 1000,
                     numWorkers, precedenceMapInputQueue, precedenceMapOutputQueue, transactionMap,
-                    vmsNodesPerDAG, workers, coordinatorQueue, serdesProxy);
+                    vmsNodesPerDAG, workers, coordinatorQueue, serdesProxy, false);
             var txWorkerThread = Thread.ofPlatform().factory().newThread(txWorker);
 
             initTid = initTid + MAX_NUM_TID_BATCH;
@@ -340,11 +340,11 @@ public final class CoordinatorTest {
 
         var txWorker1 = TransactionWorker.build(1, txInputQueue1, 1, MAX_NUM_TID_BATCH, batchWindow,
                 2, precedenceMapQueue1, precedenceMapQueue2, transactionMap, vmsNodesPerDAG, workers,
-                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+                coordinatorQueue, VmsSerdesProxyBuilder.build(), false );
 
         var txWorker2 = TransactionWorker.build(2, txInputQueue2, 11, MAX_NUM_TID_BATCH, batchWindow,
                 2, precedenceMapQueue2, precedenceMapQueue1, transactionMap, vmsNodesPerDAG, workers,
-                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+                coordinatorQueue, VmsSerdesProxyBuilder.build(), false );
 
         buildAndQueueStarterPrecedenceMap(precedenceMapQueue1);
 
@@ -399,11 +399,11 @@ public final class CoordinatorTest {
 
         var txWorker1 = TransactionWorker.build(1, txInputQueue1, 1, MAX_NUM_TID_BATCH, 1000,
                 2, precedenceMapQueue1, precedenceMapQueue2, transactionMap, vmsNodesPerDAG, workers,
-                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+                coordinatorQueue, VmsSerdesProxyBuilder.build(), false );
 
         var txWorker2 = TransactionWorker.build(2, txInputQueue2, 11, MAX_NUM_TID_BATCH, 1000,
                 2, precedenceMapQueue2, precedenceMapQueue1, transactionMap, vmsNodesPerDAG, workers,
-                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+                coordinatorQueue, VmsSerdesProxyBuilder.build(), false );
 
         buildAndQueueStarterPrecedenceMap(precedenceMapQueue1);
 
@@ -457,11 +457,11 @@ public final class CoordinatorTest {
 
         var txWorker1 = TransactionWorker.build(1, txInputQueue1, 1, MAX_NUM_TID_BATCH, 1000,
                 2, precedenceMapQueue1, precedenceMapQueue2, transactionMap, vmsNodesPerDAG, workers,
-                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+                coordinatorQueue, VmsSerdesProxyBuilder.build(), false );
 
         var txWorker2 = TransactionWorker.build(2, txInputQueue2, 11, MAX_NUM_TID_BATCH, 1000,
                 2, precedenceMapQueue2, precedenceMapQueue1, transactionMap, vmsNodesPerDAG, workers,
-                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+                coordinatorQueue, VmsSerdesProxyBuilder.build(), false );
 
         buildAndQueueStarterPrecedenceMap(precedenceMapQueue1);
 
@@ -505,7 +505,7 @@ public final class CoordinatorTest {
         Queue<Object> coordinatorQueue = new ConcurrentLinkedDeque<>();
         var txWorker = TransactionWorker.build(1, txInputQueue, 1, MAX_NUM_TID_BATCH, 1000,
                 1, precedenceMapQueue, precedenceMapQueue, transactionMap, vmsNodesPerDAG, workers,
-                coordinatorQueue, VmsSerdesProxyBuilder.build() );
+                coordinatorQueue, VmsSerdesProxyBuilder.build(), false );
 
         buildAndQueueStarterPrecedenceMap(precedenceMapQueue);
 

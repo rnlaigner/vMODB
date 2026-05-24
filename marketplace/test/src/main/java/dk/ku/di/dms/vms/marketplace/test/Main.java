@@ -381,7 +381,7 @@ public final class Main {
             }
             var txWorker = TransactionWorker.build(idx, txInputQueues.get(idx-1), initTid, maxNumTidBatch, batch_windows_ms,
                     numWorkers, precedenceMapInputQueue, precedenceMapOutputQueue, transactionMap,
-                    vmsNodePerDAG, workers, coordinatorQueue, serdesProxy);
+                    vmsNodePerDAG, workers, coordinatorQueue, serdesProxy, false);
             initTid = initTid + maxNumTidBatch;
             precedenceMapInputQueue = precedenceMapOutputQueue;
             idx++;
