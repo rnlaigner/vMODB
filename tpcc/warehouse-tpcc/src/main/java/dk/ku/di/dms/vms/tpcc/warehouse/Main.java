@@ -23,7 +23,11 @@ public final class Main {
         String numWareStr = prop.getProperty("num_ware");
         int num_ware = Integer.parseInt(numWareStr);
         // fixed
-        prop.setProperty("max_records.warehouse", numWareStr);
+        if(num_ware <= 16) {
+            prop.setProperty("max_records.warehouse", numWareStr);
+        } else {
+            prop.setProperty("max_records.warehouse", String.valueOf(num_ware * 2));
+        }
         // variable
         int numDistrict = num_ware * 10;
         prop.setProperty("max_records.district", String.valueOf(numDistrict));

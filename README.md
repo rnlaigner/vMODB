@@ -57,8 +57,6 @@ Then you can just run the following command:
 mvn clean package -DskipTests=true
 ```
 
-To run, test, and debug applications in an IDE like IntelliJ:
-
 To run the Online Marketplace benchmark, for each submodule under `marketplace` , use the following VM parameters:
 ```
 --enable-preview

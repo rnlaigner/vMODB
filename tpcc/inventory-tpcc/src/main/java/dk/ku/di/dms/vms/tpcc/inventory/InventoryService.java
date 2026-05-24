@@ -41,7 +41,7 @@ public final class InventoryService {
         }
         int[] itemIds = this.stockRepository.getStockCount(in.itemsIds, in.w_id, threshold);
         if(itemIds.length == 0) {
-            LOGGER.log(WARNING, "Input event StockLevelOrdOut led to empty stock items:\n"+in);
+            LOGGER.log(DEBUG, "Input event StockLevelOrdOut led to empty stock items:\n"+in);
             if(STOCK_LEVEL_CORRECTNESS_CHECKING) {
                 // check if they can be queried and whether the filter is correct
                 for(int i = 0; i < in.itemsIds.length; i++){
