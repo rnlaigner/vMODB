@@ -44,8 +44,12 @@ public final class Main {
         Coordinator coordinator = null;
         final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
         int numTerminals = Integer.parseInt(PROPERTIES.get("num_terminals").toString());
-        if(numTerminals == 0 || numTerminals > numWare) {
+        if(numTerminals <= 0 || numTerminals > numWare) {
             numTerminals = numWare;
+        }
+        int numMaxTxBatch = Integer.parseInt(PROPERTIES.get("num_max_input_transactions_sec").toString());
+        if(numMaxTxBatch <= 0) {
+            numMaxTxBatch = Integer.parseInt(PROPERTIES.get("num_max_transactions_batch").toString());
         }
         final boolean truncate = Boolean.parseBoolean(PROPERTIES.getProperty("checkpointing_truncate"));
         List<Map<String, Iterator<Object>>> input;
@@ -129,7 +133,7 @@ public final class Main {
                             runTime = 10000;
                             break;
                         }
-                        runTime = Integer.parseInt(scanner.nextLine());
+                        runTime = Integer.parseInt(runTimeStr);
                         if (runTime == 0) runTime = 10000;
                         if(runTime < (batchWindow * 2)){
                             System.out.print("Duration must be at least 2 * "+batchWindow+" (ms)\n");
@@ -170,7 +174,7 @@ public final class Main {
                     // prevent log pollution, i.e., interleaving of handshaking and experiment messages
                     try { Thread.sleep(100); } catch (InterruptedException _) { }
 
-                    ExperimentUtils.ExperimentStats expStats = ExperimentUtils.runExperiment(coordinator, txRatio, input, runTime, warmUp, numTerminals);
+                    ExperimentUtils.ExperimentStats expStats = ExperimentUtils.runExperiment(coordinator, txRatio, input, runTime, warmUp, numTerminals, numMaxTxBatch);
                     ExperimentUtils.writeResultsToFile(numWare, expStats, runTime, warmUp,
                             coordinator.getOptions().getNumTransactionWorkers(), coordinator.getOptions().getBatchWindow(), coordinator.getOptions().getMaxTransactionsPerBatch(), txRatio, numTxInputPerType, PROPERTIES.getProperty("logging"), PROPERTIES.getProperty("checkpointing"));
                     break;

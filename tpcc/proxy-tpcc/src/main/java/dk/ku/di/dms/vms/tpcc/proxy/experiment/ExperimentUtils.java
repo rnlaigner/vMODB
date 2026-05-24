@@ -36,7 +36,7 @@ public final class ExperimentUtils {
 
     private static int prevExperimentLastTID = 0;
 
-    public static ExperimentStats runExperiment(Coordinator coordinator, Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, int runTime, int warmUp, int numTerminals) {
+    public static ExperimentStats runExperiment(Coordinator coordinator, Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, int runTime, int warmUp, int numTerminals, int maxInputPerSec) {
 
         // provide a consumer to avoid depending on the coordinator
         Function<Object, Long> inputResolverFunc = tpccInputBuilder(coordinator);
@@ -54,7 +54,7 @@ public final class ExperimentUtils {
         }
 
         int fullRuntime = runTime + warmUp;
-        WorkloadUtils.WorkloadStats workloadStats = WorkloadUtils.submitWorkload(txRatio, input, inputResolverFunc, fullRuntime, numTerminals);
+        WorkloadUtils.WorkloadStats workloadStats = WorkloadUtils.submitWorkload(txRatio, input, inputResolverFunc, fullRuntime, numTerminals, maxInputPerSec);
 
         // avoid submitting after experiment termination
         coordinator.clearTransactionInputs();

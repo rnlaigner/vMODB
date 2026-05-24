@@ -100,7 +100,7 @@ public final class WorkloadUtils {
     public record WorkloadStats(long initTs, long actualEndTs, Map<Long, List<Long>>[] submitted){}
 
     @SuppressWarnings("unchecked")
-    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> inputResolverFunc, int runTime, int numTerminals) {
+    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> inputResolverFunc, int runTime, int numTerminals, int maxInputPerSec) {
         LOGGER.log(INFO, "Submitting transactions through "+ numTerminals +" worker(s)");
         CountDownLatch allThreadsStart = new CountDownLatch(numTerminals +1);
         CountDownLatch allThreadsAreDone = new CountDownLatch(numTerminals);
@@ -110,7 +110,7 @@ public final class WorkloadUtils {
             final Map<String, Iterator<Object>> workerInput = input.get(i);
             int finalI = i;
             Thread thread = new Thread(()-> submittedArray[finalI] =
-                            Worker.run(allThreadsStart, allThreadsAreDone, txRatio, workerInput, inputResolverFunc, runTime));
+                            Worker.run(allThreadsStart, allThreadsAreDone, txRatio, workerInput, inputResolverFunc, runTime, maxInputPerSec));
             thread.start();
         }
 
@@ -136,7 +136,7 @@ public final class WorkloadUtils {
 
     private static final class Worker {
 
-        public static Map<Long, List<Long>> run(CountDownLatch allThreadsStart, CountDownLatch allThreadsAreDone, Tuple<Integer, String>[] txRatio, Map<String, Iterator<Object>> input, Function<Object, Long> inputResolverFunc, int runTime) {
+        public static Map<Long, List<Long>> run(CountDownLatch allThreadsStart, CountDownLatch allThreadsAreDone, Tuple<Integer, String>[] txRatio, Map<String, Iterator<Object>> input, Function<Object, Long> inputResolverFunc, int runTime, int maxInputPerSec) {
             Map<Long, List<Long>> startTsMap = new HashMap<>();
             Map<String, Integer> histogram = new HashMap<>(txRatio.length);
             for (Tuple<Integer, String> integerStringTuple : txRatio) {
@@ -154,7 +154,9 @@ public final class WorkloadUtils {
             }
             String tx = null;
             int ratio;
+            int numSubmitted = 0;
             final long initTs = System.currentTimeMillis();
+            long prevPipelineTs = initTs;
             long currentTs = initTs;
             do {
 
@@ -184,11 +186,21 @@ public final class WorkloadUtils {
                         break;
                     }
                      */
+                    numSubmitted++;
+                    currentTs = System.currentTimeMillis();
+                    if(numSubmitted == maxInputPerSec) {
+                        long elapsedBatchTs = currentTs - prevPipelineTs;
+                        if(elapsedBatchTs < 1000) {
+                            Thread.sleep(1000 - elapsedBatchTs);
+                            currentTs = System.currentTimeMillis();
+                        }
+                        prevPipelineTs = currentTs;
+                        numSubmitted = 0;
+                    }
                 } catch (Exception e) {
                     LOGGER.log(ERROR,"Exception in Thread ID: " + (e.getMessage() == null ? "No message" : e.getMessage()));
                     throw new RuntimeException(e);
                 }
-                currentTs = System.currentTimeMillis();
                 tx = null;
             } while (currentTs - initTs < runTime);
             LOGGER.log(INFO,"Worker run (Thread ID) " + threadId + " finished");
