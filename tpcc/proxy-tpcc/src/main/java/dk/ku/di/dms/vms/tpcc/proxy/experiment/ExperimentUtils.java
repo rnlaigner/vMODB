@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 
 import static java.lang.System.Logger.Level.INFO;
@@ -34,9 +35,11 @@ public final class ExperimentUtils {
 
     private static boolean CONSUMER_REGISTERED = false;
 
-    private static int prevExperimentLastTID = 0;
+    private static int PREV_EXP_LAST_TID = 0;
 
-    public static ExperimentStats runExperiment(Coordinator coordinator, Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, int runTime, int warmUp, int numTerminals, int maxInputPerSec) {
+    private static Semaphore[] SEMAPHORES;
+
+    public static ExperimentStats runExperiment(Coordinator coordinator, Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, int runTime, int warmUp, int numTerminals, int pipelineSize) {
 
         // provide a consumer to avoid depending on the coordinator
         Function<Object, Long> inputResolverFunc = tpccInputBuilder(coordinator);
@@ -44,25 +47,32 @@ public final class ExperimentUtils {
         if(CONSUMER_REGISTERED) {
             // clean up possible entries from previous run
             BATCH_TO_FINISHED_TS_MAP.keySet().stream().max(Long::compareTo).ifPresent(
-                    highestKey -> prevExperimentLastTID = (int) BATCH_TO_FINISHED_TS_MAP.get(highestKey).lastTid);
+                    highestKey -> PREV_EXP_LAST_TID = (int) BATCH_TO_FINISHED_TS_MAP.get(highestKey).lastTid);
             BATCH_TO_FINISHED_TS_MAP.clear();
         } else {
-            coordinator.registerBatchCommitConsumer((batchId, tid) -> BATCH_TO_FINISHED_TS_MAP.put(
-                    batchId,
-                    new BatchStats(batchId, tid, System.currentTimeMillis())));
+            coordinator.registerBatchCommitConsumer((batchId, lastTid) -> BATCH_TO_FINISHED_TS_MAP.put(
+                    batchId, new BatchStats(batchId, lastTid, System.currentTimeMillis())));
+
+            SEMAPHORES = new Semaphore[numTerminals];
+            for (int i = 0; i < numTerminals; i++) {
+                final Semaphore semaphore = new Semaphore(0);
+                SEMAPHORES[i] = semaphore;
+                coordinator.registerBatchCommitConsumer((_, _) -> semaphore.release());
+            }
+
             CONSUMER_REGISTERED = true;
         }
 
         int fullRuntime = runTime + warmUp;
-        WorkloadUtils.WorkloadStats workloadStats = WorkloadUtils.submitWorkload(txRatio, input, inputResolverFunc, fullRuntime, numTerminals, maxInputPerSec);
+        WorkloadUtils.WorkloadStats workloadStats = WorkloadUtils.submitWorkload(txRatio, input, inputResolverFunc, fullRuntime, numTerminals, pipelineSize, SEMAPHORES);
 
         // avoid submitting after experiment termination
         coordinator.clearTransactionInputs();
         LOGGER.log(INFO,"Transaction input queue(s) cleared.");
 
-        long numTIDsSubmitted = coordinator.getNumTIDsSubmitted(prevExperimentLastTID + 1);
+        long numTIDsSubmitted = coordinator.getNumTIDsSubmitted(PREV_EXP_LAST_TID + 1);
         long actualRunTime = workloadStats.actualEndTs() - workloadStats.initTs();
-        double txSubPerSec = numTIDsSubmitted / ((double) actualRunTime / 1000L);
+        double txSubPerSec = (numTIDsSubmitted / ((double) actualRunTime / 1000L)) / numTerminals;
 
         if(BATCH_TO_FINISHED_TS_MAP.isEmpty()) {
             LOGGER.log(WARNING, "No batch of transactions completed!");
@@ -81,7 +91,7 @@ public final class ExperimentUtils {
         for(Map.Entry<Long, ExperimentUtils.BatchStats> batchStat : BATCH_TO_FINISHED_TS_MAP.entrySet()){
             if(batchStat.getValue().endTs < initTs) {
                 prevBatchStats = batchStat.getValue();
-                numCompletedDuringWarmUp = (int) prevBatchStats.lastTid - prevExperimentLastTID;
+                numCompletedDuringWarmUp = (int) prevBatchStats.lastTid - PREV_EXP_LAST_TID;
                 continue;
             }
             break;
@@ -103,7 +113,7 @@ public final class ExperimentUtils {
             prevBatchStats = currBatchStats;
         }
 
-        numCompletedWithWarmUp = (int) prevBatchStats.lastTid - prevExperimentLastTID;
+        numCompletedWithWarmUp = (int) prevBatchStats.lastTid - PREV_EXP_LAST_TID;
         numCompleted = numCompletedWithWarmUp - numCompletedDuringWarmUp;
         long usefulRuntime = prevBatchStats.endTs - firstBatchStats.endTs;
 

@@ -44,15 +44,14 @@ public final class Main {
         Coordinator coordinator = null;
         final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
         int numTerminals = Integer.parseInt(PROPERTIES.get("num_terminals").toString());
+        int pipelineSize = Integer.parseInt(PROPERTIES.get("pipeline_size").toString());
+
         if(numTerminals <= 0 || numTerminals > numWare) {
             numTerminals = numWare;
         }
-        int maxInputTxSec = Integer.parseInt(PROPERTIES.get("num_max_input_transactions_sec").toString());
-        if(maxInputTxSec <= 0) {
-            maxInputTxSec = Integer.parseInt(PROPERTIES.get("num_max_transactions_batch").toString());
-            if(numTerminals > 1) {
-                maxInputTxSec = maxInputTxSec / numTerminals;
-            }
+        if(pipelineSize <= 0) {
+            int numMaxTransactionsBatch = Integer.parseInt( PROPERTIES.getProperty("num_max_transactions_batch") );
+            pipelineSize = numMaxTransactionsBatch / numTerminals;
         }
         final boolean truncate = Boolean.parseBoolean(PROPERTIES.getProperty("checkpointing_truncate"));
         List<Map<String, Iterator<Object>>> input;
@@ -177,7 +176,8 @@ public final class Main {
                     // prevent log pollution, i.e., interleaving of handshaking and experiment messages
                     try { Thread.sleep(100); } catch (InterruptedException _) { }
 
-                    ExperimentUtils.ExperimentStats expStats = ExperimentUtils.runExperiment(coordinator, txRatio, input, runTime, warmUp, numTerminals, maxInputTxSec);
+                    ExperimentUtils.ExperimentStats expStats = ExperimentUtils.runExperiment(coordinator, txRatio, input, runTime, warmUp, numTerminals, pipelineSize);
+
                     ExperimentUtils.writeResultsToFile(numWare, expStats, runTime, warmUp,
                             coordinator.getOptions().getNumTransactionWorkers(), coordinator.getOptions().getBatchWindow(), coordinator.getOptions().getMaxTransactionsPerBatch(), txRatio, numTxInputPerType, PROPERTIES.getProperty("logging"), PROPERTIES.getProperty("checkpointing"));
                     break;
@@ -190,7 +190,7 @@ public final class Main {
                     System.out.println("VMS states cleaned.");
                     break;
                 case "6":
-                    System.out.println("Option 5: \"Reset VMS states\" selected.");
+                    System.out.println("Option 6: \"Reset VMS states\" selected.");
                     // has to wait for all submitted transactions to commit in order to send the reset
                     if (checkCompleteness(coordinator, scanner)) break;
                     DataLoadUtils.cleanup(true);

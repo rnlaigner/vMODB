@@ -23,14 +23,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.nuRand;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.DataGenUtils.randomNumber;
 import static dk.ku.di.dms.vms.tpcc.common.datagen.TPCcConstants.*;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.ERROR;
+import static java.lang.System.Logger.Level.INFO;
 
 public final class WorkloadUtils {
 
@@ -100,9 +101,9 @@ public final class WorkloadUtils {
     public record WorkloadStats(long initTs, long actualEndTs, Map<Long, List<Long>>[] submitted){}
 
     @SuppressWarnings("unchecked")
-    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> inputResolverFunc, int runTime, int numTerminals, int maxInputPerSec) {
+    public static WorkloadStats submitWorkload(Tuple<Integer, String>[] txRatio, List<Map<String, Iterator<Object>>> input, Function<Object, Long> inputResolverFunc, int runTime, int numTerminals, int pipelineSize, Semaphore[] semaphores) {
         LOGGER.log(INFO, "Submitting transactions through "+ numTerminals +" worker(s)");
-        CountDownLatch allThreadsStart = new CountDownLatch(numTerminals +1);
+        CountDownLatch allThreadsStart = new CountDownLatch(numTerminals + 1);
         CountDownLatch allThreadsAreDone = new CountDownLatch(numTerminals);
         Map<Long, List<Long>>[] submittedArray = new Map[numTerminals];
 
@@ -110,7 +111,7 @@ public final class WorkloadUtils {
             final Map<String, Iterator<Object>> workerInput = input.get(i);
             int finalI = i;
             Thread thread = new Thread(()-> submittedArray[finalI] =
-                            Worker.run(allThreadsStart, allThreadsAreDone, txRatio, workerInput, inputResolverFunc, runTime, maxInputPerSec));
+                            Worker.run(allThreadsStart, allThreadsAreDone, semaphores[finalI], txRatio, workerInput, inputResolverFunc, runTime, pipelineSize));
             thread.start();
         }
 
@@ -132,88 +133,6 @@ public final class WorkloadUtils {
         }
 
         return new WorkloadStats(initTs, endTs, submittedArray);
-    }
-
-    private static final class Worker {
-
-        public static Map<Long, List<Long>> run(CountDownLatch allThreadsStart, CountDownLatch allThreadsAreDone, Tuple<Integer, String>[] txRatio, Map<String, Iterator<Object>> input, Function<Object, Long> inputResolverFunc, int runTime, int maxInputPerSec) {
-            Map<Long, List<Long>> startTsMap = new HashMap<>();
-            Map<String, Integer> histogram = new HashMap<>(txRatio.length);
-            for (Tuple<Integer, String> integerStringTuple : txRatio) {
-                histogram.put(integerStringTuple.t2, 0);
-            }
-            ThreadLocalRandom random = ThreadLocalRandom.current();
-            long threadId = Thread.currentThread().threadId();
-            LOGGER.log(INFO,"Worker run (Thread ID) " + threadId + " started");
-            allThreadsStart.countDown();
-            try {
-                allThreadsStart.await();
-            } catch (InterruptedException e) {
-                LOGGER.log(ERROR, "Thread ID "+threadId+" failed to await start");
-                throw new RuntimeException(e);
-            }
-            String tx = null;
-            int ratio;
-            int numSubmitted = 0;
-            final long initTs = System.currentTimeMillis();
-            long prevPipelineTs = initTs;
-            long currentTs = initTs;
-            do {
-
-                ratio = random.nextInt(1,101);
-                for (Tuple<Integer, String> txEntry : txRatio) {
-                    if (ratio <= txEntry.t1) {
-                        tx = txEntry.t2;
-                        break;
-                    }
-                }
-
-                try {
-                    if(!input.get(tx).hasNext()){
-                        LOGGER.log(WARNING,"Not enough transaction inputs for: "+tx+". Closing submission loop earlier...");
-                        break;
-                    }
-                    long batchId = inputResolverFunc.apply(input.get(tx).next());
-                    if(!startTsMap.containsKey(batchId)){
-                        startTsMap.put(batchId, new ArrayList<>());
-                    }
-                    startTsMap.get(batchId).add(currentTs);
-                    histogram.computeIfPresent(tx, (_, v)-> v+1);
-                    /* only for local tests
-                    if(histogram.get(tx) == 200_000) {
-                        LOGGER.log(WARNING,"200K transaction inputs for: "+tx+" hit. Closing submission loop earlier...");
-                        Thread.sleep(runTime - (System.currentTimeMillis() - initTs));
-                        break;
-                    }
-                     */
-                    numSubmitted++;
-                    currentTs = System.currentTimeMillis();
-                    if(numSubmitted == maxInputPerSec) {
-                        long elapsedBatchTs = currentTs - prevPipelineTs;
-                        if(elapsedBatchTs < 1000) {
-                            Thread.sleep(1000 - elapsedBatchTs);
-                            currentTs = System.currentTimeMillis();
-                        }
-                        prevPipelineTs = currentTs;
-                        numSubmitted = 0;
-                    }
-                } catch (Exception e) {
-                    LOGGER.log(ERROR,"Exception in Thread ID: " + (e.getMessage() == null ? "No message" : e.getMessage()));
-                    throw new RuntimeException(e);
-                }
-                tx = null;
-            } while (currentTs - initTs < runTime);
-            LOGGER.log(INFO,"Worker run (Thread ID) " + threadId + " finished");
-
-            StringBuilder output = new StringBuilder("Worker run (Thread ID) " + threadId + " histogram:\n");
-            for(var e : histogram.entrySet()){
-                output.append(e.getKey()).append(": ").append(e.getValue()).append("\n");
-            }
-            System.out.println(output);
-
-            allThreadsAreDone.countDown();
-            return startTsMap;
-        }
     }
 
     public static List<Map<String, Iterator<Object>>> mapWorkloadInputFiles(int numWare, Map<String, Integer> txRatioMap){

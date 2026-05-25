@@ -51,7 +51,7 @@ public final class WarehouseService {
         }
         List<Customer> customers = this.customerRepository.lookupByKeys(customerIds);
         if(customers.isEmpty()) {
-            LOGGER.log(WARNING, "No customers found for w_id "+ in.w_id);
+            LOGGER.log(ERROR, "[Delivery] No customers found for w_id "+ in.w_id);
             // customers = this.customerRepository.lookupByKeys(customerIds);
             return;
         }
@@ -89,14 +89,16 @@ public final class WarehouseService {
         if(in.by_name){
             List<Customer> customers = this.customerRepository.getCustomerByLastName(in.c_d_id, in.c_w_id, in.c_last);
             if(customers.isEmpty()){
-                throw new RuntimeException("Empty customer list\nc_d_id: %d c_w_id: %d c_last: %s\n".formatted(in.c_d_id, in.c_w_id, in.c_last));
+                LOGGER.log(ERROR, "[Payment] Empty customer by last name (c_d_id: %d | c_w_id: %d | c_last: %s)".formatted(in.c_d_id, in.c_w_id, in.c_last));
+                customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.c_d_id, in.c_w_id));
+            } else {
+                int index = customers.size() / 2;
+                if (customers.size() % 2 == 0) {
+                    index -= 1;
+                }
+                customer = customers.get(index);
+                // LOGGER.log(DEBUG, customers);
             }
-            int index = customers.size() / 2;
-            if (customers.size() % 2 == 0) {
-                index -= 1;
-            }
-            customer = customers.get(index);
-            // LOGGER.log(DEBUG, customers);
         } else {
             customer = this.customerRepository.lookupByKey(new Customer.CustomerId(in.c_id, in.c_d_id, in.c_w_id));
             // LOGGER.log(DEBUG, customer);
