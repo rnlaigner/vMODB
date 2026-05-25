@@ -136,6 +136,7 @@ public final class VmsApplication {
                 vmsMetadata.queueToVmsTransactionMap(),
                 transactionManager,
                 eventHandler::processOutputEvent,
+                eventHandler::processAbort,
                 options.vmsThreadPoolSize());
 
         return new VmsApplication(vmsName, vmsMetadata, catalog, eventHandler, transactionManager, transactionScheduler, vmsInternalPubSubService);

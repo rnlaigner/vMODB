@@ -74,7 +74,7 @@ public final class TransactionWorker extends StoppableRunnable {
      */
     @SuppressWarnings("ToArrayCallWithZeroLengthArrayArgument")
     public static TransactionWorker build(int id, Deque<TransactionInput> inputQueue,
-                                          long startingTid, int maxNumberOfTIDsBatch,
+                                          long startingBatch, long startingTid, int maxNumberOfTIDsBatch,
                                           int batchWindow, int numWorkers,
                                           Queue<Map<String, PrecedenceInfo>> precedenceMapInputQueue,
                                           Queue<Map<String, PrecedenceInfo>> precedenceMapOutputQueue,
@@ -102,13 +102,14 @@ public final class TransactionWorker extends StoppableRunnable {
             }
             vmsPerTransactionMap.put(txEntry.getKey(), list.toArray(new VmsTracking[list.size()]));
         }
-        return new TransactionWorker(id, inputQueue, startingTid, maxNumberOfTIDsBatch, batchWindow, numWorkers,
+        return new TransactionWorker(
+                id, inputQueue, startingBatch, startingTid, maxNumberOfTIDsBatch, batchWindow, numWorkers,
                 precedenceMapInputQueue, precedenceMapOutputQueue, transactionMap,
                 vmsPerTransactionMap, vmsTrackingMap, vmsWorkerContainerMap, coordinatorQueue, serdesProxy, logging);
     }
 
     private TransactionWorker(int id, Deque<TransactionInput> inputQueue,
-                              long startingTidBatch, int maxNumberOfTIDsBatch, int batchWindow, int numWorkers,
+                              long startingBatch, long startingTidBatch, int maxNumberOfTIDsBatch, int batchWindow, int numWorkers,
                               Queue<Map<String, PrecedenceInfo>> precedenceMapInputQueue,
                               Queue<Map<String, PrecedenceInfo>> precedenceMapOutputQueue,
                               Map<String, TransactionDAG> transactionMap, Map<String, VmsTracking[]> vmsPerTransactionMap,
@@ -133,7 +134,7 @@ public final class TransactionWorker extends StoppableRunnable {
         this.precedenceMapCache = new HashMap<>();
 
         // define first batch context based on data from constructor
-        this.currBatchContext = new BatchContext((startingTidBatch + maxNumberOfTIDsBatch - 1) / maxNumberOfTIDsBatch);
+        this.currBatchContext = new BatchContext(startingBatch);
         this.lastBatchContext = new BatchContext(0);
         this.lastBatchContext.lastTid = 0;
         this.lastBatchContext.numTIDsOverall = 0;

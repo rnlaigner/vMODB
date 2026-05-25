@@ -6,6 +6,6 @@ public interface ISchedulerCallback {
 
     void success(ExecutionModeEnum executionMode, OutboundEventResult outboundEventResult);
 
-    void error(ExecutionModeEnum executionMode, long tid, Exception e);
+    void error(ExecutionModeEnum executionMode, long batch, long tid, Exception e);
 
 }

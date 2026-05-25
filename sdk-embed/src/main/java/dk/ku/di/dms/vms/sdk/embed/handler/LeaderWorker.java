@@ -153,8 +153,10 @@ final class LeaderWorker extends StoppableRunnable {
     }
 
     private void sendTransactionAbort(TransactionAbort.Payload payload) {
+        this.acquireLock();
         TransactionAbort.write( this.writeBuffer, payload );
         this.write(payload);
+        this.releaseLock();
     }
 
     @SuppressWarnings("StatementWithEmptyBody")

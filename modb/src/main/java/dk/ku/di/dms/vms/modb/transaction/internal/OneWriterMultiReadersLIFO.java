@@ -45,7 +45,7 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
         if(this.head == null) return null;
         Entry<K,V> curr = this.head;
         int cmp = curr.key.compareTo(key);
-        while(cmp > 0){
+        while(cmp > 0) {
             curr = curr.next;
             if(curr == null) break;
             cmp = curr.key.compareTo(key);
@@ -60,12 +60,12 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
      * Not safe if there are concurrent writers and the entry returned is the head
      * @param key node identifier
      */
-    public final void removeUpToEntry(K key){
+    public final void removeUpToEntry(K key) {
         final Entry<K,V> entryToReturn = this.floorEntry(key);
         this.removeChildren(entryToReturn);
     }
 
-    public final void removeChildren(final Entry<K,V> entry){
+    public final void removeChildren(final Entry<K,V> entry) {
         Entry<K,V> currFloorEntry = entry;
         Entry<K,V> auxEntry;
         while(currFloorEntry.next != null){
@@ -76,7 +76,19 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
         }
     }
 
-    public final void clear(){
+    public final void removeUntilEntry(final K key) {
+        Entry<K,V> currHead = this.head;
+        while(currHead != null) {
+            if(currHead.key.compareTo(key) >= 0) {
+                this.head = currHead.next;
+                currHead = head.next;
+            } else {
+                break;
+            }
+        }
+    }
+
+    public final void clear() {
         if(this.head == null) return;
         Entry<K,V> current = this.head;
         Entry<K,V> next;
@@ -88,7 +100,7 @@ public sealed class OneWriterMultiReadersLIFO<K extends Comparable<K>,V> permits
     }
 
     @Override
-    public final String toString(){
+    public final String toString() {
         Entry<K, V> current = this.head;
         if(current == null) return "";
         String lineSeparator = System.lineSeparator();

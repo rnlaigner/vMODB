@@ -87,16 +87,16 @@ public final class VmsTransactionTaskBuilder {
             return Set.of();
         }
 
-        private void handleGenericError(Exception e, Object input) {
-            LOGGER.log(ERROR, "Error not related to invoking task "+this.toString()+"\n Input event: "+input+"\n"+ e);
+        private void handleGenericError(Exception e) {
+            LOGGER.log(ERROR, "Error not related to invoking task "+this.toString()+"\n Input event: "+this.inputEvent+"\n"+ e);
             e.printStackTrace(System.out);
-            schedulerCallback.error(signature.executionMode(), this.tid, e);
+            schedulerCallback.error(this.signature.executionMode(), this.batch, this.tid, e);
         }
 
-        private void handleErrorOnTask(ReflectiveOperationException e, Object input) {
-            LOGGER.log(ERROR, "Error during invoking task\n TID info:"+this.toString()+"\n Input event: "+input+"\n"+ e);
+        private void handleErrorOnTask(ReflectiveOperationException e) {
+            LOGGER.log(ERROR, "Error during invoking task\n TID info:"+this.toString()+"\n Input event: "+this.inputEvent+"\n"+ e);
             e.printStackTrace(System.out);
-            schedulerCallback.error(signature.executionMode(), this.tid, e);
+            schedulerCallback.error(this.signature.executionMode(), this.batch, this.tid, e);
         }
 
         @Override
@@ -111,9 +111,9 @@ public final class VmsTransactionTaskBuilder {
                 }
                 schedulerCallback.success(this.signature.executionMode(), eventOutput);
             } catch (IllegalAccessException | InvocationTargetException e) {
-                this.handleErrorOnTask(e, this.inputEvent);
+                this.handleErrorOnTask(e);
             } catch (Exception e){
-                this.handleGenericError(e, this.inputEvent);
+                this.handleGenericError(e);
             }
             // avoid returning indexes to pool before committing
             txCtx.release();
@@ -121,6 +121,10 @@ public final class VmsTransactionTaskBuilder {
 
         public long tid() {
             return this.tid;
+        }
+
+        public long batch() {
+            return this.batch;
         }
 
         public long lastTid() {
@@ -183,6 +187,10 @@ public final class VmsTransactionTaskBuilder {
                                     VmsTransactionSignature signature,
                                     Object input){
         return new VmsTransactionTask(tid, lastTid, batch, signature, input);
+    }
+
+    public void rollback(long fromTid) {
+        this.transactionManager.rollback(fromTid);
     }
 
     public VmsTransactionTask buildFinished(long tid){

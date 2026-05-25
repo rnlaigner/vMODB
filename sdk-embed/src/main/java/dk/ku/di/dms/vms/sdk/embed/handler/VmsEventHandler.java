@@ -216,6 +216,12 @@ public final class VmsEventHandler extends ModbHttpServer {
         LOGGER.log(DEBUG,this.me.identifier+": Accept handler setup");
     }
 
+    public void processAbort(TransactionAbort.Payload payload) {
+        LOGGER.log(DEBUG, this.me.identifier + ": Requesting leader worker to send abort: tid " + payload.tid() + " batch" + payload.batch());
+        // must be queued in case leader is off and comes back online
+        this.leaderWorker.queueMessage(payload);
+    }
+
     public void processOutputEvent(IVmsTransactionResult txResult) {
         LOGGER.log(DEBUG,this.me.identifier+": New transaction result in event handler. TID = "+ txResult.tid());
         // it is a void method that executed, nothing to send
@@ -229,6 +235,7 @@ public final class VmsEventHandler extends ModbHttpServer {
             } else {
                 LOGGER.log(ERROR, this.me.identifier + ": No precedence map found for TID: " + txResult.tid());
             }
+
         }
         // scheduler can be way ahead of the last batch committed
         this.updateBatchStats(txResult.getOutboundEventResult());
@@ -326,7 +333,7 @@ public final class VmsEventHandler extends ModbHttpServer {
      * It creates the payload to be sent downstream
      * @param outputEvent the event to be sent to the respective consumer vms
      */
-    private void processOutputEvent(OutboundEventResult outputEvent, String precedenceMap){
+    private void processOutputEvent(OutboundEventResult outputEvent, String precedenceMap) {
         Class<?> clazz = this.vmsMetadata.queueToEventMap().get(outputEvent.outputQueue());
         String objStr = this.serdesProxy.serialize(outputEvent.output(), clazz);
         /*

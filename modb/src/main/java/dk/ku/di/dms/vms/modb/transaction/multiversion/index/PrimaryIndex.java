@@ -387,7 +387,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     /**
      * Called when a constraint is violated, leading to a transaction abort
      */
-    public void undoTransactionWrites(TransactionContext txCtx){
+    public void undoTransactionWrites(TransactionContext txCtx) {
         Set<IKey> writeSet = this.removeWriteSet(txCtx);
         if(writeSet == null) return;
         for(IKey key : writeSet) {
@@ -400,14 +400,14 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     }
 
     @Override
-    public void reset(){
+    public void reset() {
         this.writeSetMap.clear();
         this.rawIndex.reset();
         this.updatesPerKeyMap.clear();
         this.keysToFlush.clear();
     }
 
-    public int checkpoint(long maxTid){
+    public int checkpoint(long maxTid) {
         if(this.keysToFlush.isEmpty() || this.updatesPerKeyMap.isEmpty()) return 0;
         int numRecords = 0;
         this.rawIndex.lock();
@@ -439,7 +439,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         return numRecords;
     }
 
-    public void cleanup(long maxTid){
+    public void cleanup(long maxTid) {
         OperationSetOfKey opSet;
         Entry<Long, TransactionWrite> entry;
         for(Map.Entry<IKey, OperationSetOfKey> keyChain : this.updatesPerKeyMap.entrySet()) {
@@ -449,7 +449,13 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         }
     }
 
-    public void installWrites(TransactionContext txCtx){
+    public void rollback(long fromTid) {
+        for(OperationSetOfKey key : this.updatesPerKeyMap.values()) {
+            key.removeUntilEntry(fromTid);
+        }
+    }
+
+    public void installWrites(TransactionContext txCtx) {
         Set<IKey> writeSet = this.removeWriteSet(txCtx);
         if(writeSet == null) {
             LOGGER.log(WARNING, "Primary Index: Transaction ID "+txCtx.tid+" could not be found in write set. Perhaps concurrent threads are set to the same TID?");
@@ -460,15 +466,15 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         WRITE_SET_BUFFER.addLast(writeSet);
     }
 
-    private void appendWrite(TransactionContext txCtx, IKey key){
+    private void appendWrite(TransactionContext txCtx, IKey key) {
         this.writeSetMap.computeIfAbsent(txCtx.tid, _ -> Objects.requireNonNullElseGet(WRITE_SET_BUFFER.poll(), HashSet::new)).add(key);
     }
 
-    private Set<IKey> removeWriteSet(TransactionContext txCtx){
+    private Set<IKey> removeWriteSet(TransactionContext txCtx) {
         return this.writeSetMap.remove(txCtx.tid);
     }
 
-    public ReadWriteIndex<IKey> underlyingIndex(){
+    public ReadWriteIndex<IKey> underlyingIndex() {
         return this.rawIndex;
     }
 
@@ -485,14 +491,14 @@ public final class PrimaryIndex implements IMultiVersionIndex {
      * 3a. if so, just return the fresh record as next. remember to remove it from the set
      * 3b. otherwise, return the object as it is
      */
-    protected class MultiVersionIterator implements Iterator<Object[]>{
+    protected class MultiVersionIterator implements Iterator<Object[]> {
 
         private final TransactionContext txCtx;
         private final IKey[] keys;
         private int idx = 0;
         private Object[] next;
 
-        public MultiVersionIterator(TransactionContext txCtx, IKey[] keys){
+        public MultiVersionIterator(TransactionContext txCtx, IKey[] keys) {
             this.txCtx = txCtx;
             this.keys = keys;
         }
@@ -528,7 +534,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         }
     }
 
-    public Object[] getRecord(long tid, IKey key){
+    public Object[] getRecord(long tid, IKey key) {
         OperationSetOfKey operation = this.updatesPerKeyMap.get(key);
         if(operation != null){
             Entry<Long, TransactionWrite> entry = operation.floorEntry(tid);
@@ -539,7 +545,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
         return this.rawIndex.lookupByKey(key);
     }
 
-    public Entry<Long, TransactionWrite> getFloorEntry(TransactionContext txCtx, IKey key){
+    public Entry<Long, TransactionWrite> getFloorEntry(TransactionContext txCtx, IKey key) {
         OperationSetOfKey operation = this.updatesPerKeyMap.get(key);
         return operation.floorEntry(txCtx.tid);
     }
@@ -657,7 +663,7 @@ public final class PrimaryIndex implements IMultiVersionIndex {
     }
 
     @Override
-    public boolean isSorted(){
+    public boolean isSorted() {
         return this.updatesPerKeyMap instanceof SortedMap;
     }
 

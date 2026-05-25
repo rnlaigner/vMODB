@@ -53,6 +53,7 @@ public final class VmsEmbedInternalChannels implements IVmsInternalChannels {
     }
 
     @Override
+    @Deprecated
     public BlockingQueue<IVmsTransactionResult> transactionOutputQueue() {
         return this.transactionOutputQueue;
     }

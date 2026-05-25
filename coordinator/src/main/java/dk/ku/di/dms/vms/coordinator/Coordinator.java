@@ -309,7 +309,7 @@ public final class Coordinator extends ModbHttpServer {
         // connect to all virtual microservices
         this.setupStarterVMSs();
         this.preprocessDAGs();
-        this.setUpTransactionWorkers();
+        this.setUpTransactionWorkers(0, 1);
 
         // event loop
         try {
@@ -339,9 +339,8 @@ public final class Coordinator extends ModbHttpServer {
         return precedenceMap;
     }
 
-    private void setUpTransactionWorkers() {
+    private void setUpTransactionWorkers(long initBatch, long initTid) {
         int numWorkers = this.options.getNumTransactionWorkers();
-        long initTid = 1;
 
         ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>> firstPrecedenceInputQueue = new ConcurrentLinkedDeque<>();
         ConcurrentLinkedDeque<Map<String, TransactionWorker.PrecedenceInfo>> precedenceMapInputQueue = firstPrecedenceInputQueue;
@@ -359,7 +358,10 @@ public final class Coordinator extends ModbHttpServer {
                 precedenceMapOutputQueue = firstPrecedenceInputQueue;
             }
             ConcurrentLinkedDeque<TransactionInput> txInputQueue = this.transactionInputDeques.get(idx-1);
-            TransactionWorker txWorker = TransactionWorker.build(idx, txInputQueue, initTid,
+
+            var startingBatch = ((initTid + this.options.getMaxTransactionsPerBatch() - 1) / this.options.getMaxTransactionsPerBatch()) + initBatch;
+
+            TransactionWorker txWorker = TransactionWorker.build(idx, txInputQueue, startingBatch, initTid,
                     this.options.getMaxTransactionsPerBatch(), this.options.getBatchWindow(),
                     numWorkers, precedenceMapInputQueue, precedenceMapOutputQueue, this.transactionMap,
                     this.vmsIdentifiersPerDAG, this.vmsWorkerContainerMap, this.coordinatorQueue, this.serdesProxy, this.options.logging());
@@ -779,6 +781,15 @@ public final class Coordinator extends ModbHttpServer {
             // if(vms.getIdentifier().equalsIgnoreCase( msg.vms() )) continue;
             this.vmsWorkerContainerMap.get(vms.identifier).queueMessage(txAbort.tid());
         }
+
+        // fix transaction workers
+        // simple rule: restart from aborted TiD
+        for(var txWorker : this.transactionWorkers) {
+            txWorker.t1.stop();
+        }
+
+        this.setUpTransactionWorkers(txAbort.batch(), txAbort.tid());
+
     }
 
     private void processBatchComplete(BatchComplete.Payload batchComplete) {

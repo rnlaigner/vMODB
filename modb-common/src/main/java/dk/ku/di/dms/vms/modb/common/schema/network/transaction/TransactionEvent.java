@@ -15,7 +15,7 @@ public final class TransactionEvent {
     // message type | tid | batch | size | event name | size | payload | size | precedence map
     private static final int FIXED_LENGTH = (2 * Long.BYTES) + (3 *  Integer.BYTES);
 
-    public static void write(ByteBuffer buffer, PayloadRaw payload){
+    public static void write(ByteBuffer buffer, PayloadRaw payload) {
         buffer.put(Constants.EVENT);
         // since the original {@PayloadRaw} goes into a batch,
         // it does not take into account the event type and the size of the payload correctly
@@ -28,7 +28,7 @@ public final class TransactionEvent {
         buffer.position(position);
     }
 
-    public static void writeWithinBatch(ByteBuffer buffer, PayloadRaw payload){
+    public static void writeWithinBatch(ByteBuffer buffer, PayloadRaw payload) {
         buffer.putLong( payload.tid );
         buffer.putLong( payload.batch );
         buffer.putInt( payload.event.length );
@@ -39,7 +39,7 @@ public final class TransactionEvent {
         buffer.put( payload.precedenceMap );
     }
 
-    public static Payload read(ByteBuffer buffer){
+    public static Payload read(ByteBuffer buffer) {
         long tid = buffer.getLong();
         long batch = buffer.getLong();
         int eventSize = buffer.getInt();
@@ -87,7 +87,7 @@ public final class TransactionEvent {
     /**
      * <a href="https://www.quora.com/How-many-bytes-can-a-string-hold">Considering UTF-8</a>
      */
-    public static PayloadRaw of(long tid, long batch, String event, String payload, String precedenceMap){
+    public static PayloadRaw of(long tid, long batch, String event, String payload, String precedenceMap) {
         byte[] eventBytes = event.getBytes(StandardCharsets.UTF_8);
         byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
         byte[] precedenceMapBytes = precedenceMap.getBytes(StandardCharsets.UTF_8);

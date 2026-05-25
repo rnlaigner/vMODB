@@ -548,6 +548,24 @@ public final class TransactionManager implements OperationalAPI, ITransactionMan
     }
 
     @Override
+    public void rollback(long fromTid) {
+        LOGGER.log(DEBUG, "Rollback triggered at "+System.currentTimeMillis());
+        for (Table table : this.catalog.values()) {
+            LOGGER.log(DEBUG, "Rollback "+table.name);
+            table.primaryKeyIndex().rollback(fromTid);
+
+//            for(NonUniqueSecondaryIndex secIdx : table.secondaryIndexMap.values()){
+//                secIdx.reset();
+//            }
+//            for(UniqueSecondaryIndex uniqueIdx : table.partialIndexMap.values()){
+//                uniqueIdx.reset();
+//            }
+
+        }
+        LOGGER.log(DEBUG, "Rollback finished at "+System.currentTimeMillis());
+    }
+
+    @Override
     public ITransactionContext beginTransaction(long tid, int identifier, long lastTid, boolean readOnly) {
         return this.txCtxMap.compute(Thread.currentThread().threadId(),
                 (_,v) -> {

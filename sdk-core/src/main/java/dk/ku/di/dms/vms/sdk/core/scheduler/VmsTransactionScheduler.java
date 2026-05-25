@@ -2,6 +2,7 @@ package dk.ku.di.dms.vms.sdk.core.scheduler;
 
 import dk.ku.di.dms.vms.modb.api.enums.ExecutionModeEnum;
 import dk.ku.di.dms.vms.modb.common.runnable.StoppableRunnable;
+import dk.ku.di.dms.vms.modb.common.schema.network.transaction.TransactionAbort;
 import dk.ku.di.dms.vms.modb.common.transaction.ITransactionManager;
 import dk.ku.di.dms.vms.sdk.core.metadata.VmsTransactionMetadata;
 import dk.ku.di.dms.vms.sdk.core.operational.ISchedulerCallback;
@@ -79,7 +80,8 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                                                 BlockingQueue<InboundEvent> transactionInputQueue,
                                                 Map<String, VmsTransactionMetadata> transactionMetadataMap,
                                                 ITransactionManager transactionalHandler,
-                                                Consumer<IVmsTransactionResult> eventHandler,
+                                                Consumer<IVmsTransactionResult> processOutputEvent,
+                                                Consumer<TransactionAbort.Payload> processAbort,
                                                 int vmsThreadPoolSize){
         LOGGER.log(DEBUG, vmsIdentifier+ ": Building transaction scheduler with thread pool size of "+ vmsThreadPoolSize);
         return new VmsTransactionScheduler(
@@ -89,7 +91,8 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                 transactionInputQueue,
                 transactionMetadataMap,
                 transactionalHandler,
-                eventHandler);
+                processOutputEvent,
+                processAbort);
     }
 
     private VmsTransactionScheduler(String vmsIdentifier,
@@ -97,7 +100,8 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                                     BlockingQueue<InboundEvent> transactionInputQueue,
                                     Map<String, VmsTransactionMetadata> transactionMetadataMap,
                                     ITransactionManager transactionalHandler,
-                                    Consumer<IVmsTransactionResult> eventHandler){
+                                    Consumer<IVmsTransactionResult> processOutputEvent,
+                                    Consumer<TransactionAbort.Payload> processAbort){
         super();
 
         this.vmsIdentifier = vmsIdentifier;
@@ -110,11 +114,13 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
         // operational (internal control of transactions and tasks)
         this.transactionTaskMap = new NonBlockingHashMapLong<>(2048*10);
-        SchedulerCallback callback = new SchedulerCallback(eventHandler);
+        SchedulerCallback callback = new SchedulerCallback(processOutputEvent, processAbort);
         this.vmsTransactionTaskBuilder = new VmsTransactionTaskBuilder(transactionalHandler, callback);
         this.transactionTaskMap.put( 0L, this.vmsTransactionTaskBuilder.buildFinished(0) );
         this.lastTidToTidMap = new LongLongHashMap(2048*10);
     }
+
+    private final BlockingQueue<Long> abortSynchronizer = new ArrayBlockingQueue<>(1);
 
     /**
      * Inspired by <a href="https://stackoverflow.com/questions/826212/java-executors-how-to-be-notified-without-blocking-when-a-task-completes">link</a>,
@@ -124,14 +130,14 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     @Override
     public void run() {
         LOGGER.log(DEBUG,this.vmsIdentifier+": Transaction scheduler has started");
-        while(this.isRunning()) {
-            try {
+        try {
+            while (this.isRunning()) {
                 this.checkForNewEvents();
                 this.executeReadyTasks();
-            } catch(Exception e){
-                e.printStackTrace(System.out);
-                LOGGER.log(ERROR, this.vmsIdentifier+": Error on scheduler loop: "+(e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
             }
+        } catch (Exception e) {
+            e.printStackTrace(System.out);
+            LOGGER.log(ERROR, this.vmsIdentifier + ": Error on scheduler loop: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
         }
         LOGGER.log(DEBUG,this.vmsIdentifier+": Transaction scheduler has terminated");
     }
@@ -139,9 +145,11 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
     private final class SchedulerCallback implements ISchedulerCallback, Thread.UncaughtExceptionHandler {
 
         private final Consumer<IVmsTransactionResult> eventHandler;
+        private final Consumer<TransactionAbort.Payload> abortHandler;
 
-        private SchedulerCallback(Consumer<IVmsTransactionResult> eventHandler) {
+        private SchedulerCallback(Consumer<IVmsTransactionResult> eventHandler, Consumer<TransactionAbort.Payload> abortHandler) {
             this.eventHandler = eventHandler;
+            this.abortHandler = abortHandler;
         }
 
         @Override
@@ -157,7 +165,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         }
 
         @Override
-        public void error(ExecutionModeEnum executionMode, long tid, Exception e) {
+        public void error(ExecutionModeEnum executionMode, long batch, long tid, Exception e) {
             // a simple mechanism to handle error is by re-executing, depending on the nature of the error
             // if constraint violation, it cannot be re-executed
             // in this case, the error must be informed to the event handler, so the event handler
@@ -166,7 +174,12 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             // remove from map to avoid rescheduling? no, it will lead to null pointer in scheduler loop
             VmsTransactionTask task = transactionTaskMap.get(tid);
             task.signalFailed();
+
             this.updateSchedulerTaskStats(executionMode, task);
+
+            try { abortSynchronizer.put(tid); } catch (InterruptedException _) { }
+
+            this.abortHandler.accept(new TransactionAbort.Payload(batch, tid));
         }
 
         @Override
@@ -222,7 +235,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             this.mustWaitForInputEvent = true;
 
             // prevent map from growing arbitrarily
-            if(lastTidFinished_ > this.lastSeenTidFinished){
+            if(lastTidFinished_ > this.lastSeenTidFinished) {
                 while(this.nextTidToDelete <= this.lastSeenTidFinished){
                     // will it always find it finished? no. due to concurrent execution, a "hole" may appear
                     if(!this.transactionTaskMap.get(this.nextTidToDelete).isFinished()) {
@@ -247,17 +260,13 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
                     if (!this.canSingleThreadTaskRun()) {
                         return;
                     }
-                    LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduling single-threaded task for execution:\n" + task);
                     this.submitSingleThreadTaskForExecution(task);
                 }
                 case PARALLEL -> {
                     if (!this.canParallelTaskRun()) {
                         return;
                     }
-                    this.parallelTasksRunning.add(task.tid());
-                    task.signalReady();
-                    LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduling parallel task for execution:\n" + task);
-                    this.sharedTaskPool.submit(task);
+                    this.submitParallelTaskForExecution(task);
                 }
                 case PARTITIONED -> {
                     if (task.partitionKeys().isEmpty()) {
@@ -283,6 +292,13 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         }
     }
 
+    private void submitParallelTaskForExecution(VmsTransactionTask task) {
+        this.parallelTasksRunning.add(task.tid());
+        task.signalReady();
+        LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduling parallel task for execution:\n" + task);
+        this.sharedTaskPool.submit(task);
+    }
+
     private void submitPartitionedTaskForExecution(VmsTransactionTask task) {
         this.partitionKeyTrackingMap.addAll(task.partitionKeys());
         this.partitionedTasksRunning.add(task.tid());
@@ -297,6 +313,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         task.signalReady();
         // can the scheduler itself run it? yes and it would avoid a context switch cost
         // however, it would block the scheduler (i.e., processing inputs) until the task finishes
+        LOGGER.log(DEBUG, this.vmsIdentifier + ": Scheduling single-threaded task for execution:\n" + task);
         this.sharedTaskPool.submit(task);
     }
 
@@ -307,7 +324,7 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
         return !this.singleThreadWriterTaskRunning &&
             (
                 // this prevents possible "holes" in the termination of concurrent tasks (i.e., partitioned task with TID lower than lastTidFinished still running)
-                (this.parallelTasksRunning.isEmpty() && partitionedTasksRunning.isEmpty()) ||
+                (this.parallelTasksRunning.isEmpty() && this.partitionedTasksRunning.isEmpty()) ||
                 (this.areAllReadOnly(this.parallelTasksRunning) && this.areAllReadOnly(this.partitionedTasksRunning))
             );
     }
@@ -335,13 +352,38 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
 
     private void checkForNewEvents() throws InterruptedException {
         InboundEvent inboundEvent;
-        if(this.mustWaitForInputEvent) {
-            inboundEvent = this.transactionInputQueue.take();
-            // disable block
-            this.mustWaitForInputEvent = false;
+        if(this.abortSynchronizer.poll() != null) {
+            long tidToAbort = this.abortSynchronizer.take();
+            // wait until all scheduled tasks are finished
+            while(this.singleThreadWriterTaskRunning || !this.partitionedTasksRunning.isEmpty() || !this.parallelTasksRunning.isEmpty()) {
+                Thread.sleep(100);
+            }
+            this.vmsTransactionTaskBuilder.rollback(tidToAbort);
+
+            VmsTransactionTask abortedTask = this.transactionTaskMap.get(tidToAbort);
+            this.nextTidToDelete = abortedTask.lastTid();
+            this.lastSeenTidFinished = abortedTask.lastTid();
+            U.getAndSetLong(this, L_TID_F_OFFSET, abortedTask.lastTid());
+
+            // when is it safe to return scheduling?
+            //  when tx.lastTid == lastTid executed appears in the queue
+            do {
+                do {
+                    inboundEvent = this.transactionInputQueue.poll(1000, TimeUnit.MILLISECONDS);
+                } while (inboundEvent == null);
+            } while (inboundEvent.lastTid() != abortedTask.lastTid());
         } else {
-            inboundEvent = this.transactionInputQueue.poll();
-            if(inboundEvent == null) return;
+            if (this.mustWaitForInputEvent) {
+                inboundEvent = this.transactionInputQueue.poll(1000, TimeUnit.MILLISECONDS);
+                if (inboundEvent == null) {
+                    return;
+                }
+                // disable block
+                this.mustWaitForInputEvent = false;
+            } else {
+                inboundEvent = this.transactionInputQueue.poll();
+                if (inboundEvent == null) return;
+            }
         }
         // drain all
         this.drained.add(inboundEvent);

@@ -17,4 +17,6 @@ public interface ITransactionManager {
 
     default void rebuildIndexes() { }
 
+    default void rollback(long tid) { }
+
 }
