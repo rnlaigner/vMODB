@@ -16,4 +16,7 @@ public interface ICustomerRepository extends IRepository<Customer.CustomerId, Cu
     @Query("select * from customer where c_d_id = :d_id and c_w_id = :w_id and c_last = :c_last order by c_first")
     List<Customer> getCustomerByLastName(int d_id, int w_id, String c_last);
 
+    @Query("select * from customer where c_d_id = :d_id and c_w_id = :w_id order by c_id desc")
+    List<Customer> getCustomers(int d_id, int w_id);
+
 }

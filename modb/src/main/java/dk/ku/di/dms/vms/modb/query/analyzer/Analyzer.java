@@ -2,6 +2,7 @@ package dk.ku.di.dms.vms.modb.query.analyzer;
 
 import dk.ku.di.dms.vms.modb.api.query.clause.GroupBySelectElement;
 import dk.ku.di.dms.vms.modb.api.query.clause.JoinClauseElement;
+import dk.ku.di.dms.vms.modb.api.query.clause.OrderByClauseElement;
 import dk.ku.di.dms.vms.modb.api.query.clause.WhereClauseElement;
 import dk.ku.di.dms.vms.modb.api.query.enums.JoinTypeEnum;
 import dk.ku.di.dms.vms.modb.api.query.enums.OrderBySortOrderEnum;
@@ -210,9 +211,11 @@ public final class Analyzer {
             // the order of the columns declared in the index definition matters
             queryTree.addWhereClauseSortedByColumnIndex(whereClause);
         }
-        if(statement.orderByClause != null && !statement.orderByClause.isEmpty()){
-            ColumnReference columnReference = new ColumnReference(statement.orderByClause.getFirst().column, this.catalog.get(statement.fromClause.getFirst()));
-            queryTree.orderByPredicates.add(new OrderByPredicate(columnReference, OrderBySortOrderEnum.ASC));
+        if(statement.orderByClause != null) {
+            for (OrderByClauseElement element : statement.orderByClause) {
+                ColumnReference columnReference = new ColumnReference(element.column, this.catalog.get(statement.fromClause.getFirst()));
+                queryTree.orderByPredicates.add(new OrderByPredicate(columnReference, element.expression));
+            }
         }
         if(statement.limit != null){
             queryTree.limit = Optional.of( statement.limit );

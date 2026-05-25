@@ -72,7 +72,7 @@ public final class ExperimentUtils {
 
         long numTIDsSubmitted = coordinator.getNumTIDsSubmitted(PREV_EXP_LAST_TID + 1);
         long actualRunTime = workloadStats.actualEndTs() - workloadStats.initTs();
-        double txSubPerSec = (numTIDsSubmitted / ((double) actualRunTime / 1000L)) / numTerminals;
+        double txSubPerSec = numTIDsSubmitted / ((double) actualRunTime / 1000L);
 
         if(BATCH_TO_FINISHED_TS_MAP.isEmpty()) {
             LOGGER.log(WARNING, "No batch of transactions completed!");

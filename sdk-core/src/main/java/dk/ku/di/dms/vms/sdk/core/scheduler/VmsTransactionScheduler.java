@@ -312,19 +312,21 @@ public final class VmsTransactionScheduler extends StoppableRunnable {
             );
     }
 
-    private boolean canPartitionedTaskRun(){
+    private boolean canPartitionedTaskRun() {
         return !this.singleThreadWriterTaskRunning &&
                 (this.parallelTasksRunning.isEmpty() || this.areAllReadOnly(this.parallelTasksRunning));
     }
 
-    private boolean canParallelTaskRun(){
+    private boolean canParallelTaskRun() {
         return !this.singleThreadWriterTaskRunning &&
                 (this.partitionedTasksRunning.isEmpty() || this.areAllReadOnly(this.partitionedTasksRunning));
     }
 
-    private boolean areAllReadOnly(Set<Long> runningSet){
-        for(Long tid : runningSet){
-            if(this.transactionTaskMap.get(tid).signature().transactionType() != R) return false;
+    private boolean areAllReadOnly(Set<Long> runningSet) {
+        for(Long tid : runningSet) {
+            VmsTransactionTask task = this.transactionTaskMap.get(tid);
+            if(task == null) continue; // concurrently finished, go to next
+            if(task.signature().transactionType() != R) return false;
         }
         return true;
     }

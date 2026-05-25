@@ -67,12 +67,13 @@ public final class WarehouseHttpHandler extends DefaultHttpHandler {
 
         this.transactionManager.beginTransaction(0, 0, 0,false);
         for(District district : districts){
-            district.d_next_o_id = 3000;
+            district.d_next_o_id = 3001;
         }
         this.warehouseRepository.insertAll(warehouses);
         this.districtRepository.insertAll(districts);
         this.customerRepository.insertAll(customers);
         // this.transactionManager.commit();
+
         LOGGER.log(INFO, "Warehouse finished cleanup");
     }
 

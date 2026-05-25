@@ -45,13 +45,14 @@ public final class Main {
         final int numWare = Integer.parseInt(PROPERTIES.get("num_ware").toString());
         int numTerminals = Integer.parseInt(PROPERTIES.get("num_terminals").toString());
         int pipelineSize = Integer.parseInt(PROPERTIES.get("pipeline_size").toString());
-
         if(numTerminals <= 0 || numTerminals > numWare) {
             numTerminals = numWare;
         }
         if(pipelineSize <= 0) {
-            int numMaxTransactionsBatch = Integer.parseInt( PROPERTIES.getProperty("num_max_transactions_batch") );
-            pipelineSize = numMaxTransactionsBatch / numTerminals;
+            pipelineSize = Integer.parseInt( PROPERTIES.getProperty("num_max_transactions_batch") );
+        }
+        if(numTerminals > 1) {
+            pipelineSize = pipelineSize / numTerminals;
         }
         final boolean truncate = Boolean.parseBoolean(PROPERTIES.getProperty("checkpointing_truncate"));
         List<Map<String, Iterator<Object>>> input;

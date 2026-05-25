@@ -31,6 +31,7 @@ public final class Main {
         // variable
         int numDistrict = num_ware * 10;
         prop.setProperty("max_records.district", String.valueOf(numDistrict));
+        prop.setProperty("table.district.chaining", "true");
         int numCustomers = num_ware * 30_000;
         prop.setProperty("max_records.customer", String.valueOf(numCustomers));
         prop.setProperty("table.customer.chaining", "true");

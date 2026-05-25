@@ -27,7 +27,8 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
 
     private final String prefix;
 
-    private int chainSize;
+    // number of records in internal chains
+    private int chainedSize;
 
     private final Set<Integer> pendingFlush;
 
@@ -108,7 +109,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
                         return;
                     }
                     UNSAFE.putByte(null, chainedPos, Header.INACTIVE_BYTE);
-                    this.chainSize--;
+                    this.chainedSize--;
                     this.pendingFlush.add(index);
                     return;
                 }
@@ -165,10 +166,10 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
     }
 
     @Override
-    public void insert(IKey key, Object[] record){
+    public void insert(IKey key, Object[] record) {
         int keyHash = key.hashCode();
         long pos = this.getFreePositionToInsert(keyHash);
-        if(pos == -1){
+        if(pos == -1) {
             int index = this.getIndex(keyHash);
             AppendOnlyBoundedBuffer aob;
             if(this.chainingMap.containsKey(index)){
@@ -183,7 +184,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             UNSAFE.putByte(null, pos, Header.ACTIVE_BYTE);
             UNSAFE.putInt(null, pos + Header.SIZE, keyHash);
             this.doWrite(pos, record);
-            this.chainSize++;
+            this.chainedSize++;
             this.pendingFlush.add(index);
             return;
         }
@@ -199,7 +200,7 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             long chainedPos = aob.address;
             final long lastPos = aob.nextOffset();
             while(chainedPos < lastPos) {
-                if(UNSAFE.getByte(null, chainedPos) == Header.ACTIVE_BYTE ) {
+                if(UNSAFE.getByte(null, chainedPos) == Header.ACTIVE_BYTE) {
                     Object[] chainedRecord = this.readFromIndex(chainedPos + Schema.RECORD_HEADER);
                     IKey existingKey = KeyUtils.buildRecordKey(this.schema().getPrimaryKeyColumns(), chainedRecord);
                     if (existingKey.equals(key)) {
@@ -235,53 +236,64 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         private final long mainCapacity;
         private int mainProgress;
 
-        private long currChain;
+        private long currChainAddress;
         private long chainCapacity;
         private int chainProgress;
 
-        private final Map<Integer, AppendOnlyBoundedBuffer> chainingMapCopy;
+        private final SortedMap<Integer, AppendOnlyBoundedBuffer> chainingMapCopy;
 
         public ChainedRecordIterator(long address, int recordSize, long capacity) {
             this.nextAddress = address;
             this.recordSize = recordSize;
             this.mainCapacity = capacity;
             this.mainProgress = 0;
-            this.currChain = -1;
-            this.chainingMapCopy = new HashMap<>(chainingMap);
+            this.currChainAddress = -1;
+            this.chainingMapCopy = new TreeMap<>(chainingMap);
         }
 
         @Override
         public boolean hasNext() {
-            // checks for an active bit
+            // iterate main entries to check for an active bit
             while(this.mainProgress < this.mainCapacity && UNSAFE.getByte(null, this.nextAddress) != Header.ACTIVE_BYTE) {
                 this.mainProgress++;
                 this.nextAddress += recordSize;
             }
 
-            if(this.currChain == -1) {
+            // check if must setup chain address
+            if(this.currChainAddress == -1) {
                 int keyHash = UNSAFE.getInt(null, this.nextAddress + Header.SIZE);
                 int index = getIndex(keyHash);
                 AppendOnlyBoundedBuffer aob = this.chainingMapCopy.remove(index);
                 if(aob != null){
                     this.chainCapacity = (aob.nextOffset() - aob.address) / this.recordSize;
-                    this.currChain = aob.address;
+                    this.currChainAddress = aob.address;
                     this.chainProgress = 0;
                     return true;
                 }
             } else {
                 if(this.chainProgress < this.chainCapacity) return true;
-                this.currChain = -1;
+                this.currChainAddress = -1;
             }
 
-            return this.mainProgress < this.mainCapacity;
+            if(this.mainProgress < this.mainCapacity) return true;
+
+            if(!this.chainingMapCopy.isEmpty()) {
+                AppendOnlyBoundedBuffer aob = this.chainingMapCopy.remove(this.chainingMapCopy.firstKey());
+                this.chainCapacity = (aob.nextOffset() - aob.address) / this.recordSize;
+                this.currChainAddress = aob.address;
+                this.chainProgress = 0;
+                return true;
+            }
+
+            return false;
         }
 
         @Override
         public IKey next() {
-            if(this.currChain > -1){
-                SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.currChain + Header.SIZE));
+            if(this.currChainAddress > -1) {
+                SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.currChainAddress + Header.SIZE));
                 this.chainProgress++;
-                this.currChain += this.recordSize;
+                this.currChainAddress += this.recordSize;
                 return res;
             }
             SimpleKey res = SimpleKey.of(UNSAFE.getInt(this.nextAddress + Header.SIZE));
@@ -291,9 +303,9 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
         }
 
         @Override
-        public long address(){
-            if(this.currChain > -1){
-                return this.currChain;
+        public long address() {
+            if(this.currChainAddress > -1) {
+                return this.currChainAddress;
             }
             return this.nextAddress;
         }
@@ -310,11 +322,12 @@ public final class UniqueHashChainingBufferIndex extends UniqueHashBufferIndex {
             entry.getValue().unload();
             it.remove();
         }
+        this.chainedSize = 0;
     }
 
     @Override
     public int size() {
-        return this.size + this.chainSize;
+        return this.size + this.chainedSize;
     }
 
 }
